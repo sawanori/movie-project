@@ -77,11 +77,17 @@ movie-maker-api/
 |--------|----------|-------------|
 | GET | `/health` | ヘルスチェック |
 | GET | `/api/v1/auth/me` | 現在のユーザー情報 |
+| GET | `/api/v1/auth/usage` | 今月の使用状況 |
 | POST | `/api/v1/videos` | 動画生成リクエスト |
 | GET | `/api/v1/videos` | 生成履歴一覧 |
 | GET | `/api/v1/videos/{id}` | 動画詳細 |
+| GET | `/api/v1/videos/{id}/status` | 生成進捗取得 |
+| DELETE | `/api/v1/videos/{id}` | 動画削除 |
+| POST | `/api/v1/videos/upload-image` | 画像アップロード |
 | GET | `/api/v1/templates` | テンプレート一覧 |
-| GET | `/api/v1/templates/bgm` | BGM一覧 |
+| GET | `/api/v1/templates/{id}` | テンプレート詳細 |
+| GET | `/api/v1/templates/bgm/list` | BGM一覧 |
+| POST | `/api/v1/webhooks/polar` | Polar Webhook受信 |
 
 ## Environment Variables
 

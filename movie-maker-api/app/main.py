@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.auth.router import router as auth_router
 from app.videos.router import router as videos_router
 from app.templates.router import router as templates_router
+from app.webhooks.polar import router as webhooks_router
 
 app = FastAPI(
     title="Movie Maker API",
@@ -13,9 +14,14 @@ app = FastAPI(
 )
 
 # CORS設定
+# 開発時(ポート競合によるNext.jsの自動フォールバック)に備え、3001も許可
+allow_origins = list(settings.CORS_ORIGINS)
+if settings.DEBUG and "http://localhost:3001" not in allow_origins:
+    allow_origins.append("http://localhost:3001")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -25,6 +31,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(videos_router, prefix="/api/v1")
 app.include_router(templates_router, prefix="/api/v1")
+app.include_router(webhooks_router, prefix="/api/v1")
 
 
 @app.get("/health")

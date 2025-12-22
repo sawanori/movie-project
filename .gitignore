@@ -20,6 +20,9 @@ venv/
 .env.local
 .env.*.local
 
+# Credentials (NEVER commit)
+docs/credentials.md
+
 # IDE
 .idea/
 .vscode/

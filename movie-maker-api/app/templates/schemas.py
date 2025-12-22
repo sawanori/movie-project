@@ -1,5 +1,4 @@
 from pydantic import BaseModel
-from datetime import datetime
 
 
 class TemplateResponse(BaseModel):
@@ -20,9 +19,10 @@ class BGMResponse(BaseModel):
     """BGMレスポンス"""
     id: str
     name: str
-    duration_seconds: int
-    category: str
-    preview_url: str | None = None
+    description: str | None = None
+    duration_seconds: int = 5
+    mood: str | None = None
+    file_url: str | None = None
 
     class Config:
         from_attributes = True
