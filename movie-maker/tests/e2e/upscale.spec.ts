@@ -231,13 +231,20 @@ test.describe("Upscale functionality", () => {
     // 直接APIエンドポイントをテスト
     // ストーリーボードのアップスケールエンドポイント
 
-    // まずストーリーボード一覧を取得
-    const listResponse = await request.get("http://localhost:8000/api/v1/videos/storyboard", {
-      headers: {
-        "Authorization": "Bearer test-token",
-        "Content-Type": "application/json",
-      },
-    });
+    let listResponse;
+    try {
+      // まずストーリーボード一覧を取得
+      listResponse = await request.get("http://localhost:8000/api/v1/videos/storyboard", {
+        headers: {
+          "Authorization": "Bearer test-token",
+          "Content-Type": "application/json",
+        },
+      });
+    } catch {
+      console.log("Backend API not running, skipping direct API test");
+      test.skip();
+      return;
+    }
 
     console.log(`List storyboards status: ${listResponse.status()}`);
 

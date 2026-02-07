@@ -25,6 +25,9 @@ export default defineConfig({
     timeout: 120 * 1000,
     env: {
       NEXT_PUBLIC_E2E_TEST_MODE: 'true',
+      NEXT_PUBLIC_SUPABASE_URL: 'https://test-project.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e2e-test-dummy-key',
+      NEXT_PUBLIC_API_URL: 'http://localhost:8000',
     },
   },
 });

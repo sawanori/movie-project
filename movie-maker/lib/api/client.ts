@@ -4,9 +4,13 @@ import type { ReferenceImage, ReferenceImagePurpose } from "@/lib/constants/imag
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 async function getAuthToken(): Promise<string | null> {
-  const supabase = createClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  return session?.access_token || null;
+  try {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token || null;
+  } catch {
+    return null;
+  }
 }
 
 interface FetchWithAuthOptions extends RequestInit {
