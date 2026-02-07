@@ -45,3 +45,26 @@ htmlcov/
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# Claude Code (local dev config)
+.claude/
+.serena/memories/
+
+# Debug screenshots
+*.debug-*.png
+debug-*.png
+screenshot-*.png
+
+# Playwright
+playwright-report/
+test-results/
+
+# Development artifacts
+check/
+app/
+
+# Accidental nested duplicates
+movie-maker-api/movie-maker-api/
+movie-maker-api/movie-maker/
+movie-maker/movie-maker-api/
+movie-maker/movie-maker/

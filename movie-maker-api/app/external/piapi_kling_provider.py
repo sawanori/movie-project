@@ -247,6 +247,7 @@ class PiAPIKlingProvider(VideoProviderInterface):
         mode: Optional[str] = None,
         image_tail_url: Optional[str] = None,
         element_images: Optional[list[str]] = None,
+        camera_control: Optional[dict] = None,
     ) -> str:
         """
         PiAPI Kling API で画像から動画を生成
@@ -260,6 +261,7 @@ class PiAPIKlingProvider(VideoProviderInterface):
             mode: Klingモード（"std": 標準, "pro": 高品質）。未指定時は設定値を使用
             image_tail_url: 終了フレーム画像URL（オプション）。指定時は開始→終了への遷移動画を生成
             element_images: Elements用参照画像URLリスト（1〜4枚）。指定時はimage_urlより優先
+            camera_control: カメラ制御dict（オプション）。指定時はcamera_workより優先
 
         Returns:
             str: タスクID
@@ -314,11 +316,20 @@ class PiAPIKlingProvider(VideoProviderInterface):
             elif image_tail_url and using_elements:
                 logger.warning("Elements使用時はimage_tail_url（終了フレーム）は無効化されます")
 
-            # カメラ制御を追加（camera_work文字列からdict形式に変換、Elementsと併用可能）
-            camera_control = _get_camera_control(camera_work)
+            # カメラ制御を追加
+            # 新: camera_control dict が渡された場合は直接使用
             if camera_control:
-                request_body["input"]["camera_control"] = camera_control
-                logger.info(f"Using camera_control for {camera_work}: {camera_control}")
+                request_body["input"]["camera_control"] = {
+                    "type": "simple",
+                    "config": camera_control,
+                }
+                logger.info(f"Using custom camera_control: {camera_control}")
+            # 旧: camera_work 名からマッピング
+            elif camera_work:
+                mapped_control = _get_camera_control(camera_work)
+                if mapped_control:
+                    request_body["input"]["camera_control"] = mapped_control
+                    logger.info(f"Using mapped camera_control for {camera_work}")
 
             # デバッグ用: リクエストボディをログ出力
             logger.info(f"PiAPI Kling request body: {json.dumps(request_body, indent=2)}")

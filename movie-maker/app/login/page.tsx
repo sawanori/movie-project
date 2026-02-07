@@ -32,7 +32,7 @@ export default function LoginPage() {
           <Link href="/" className="inline-flex items-center gap-2">
             <Video className="h-8 w-8 text-zinc-900 dark:text-white" />
             <span className="text-2xl font-bold text-zinc-900 dark:text-white">
-              Movie Maker
+              名もなき映像ジェネレーター
             </span>
           </Link>
           <h1 className="mt-6 text-2xl font-semibold text-zinc-900 dark:text-white">

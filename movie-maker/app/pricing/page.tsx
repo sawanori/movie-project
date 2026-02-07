@@ -348,7 +348,7 @@ export default function PricingPage() {
       {/* Footer */}
       <footer className="mt-20 border-t border-zinc-200 py-8 dark:border-zinc-800">
         <div className="mx-auto max-w-7xl px-4 text-center text-sm text-zinc-600 dark:text-zinc-400">
-          <p>&copy; 2025 movie-maker. All rights reserved.</p>
+          <p>&copy; 2025 名もなき映像ジェネレーター. All rights reserved.</p>
         </div>
       </footer>
     </div>

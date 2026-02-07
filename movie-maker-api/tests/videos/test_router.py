@@ -109,12 +109,16 @@ class TestGetVideoStatus:
             "user_id": "test-user-00000000-0000-0000-0000-000000000001",
             "status": "processing",
             "progress": 50,
+            "final_video_url": None,
+            "error_message": None,
+            "expires_at": None,
         }
 
         with patch("app.videos.service.get_supabase") as mock_get_supabase:
             mock_client = MagicMock()
             mock_get_supabase.return_value = mock_client
-            mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(
+            # service.get_video_status uses maybe_single(), not single()
+            mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = MagicMock(
                 data=mock_video
             )
 
@@ -268,3 +272,111 @@ class TestCreateVideo:
             json={"prompt": "Test prompt"},  # image_url/image_urls が欠けている
         )
         assert response.status_code == 422
+
+
+class TestUploadVideo:
+    """POST /api/v1/videos/upload-video-raw のテスト"""
+
+    def test_upload_video_invalid_mime_type(self, auth_client):
+        """対応していないMIMEタイプは400エラー"""
+        # テキストファイルをアップロード（動画ではない）
+        response = auth_client.post(
+            "/api/v1/videos/upload-video-raw",
+            files={"file": ("test.txt", b"not a video", "text/plain")},
+        )
+        assert response.status_code == 400
+        assert "対応していないファイル形式" in response.json()["detail"]
+
+    def test_upload_video_file_too_large(self, auth_client):
+        """50MBを超えるファイルは400エラー"""
+        # 51MBのダミーデータ
+        large_content = b"x" * (51 * 1024 * 1024)
+        response = auth_client.post(
+            "/api/v1/videos/upload-video-raw",
+            files={"file": ("large.mp4", large_content, "video/mp4")},
+        )
+        assert response.status_code == 400
+        assert "50MB" in response.json()["detail"]
+
+    def test_upload_video_success(self, auth_client):
+        """動画アップロードが成功する"""
+        # 小さな有効な動画コンテンツをモック
+        video_content = b"\x00" * 1000  # ダミー動画データ
+
+        with patch("app.videos.router.get_ffmpeg_service") as mock_ffmpeg, \
+             patch("app.videos.router.upload_video", new_callable=AsyncMock) as mock_upload_video, \
+             patch("app.videos.router.upload_image", new_callable=AsyncMock) as mock_upload_image:
+
+            # FFmpegサービスのモック
+            mock_service = MagicMock()
+            mock_ffmpeg.return_value = mock_service
+            mock_service._get_video_duration = AsyncMock(return_value=5.0)
+            mock_service.extract_first_frame = AsyncMock(return_value="/tmp/thumb.jpg")
+
+            # R2アップロードのモック
+            mock_upload_video.return_value = "https://example.com/video.mp4"
+            mock_upload_image.return_value = "https://example.com/thumb.jpg"
+
+            # サムネイル読み込みのモック
+            with patch("builtins.open", MagicMock(return_value=MagicMock(
+                __enter__=MagicMock(return_value=MagicMock(read=MagicMock(return_value=b"thumbnail"))),
+                __exit__=MagicMock(return_value=False),
+            ))):
+                response = auth_client.post(
+                    "/api/v1/videos/upload-video-raw",
+                    files={"file": ("test.mp4", video_content, "video/mp4")},
+                )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "video_url" in data
+            assert data["video_url"] == "https://example.com/video.mp4"
+            assert data["duration"] == 5.0
+
+    def test_upload_video_duration_too_long(self, auth_client):
+        """10秒を超える動画は400エラー"""
+        video_content = b"\x00" * 1000
+
+        with patch("app.videos.router.get_ffmpeg_service") as mock_ffmpeg:
+            mock_service = MagicMock()
+            mock_ffmpeg.return_value = mock_service
+            mock_service._get_video_duration = AsyncMock(return_value=15.0)
+
+            response = auth_client.post(
+                "/api/v1/videos/upload-video-raw",
+                files={"file": ("test.mp4", video_content, "video/mp4")},
+            )
+
+            assert response.status_code == 400
+            # The actual message format is: "動画の長さが10.0秒を超えています（現在: 15.0秒）"
+            assert "超えています" in response.json()["detail"]
+
+    def test_upload_video_webm_format(self, auth_client):
+        """WebMフォーマットでアップロードが成功する"""
+        video_content = b"\x00" * 1000
+
+        with patch("app.videos.router.get_ffmpeg_service") as mock_ffmpeg, \
+             patch("app.videos.router.upload_video", new_callable=AsyncMock) as mock_upload_video, \
+             patch("app.videos.router.upload_image", new_callable=AsyncMock) as mock_upload_image:
+
+            mock_service = MagicMock()
+            mock_ffmpeg.return_value = mock_service
+            mock_service._get_video_duration = AsyncMock(return_value=3.0)
+            mock_service.extract_first_frame = AsyncMock(return_value="/tmp/thumb.jpg")
+
+            mock_upload_video.return_value = "https://example.com/video.webm"
+            mock_upload_image.return_value = "https://example.com/thumb.jpg"
+
+            with patch("builtins.open", MagicMock(return_value=MagicMock(
+                __enter__=MagicMock(return_value=MagicMock(read=MagicMock(return_value=b"thumbnail"))),
+                __exit__=MagicMock(return_value=False),
+            ))):
+                response = auth_client.post(
+                    "/api/v1/videos/upload-video-raw",
+                    files={"file": ("test.webm", video_content, "video/webm")},
+                )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["video_url"] == "https://example.com/video.webm"
+            assert data["duration"] == 3.0

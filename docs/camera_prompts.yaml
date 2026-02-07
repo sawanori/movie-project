@@ -1,0 +1,922 @@
+camera_prompts:
+  metadata:
+    total_prompts: 122
+    last_updated: "2025-12-23"
+    format_version: "1.0"
+  
+  categories:
+    - id: "basic_camera_work"
+      name: "基本的なカメラワーク"
+      description: "基本的なカメラの移動と回転に関するプロンプト"
+      prompts:
+        - id: 1
+          name: "Pan Left"
+          ja_name: "パン・レフト"
+          description: "カメラを固定したまま左に振る"
+          effect: "視点を左へ移す／左側の対象を見せる"
+          en_example: "pan left to show the second character"
+          
+        - id: 2
+          name: "Pan Right"
+          ja_name: "パン・ライト"
+          description: "カメラを固定したまま右に振る"
+          effect: "視点を右へ移す／右側の対象を見せる"
+          en_example: "pan right slowly to reveal the school building"
+          
+        - id: 3
+          name: "Tilt Up"
+          ja_name: "ティルト・アップ"
+          description: "カメラを固定したまま上に振る"
+          effect: "下から上へ対象を開示する"
+          en_example: "tilt up from feet to face"
+          
+        - id: 4
+          name: "Tilt Down"
+          ja_name: "ティルト・ダウン"
+          description: "カメラを固定したまま下に振る"
+          effect: "上から下へ対象を開示する"
+          en_example: "tilt down from rooftop to ground"
+          
+        - id: 5
+          name: "Pedestal Up"
+          ja_name: "ペデスタルアップ"
+          description: "カメラ自体を三脚やペデスタルで真っ直ぐ上に上げる"
+          effect: "キャラや対象を『下から上に見せる』効果"
+          en_example: "pedestal up from the ground in a flower field to reveal blossoms and blue sky"
+          
+        - id: 6
+          name: "Pedestal Down"
+          ja_name: "ペデスタルダウン"
+          description: "カメラ自体を真っ直ぐ下げる"
+          effect: "高い位置から低い位置への視点移動"
+          en_example: "pedestal down from the rooftop to show the busy intersection below"
+          
+        - id: 7
+          name: "Truck Left"
+          ja_name: "トラック・レフト"
+          description: "カメラを横に左へ移動"
+          effect: "対象に並走／動きのあるシーン"
+          en_example: "truck left to show the neighbor"
+          
+        - id: 8
+          name: "Truck Right"
+          ja_name: "トラック・ライト"
+          description: "カメラを横に右へ移動"
+          effect: "対象に並走／動きのあるシーン"
+          en_example: "truck right following the character"
+          
+        - id: 9
+          name: "Crane Up"
+          ja_name: "クレーンアップ"
+          description: "クレーンでカメラを上へ移動"
+          effect: "視点を持ち上げ全体を見せる"
+          en_example: "crane up to reveal the whole scene"
+          
+        - id: 10
+          name: "Crane Down"
+          ja_name: "クレーンダウン"
+          description: "クレーンでカメラを下へ移動"
+          effect: "高所から低所へ降りるように視点を移す"
+          en_example: "crane down from rooftop to ground"
+          
+        - id: 11
+          name: "Track Left"
+          ja_name: "トラック・レフト（移動）"
+          description: "カメラが被写体と平行に左方向に移動"
+          effect: "移動感を強調し、シーンの変化を演出"
+          en_example: "track left smoothly"
+          
+        - id: 12
+          name: "Track Right"
+          ja_name: "トラック・ライト（移動）"
+          description: "カメラが被写体と平行に右方向に移動"
+          effect: "ダイナミックな動きを作る"
+          en_example: "track right following the action"
+          
+        - id: 13
+          name: "Static Shot"
+          ja_name: "スタティックショット"
+          description: "カメラを静止させて被写体にフォーカス"
+          effect: "安定した視点で対象に集中する"
+          en_example: "static shot focusing on the subject"
+          
+        - id: 14
+          name: "Move Diagonally Up and Right"
+          ja_name: "斜め右上移動"
+          description: "カメラが斜め右上に移動"
+          effect: "視点の変化で立体感を演出"
+          en_example: "move diagonally up and right"
+          
+        - id: 15
+          name: "Move Diagonally Down and Left"
+          ja_name: "斜め左下移動"
+          description: "カメラが斜め左下に移動"
+          effect: "被写体から遠ざかる効果を与える"
+          en_example: "move diagonally down and left"
+
+    - id: "zoom_dolly"
+      name: "寄る・引くプロンプト"
+      description: "ズームやドリーを使った、被写体への接近・離脱に関するプロンプト"
+      prompts:
+        - id: 16
+          name: "Zoom In"
+          ja_name: "ズーム・イン"
+          description: "ズームレンズで被写体を拡大"
+          effect: "特定の詳細に焦点を合わせる"
+          en_example: "zoom in on the character's face to emphasize tension"
+          
+        - id: 17
+          name: "Zoom Out"
+          ja_name: "ズーム・アウト"
+          description: "ズームレンズで被写体を縮小"
+          effect: "シーン全体を見せ、空間の広がりを強調"
+          en_example: "zoom out to reveal the entire school building"
+          
+        - id: 18
+          name: "Quick Zoom In"
+          ja_name: "素早いズームイン"
+          description: "素早くズームインする"
+          effect: "強調や驚きを表現"
+          en_example: "quick zoom in for dramatic effect"
+          
+        - id: 19
+          name: "Quick Zoom Out"
+          ja_name: "素早いズームアウト"
+          description: "素早くズームアウトする"
+          effect: "シーン全体を突然見せる"
+          en_example: "quick zoom out to show the full scene"
+          
+        - id: 20
+          name: "Dolly In"
+          ja_name: "ドリー・イン"
+          description: "カメラごと前に移動"
+          effect: "対象に近づき迫力や没入感を与える"
+          en_example: "dolly in on the protagonist during the confession scene"
+          
+        - id: 21
+          name: "Dolly Out"
+          ja_name: "ドリー・アウト"
+          description: "カメラごと後ろに移動"
+          effect: "空間の広がりや疎外感を演出"
+          en_example: "dolly out from the character to show the vast cityscape"
+          
+        - id: 22
+          name: "Push In for Close-up"
+          ja_name: "プッシュイン"
+          description: "被写体に向かってカメラが進む"
+          effect: "詳細な表情や動きを捉える"
+          en_example: "push in for close-up on the character's expression"
+          
+        - id: 23
+          name: "Pull Out to Wide Shot"
+          ja_name: "プルアウト"
+          description: "クローズアップからワイドショットに移行"
+          effect: "シーンの全体像を捉える"
+          en_example: "pull out to wide shot to show the entire scene"
+          
+        - id: 24
+          name: "Zoom In on Background Element"
+          ja_name: "背景要素へのズームイン"
+          description: "背景の特定の要素にズームイン"
+          effect: "遠くのオブジェクトを目立たせる"
+          en_example: "zoom in on the distant building"
+          
+        - id: 25
+          name: "Zoom Out to Reveal Entire Landscape"
+          ja_name: "風景全体の開示"
+          description: "徐々にズームアウトして全体の風景を見せる"
+          effect: "シーン全体のスケール感や周囲の環境を強調"
+          en_example: "zoom out to reveal entire landscape"
+          
+        - id: 26
+          name: "Dolly In While Tilting Up"
+          ja_name: "ドリーイン＋ティルトアップ"
+          description: "カメラが前進しながら上に傾ける"
+          effect: "視点を上に向けつつ対象に近づく複合的な動き"
+          en_example: "dolly in while tilting up"
+          
+        - id: 27
+          name: "Dolly Zoom In"
+          ja_name: "ドリー・ズーム・イン"
+          description: "カメラが近づきながらズームアウト"
+          effect: "パララックス効果でシーンの奥行きを強調"
+          en_example: "dolly zoom in creating a disorienting effect"
+          
+        - id: 28
+          name: "Reverse Dolly Zoom Out"
+          ja_name: "リバース・ドリー・ズーム"
+          description: "カメラが遠ざかりながらズームイン"
+          effect: "背景が急速に変わる視覚効果を生む"
+          en_example: "reverse dolly zoom out"
+          
+        - id: 29
+          name: "Dolly Zoom In (Vertigo Effect)"
+          ja_name: "ドリー・ズーム・イン（ヴァーティゴ効果）"
+          description: "カメラを前進させつつズームアウト"
+          effect: "背景が歪む／不安やめまい効果"
+          en_example: "dolly zoom in on the protagonist while zooming out to distort the hallway"
+          
+        - id: 30
+          name: "Dolly Zoom Out (Tension Effect)"
+          ja_name: "ドリー・ズーム・アウト（緊張効果）"
+          description: "カメラを後退させつつズームイン"
+          effect: "対象が引き伸ばされるような緊張感"
+          en_example: "dolly zoom out from the classroom while zooming in"
+          
+        - id: 31
+          name: "Move Rapidly Toward Character's Face"
+          ja_name: "顔への急速移動"
+          description: "キャラクターの顔に向かって急速に移動"
+          effect: "キャラクターの表情に集中し、緊迫感を高める"
+          en_example: "move rapidly toward a character's face"
+          
+        - id: 32
+          name: "Dolly Diagonally Across Scene"
+          ja_name: "対角線移動"
+          description: "シーン全体を対角線に沿ってカメラが移動"
+          effect: "複雑な視覚的な動きを作成し、シーンに動きを加える"
+          en_example: "dolly diagonally across the scene"
+          
+        - id: 33
+          name: "Dolly Forward Slowly Toward Distant Building"
+          ja_name: "建物への遅い接近"
+          description: "遠くの建物に向かってゆっくりと前進する"
+          effect: "建物への接近感を強調し、その威圧感を演出"
+          en_example: "dolly forward slowly toward a distant building"
+          
+        - id: 34
+          name: "Dolly Backward From Character"
+          ja_name: "キャラクターからの後退"
+          description: "キャラクターが後退する際にカメラも後退"
+          effect: "キャラクターの不安感や避けたい状況を示す"
+          en_example: "dolly backward from a character as they back away"
+          
+        - id: 35
+          name: "Dolly Out Through Doorway"
+          ja_name: "ドアを通っての後退"
+          description: "ドアを通って後退する"
+          effect: "シーンからの退出や空間の変化を示す"
+          en_example: "dolly out through a doorway"
+          
+        - id: 36
+          name: "Zoom In Gradually on Character's Eyes"
+          ja_name: "目への段階的ズーム"
+          description: "徐々にキャラクターの目にズームイン"
+          effect: "感情や内面の変化を強調"
+          en_example: "zoom in gradually on a character's eyes"
+
+    - id: "orbit_arc_rotation"
+      name: "回り込みカメラワーク"
+      description: "被写体を中心に回転・回り込むカメラワーク"
+      prompts:
+        - id: 37
+          name: "Orbit Clockwise"
+          ja_name: "時計回りオービット"
+          description: "被写体を中心に時計回りにカメラを回転"
+          effect: "立体的な動きを作る"
+          en_example: "orbit shot around the heroine to show her classmates"
+          
+        - id: 38
+          name: "Orbit Counterclockwise"
+          ja_name: "反時計回りオービット"
+          description: "被写体を中心に反時計回りにカメラを回転"
+          effect: "シーンに動的な感覚を加える"
+          en_example: "orbit counterclockwise around the subject"
+          
+        - id: 39
+          name: "Circle Around Subject Slowly"
+          ja_name: "ゆっくりした周回"
+          description: "被写体の周囲をゆっくり回る"
+          effect: "深みを与え、対象を引き立てる"
+          en_example: "circle around the subject slowly"
+          
+        - id: 40
+          name: "Orbit Shot"
+          ja_name: "オービットショット"
+          description: "被写体を中心に円を描くように回る"
+          effect: "躍動感や決め演出"
+          en_example: "orbit shot around the heroine"
+          
+        - id: 41
+          name: "360-Degree Shot"
+          ja_name: "360度ショット"
+          description: "被写体を一周回り込む"
+          effect: "クライマックスでの迫力演出"
+          en_example: "360-degree shot circling the protagonist during the transformation"
+          
+        - id: 42
+          name: "Arc Shot"
+          ja_name: "アークショット"
+          description: "半円や部分的に回り込む"
+          effect: "会話や関係性を強調"
+          en_example: "arc shot half-circle around two characters talking"
+          
+        - id: 43
+          name: "Arc Left While Tilting Up"
+          ja_name: "左アーク＋ティルトアップ"
+          description: "左に弧を描きながら上に傾ける"
+          effect: "複雑なカメラの動きで視点の変化を作る"
+          en_example: "arc left while tilting up"
+          
+        - id: 44
+          name: "Arc Right While Tilting Down"
+          ja_name: "右アーク＋ティルトダウン"
+          description: "右に弧を描きながら下に傾ける"
+          effect: "シーン全体の変化を柔軟に見せる"
+          en_example: "arc right while tilting down"
+          
+        - id: 45
+          name: "Rotate Around Subject Vertically"
+          ja_name: "垂直回転"
+          description: "垂直方向に被写体を中心にカメラを回転"
+          effect: "上下からの視点でシーンに変化を与える"
+          en_example: "rotate around subject vertically"
+          
+        - id: 46
+          name: "Rotate Left 45 Degrees"
+          ja_name: "左45度回転"
+          description: "左に45度回転する"
+          effect: "微妙な視点の変更でシーンのニュアンスを変える"
+          en_example: "rotate left 45 degrees"
+          
+        - id: 47
+          name: "Rotate Right 45 Degrees"
+          ja_name: "右45度回転"
+          description: "右に45度回転する"
+          effect: "視点をやや変えることで新たな視覚的要素を強調"
+          en_example: "rotate right 45 degrees"
+          
+        - id: 48
+          name: "Rotate 360 Degrees Around Subject"
+          ja_name: "360度回転"
+          description: "被写体を中心に360度回転する"
+          effect: "全方位から被写体を捉え、立体感を演出"
+          en_example: "rotate 360 degrees around subject"
+          
+        - id: 49
+          name: "Rotate In Place While Looking Upward"
+          ja_name: "その場での上向き回転"
+          description: "その場で回転しながら上を見上げる"
+          effect: "上空の構造や空の広がりを強調する"
+          en_example: "rotate in place while looking upward"
+          
+        - id: 50
+          name: "Orbit Around Group of People"
+          ja_name: "グループ周回"
+          description: "複数の人々を中心にカメラが周回する"
+          effect: "グループ全体を映し、各人の関係性を強調"
+          en_example: "orbit around group of people"
+          
+        - id: 51
+          name: "Circle Around Statue"
+          ja_name: "彫像周回"
+          description: "彫像を中心にゆっくりとカメラを回転"
+          effect: "彫像のディテールや彫刻の芸術性を強調"
+          en_example: "circle around a statue"
+          
+        - id: 52
+          name: "Rotate Around Table During Conversation"
+          ja_name: "会話中のテーブル周回"
+          description: "会話中のテーブルを中心にカメラが回転"
+          effect: "会話に参加するキャラクター全員を順番に捉える"
+          en_example: "rotate around a table during a conversation"
+          
+        - id: 53
+          name: "Circle Around Two Characters Having Duel"
+          ja_name: "決闘シーン周回"
+          description: "決闘している二人のキャラクターを中心にカメラが回転"
+          effect: "戦いの緊張感や動きを強調"
+          en_example: "circle around two characters having a duel"
+
+    - id: "special_viewpoint"
+      name: "視点の変化・特殊カメラワーク"
+      description: "ハンドヘルド、ドローン、POVなど、特殊な視点や撮影方法に関するプロンプト"
+      prompts:
+        - id: 54
+          name: "Handheld Camera"
+          ja_name: "ハンドヘルド"
+          description: "手持ちカメラのようにわざと揺らす"
+          effect: "ドキュメンタリー風のリアリズムを表現"
+          en_example: "handheld camera style during the school sports festival"
+          
+        - id: 55
+          name: "Shake"
+          ja_name: "シェイク"
+          description: "意図的にカメラを揺らす／振動を与える"
+          effect: "爆発や衝撃の臨場感を強調する"
+          en_example: "camera shake in the forest during an explosion"
+          
+        - id: 56
+          name: "Shake Slightly for Explosion Impact"
+          ja_name: "爆発シェイク"
+          description: "爆発の衝撃をシミュレートするために少し揺らす"
+          effect: "緊迫感を高め、リアリティを増す"
+          en_example: "shake slightly to simulate an explosion impact"
+          
+        - id: 57
+          name: "Shake Violently for Earthquake"
+          ja_name: "地震シェイク"
+          description: "地震の揺れをシミュレートするために激しくカメラを揺らす"
+          effect: "激しい緊張感やシーンの混乱を強調する"
+          en_example: "shake violently to simulate an earthquake"
+          
+        - id: 58
+          name: "Steadicam Shot"
+          ja_name: "ステディカム"
+          description: "滑らかに移動"
+          effect: "ワンカットや追従シーンに多用"
+          en_example: "steadicam shot smoothly following the character running down the hallway"
+          
+        - id: 59
+          name: "Drone Shot"
+          ja_name: "ドローンショット"
+          description: "上空から広い範囲を撮影"
+          effect: "鳥瞰・俯瞰を現代的に表現"
+          en_example: "drone shot rising from the rooftop to reveal the entire school grounds"
+          
+        - id: 60
+          name: "POV Shot"
+          ja_name: "POVショット"
+          description: "キャラの視点そのまま"
+          effect: "没入感を与える"
+          en_example: "POV shot walking through the hallway from the protagonist's perspective"
+          
+        - id: 61
+          name: "Over the Shoulder Shot"
+          ja_name: "オーバーショルダーショット"
+          description: "肩越しに対象を映す"
+          effect: "会話や心理的距離感の演出"
+          en_example: "over the shoulder shot capturing the other character's expression"
+          
+        - id: 62
+          name: "Tracking Shot"
+          ja_name: "トラッキングショット"
+          description: "キャラを追従して移動"
+          effect: "疾走感や同行感"
+          en_example: "tracking shot following the character running through the park"
+          
+        - id: 63
+          name: "Follow Subject From Behind"
+          ja_name: "背後追従"
+          description: "被写体の後ろから追跡"
+          effect: "キャラクターの視点に近い体験を提供"
+          en_example: "follow subject from behind"
+          
+        - id: 64
+          name: "Follow Subject From the Side"
+          ja_name: "横追従"
+          description: "被写体の横から追跡"
+          effect: "動きを強調する"
+          en_example: "follow subject from the side"
+          
+        - id: 65
+          name: "Track Character's Hand Movements"
+          ja_name: "手の動き追跡"
+          description: "キャラクターの手の動きを追いかける"
+          effect: "細かな動作やジェスチャーに焦点を当てる"
+          en_example: "track character's hand movements"
+          
+        - id: 66
+          name: "Pan Upwards to Follow Bird in Flight"
+          ja_name: "飛行物体追従"
+          description: "飛んでいる鳥を追うために上向きにパン"
+          effect: "鳥の動きを追跡して動的なシーンを作る"
+          en_example: "pan upwards to follow a bird in flight"
+          
+        - id: 67
+          name: "Track Car on Winding Road"
+          ja_name: "車追従"
+          description: "曲がりくねった道を走る車を追跡する"
+          effect: "車のスピード感や道路の複雑さを表現"
+          en_example: "track a car as it speeds along a winding road"
+          
+        - id: 68
+          name: "Follow Running Character From Behind"
+          ja_name: "走行追従"
+          description: "走っているキャラクターを背後から追いかける"
+          effect: "キャラクターのスピード感や緊張感を維持する"
+          en_example: "follow a running character from behind"
+          
+        - id: 69
+          name: "Pan Quickly Left for Fast-Moving Object"
+          ja_name: "高速左パン"
+          description: "速く動くオブジェクトを追うために急いで左にパンする"
+          effect: "動きのスピード感を強調"
+          en_example: "pan quickly left to follow a fast-moving object"
+          
+        - id: 70
+          name: "Move Sideways Through Crowd"
+          ja_name: "群衆横移動"
+          description: "群衆の中を横にカメラが移動"
+          effect: "密集した状況の緊張感や人々の動きを捉える"
+          en_example: "move sideways through a crowd"
+          
+        - id: 71
+          name: "Move Along Curved Path Right"
+          ja_name: "右曲線移動"
+          description: "右方向に曲線を描くように移動"
+          effect: "シーンの流れをより自然に見せる"
+          en_example: "move along curved path to the right"
+          
+        - id: 72
+          name: "Move Along Curved Path Left"
+          ja_name: "左曲線移動"
+          description: "左方向に曲線を描くように移動"
+          effect: "柔らかな動きで視点の変化を演出"
+          en_example: "move along curved path to the left"
+          
+        - id: 73
+          name: "Push Through Narrow Space"
+          ja_name: "狭所通過"
+          description: "狭い空間を通り抜けるようにカメラを進める"
+          effect: "クローズドスペースの緊張感を増加"
+          en_example: "push through narrow space"
+          
+        - id: 74
+          name: "Move Backward Through Narrow Hallway"
+          ja_name: "廊下後退"
+          description: "狭い廊下を後ろ向きにカメラが移動"
+          effect: "圧迫感を強調して緊張感を高める"
+          en_example: "move backward through a narrow hallway"
+          
+        - id: 75
+          name: "Move Backward Through Dense Forest"
+          ja_name: "森林後退"
+          description: "密集した森林の中を後ろ向きにカメラが移動"
+          effect: "森林の奥深さや迷路のような感覚を演出"
+          en_example: "move backward through a dense forest"
+          
+        - id: 76
+          name: "Move Up Through Tree Canopy"
+          ja_name: "樹冠上昇"
+          description: "木の枝の間を上に移動する"
+          effect: "森林の高さや密集感を表現"
+          en_example: "move up through a tree canopy"
+          
+        - id: 77
+          name: "Move Upward Through Tree Branches"
+          ja_name: "枝上昇"
+          description: "木の枝を通り抜けて上昇する"
+          effect: "木の高さや自然の複雑さを表現"
+          en_example: "move upward through the branches of a tree"
+          
+        - id: 78
+          name: "Glide Smoothly Across Lake Surface"
+          ja_name: "湖面グライド"
+          description: "湖の水面を滑らかに横切る"
+          effect: "平和で静かなシーンを演出"
+          en_example: "glide smoothly across a lake surface"
+          
+        - id: 79
+          name: "Glide Along River Surface"
+          ja_name: "川面グライド"
+          description: "川の表面に沿って滑るようにカメラを移動"
+          effect: "水の動きや風景の静けさを表現"
+          en_example: "glide along a river surface"
+          
+        - id: 80
+          name: "Glide Over Desert Landscape"
+          ja_name: "砂漠グライド"
+          description: "砂漠の風景を滑るようにカメラが移動"
+          effect: "広がる砂漠の静けさや壮大さを表現"
+          en_example: "glide over a desert landscape"
+          
+        - id: 81
+          name: "Glide Over Ocean at Sunset"
+          ja_name: "夕焼け海グライド"
+          description: "夕焼けの海の表面を滑るように移動"
+          effect: "美しい風景や穏やかな雰囲気を表現"
+          en_example: "glide over the surface of an ocean at sunset"
+          
+        - id: 82
+          name: "Tilt Up From Feet to Head"
+          ja_name: "足から頭へティルト"
+          description: "足元から頭までカメラを傾けて移動"
+          effect: "キャラクター全体の姿を強調し、その存在感を増す"
+          en_example: "tilt up from character's feet to their head"
+          
+        - id: 83
+          name: "Tilt Down to Reveal Hidden Detail"
+          ja_name: "隠れた詳細の開示"
+          description: "隠されたディテールを見せるために下向きに傾ける"
+          effect: "驚きや重要な情報を効果的に提示する"
+          en_example: "tilt down to reveal a hidden detail"
+          
+        - id: 84
+          name: "Tilt Down to Reveal Path Below"
+          ja_name: "下の道の開示"
+          description: "下にある道を見せるために下向きに傾ける"
+          effect: "先に進む道やシーンの方向性を示す"
+          en_example: "tilt down to reveal a path below"
+          
+        - id: 85
+          name: "Pan From Character's Face to Surrounding Area"
+          ja_name: "顔から周囲へパン"
+          description: "キャラクターの顔から周囲のエリアにパンする"
+          effect: "キャラクターの心情と周囲の関係を示す"
+          en_example: "pan from character's face to the surrounding area"
+          
+        - id: 86
+          name: "Slow Pan Across Horizon"
+          ja_name: "水平線パン"
+          description: "水平線をゆっくりとパンする"
+          effect: "広がりのある風景を映し出す"
+          en_example: "slow pan across the horizon"
+          
+        - id: 87
+          name: "Pan Across Battlefield"
+          ja_name: "戦場パン"
+          description: "戦場全体をパンして映し出す"
+          effect: "シーンの広がりや状況の複雑さを捉える"
+          en_example: "pan across a battlefield"
+          
+        - id: 88
+          name: "Pan Left Across City Skyline at Sunset"
+          ja_name: "夕焼けスカイラインパン"
+          description: "夕暮れの都市のスカイラインを左にパン"
+          effect: "都市の雰囲気や広がりを捉える"
+          en_example: "pan left across a city skyline at sunset"
+          
+        - id: 89
+          name: "Pan Slowly Across Historical Painting"
+          ja_name: "絵画パン"
+          description: "歴史的な絵画をゆっくりとパンして映し出す"
+          effect: "絵画のディテールや物語を強調"
+          en_example: "pan slowly across a historical painting"
+          
+        - id: 90
+          name: "Tilt Down Slowly Over Cityscape"
+          ja_name: "都市景観ティルト"
+          description: "都市景観をゆっくりと下に傾ける"
+          effect: "広大な都市の眺めを強調し、スケール感を示す"
+          en_example: "tilt down slowly over a cityscape"
+          
+        - id: 91
+          name: "Tilt Up Quickly to Reveal Sky"
+          ja_name: "空への素早いティルト"
+          description: "素早く上に傾けて空を映す"
+          effect: "急な視点の変化で驚きを与える"
+          en_example: "tilt up quickly to reveal sky"
+          
+        - id: 92
+          name: "Tilt Down Quickly to Reveal Ground"
+          ja_name: "地面への素早いティルト"
+          description: "素早く下に傾けて地面を映す"
+          effect: "シーンの急な変化で興味を引く"
+          en_example: "tilt down quickly to reveal ground"
+          
+        - id: 93
+          name: "Tilt and Zoom Simultaneously"
+          ja_name: "ティルト＋ズーム同時"
+          description: "傾けると同時にズームする"
+          effect: "視覚的に複雑な動きを作成し、視点の変化を増す"
+          en_example: "tilt and zoom simultaneously"
+          
+        - id: 94
+          name: "Follow Subject at Eye Level"
+          ja_name: "目線高さ追従"
+          description: "被写体の目線の高さでカメラが追従"
+          effect: "自然な視点で臨場感を演出"
+          en_example: "follow subject at eye level"
+          
+        - id: 95
+          name: "Jib Up and Tilt Down"
+          ja_name: "ジブアップ＋ティルトダウン"
+          description: "カメラを上昇させながら下に傾ける"
+          effect: "高所からの俯瞰的な視点を与える"
+          en_example: "jib up and tilt down"
+          
+        - id: 96
+          name: "Jib Down and Tilt Up"
+          ja_name: "ジブダウン＋ティルトアップ"
+          description: "カメラを下降させながら上に傾ける"
+          effect: "低所からの上向き視点でドラマチックな効果"
+          en_example: "jib down and tilt up"
+          
+        - id: 97
+          name: "Pull Back From Wide Shot to Medium Shot"
+          ja_name: "ワイドからミディアムへ"
+          description: "ワイドショットからミディアムショットに引く"
+          effect: "シーンの中心を特定の要素に移行する"
+          en_example: "pull back from wide shot to medium shot"
+          
+        - id: 98
+          name: "Pull Focus to Distant Figure"
+          ja_name: "遠い人物へのフォーカス"
+          description: "遠くの人物にフォーカスを合わせる"
+          effect: "遠景にある人物の重要性を強調"
+          en_example: "pull focus to distant figure"
+          
+        - id: 99
+          name: "Rack Focus Foreground to Background"
+          ja_name: "前景から背景へラックフォーカス"
+          description: "前景から背景にフォーカスを移動"
+          effect: "奥行き感を強調し、シーン内の異なる要素に注目"
+          en_example: "rack focus from foreground to background"
+          
+        - id: 100
+          name: "Rack Focus Background to Foreground"
+          ja_name: "背景から前景へラックフォーカス"
+          description: "背景から前景にフォーカスを移動"
+          effect: "特定のオブジェクトやキャラクターを際立たせる"
+          en_example: "rack focus from background to foreground"
+          
+        - id: 101
+          name: "Rack Focus Between Characters"
+          ja_name: "キャラクター間ラックフォーカス"
+          description: "別のキャラクターにフォーカスを切り替える"
+          effect: "シーン内でのキャラクター同士の関係性を強調"
+          en_example: "rack focus from one character to another"
+
+    - id: "dramatic_shots"
+      name: "ドラマ的な強調カット"
+      description: "映像に劇的な効果を加える、特殊なカメラアングルやショット"
+      prompts:
+        - id: 102
+          name: "Top Shot"
+          ja_name: "トップショット"
+          description: "真上から俯瞰する"
+          effect: "客観視点／運命的演出"
+          en_example: "top shot overhead of the classroom to show all students"
+          
+        - id: 103
+          name: "Hero Shot"
+          ja_name: "ヒーローショット"
+          description: "主役をカッコよく見せる"
+          effect: "存在感・迫力を強調"
+          en_example: "hero shot low angle up on the protagonist to emphasize presence"
+          
+        - id: 104
+          name: "Dutch Angle"
+          ja_name: "ダッチアングル"
+          description: "カメラを傾けて撮影"
+          effect: "不安感・緊張感を演出"
+          en_example: "dutch angle shot in the hallway confrontation to create unease"
+          
+        - id: 105
+          name: "Reveal Shot"
+          ja_name: "リビールショット"
+          description: "隠れていた対象を少しずつ見せる"
+          effect: "期待感や劇的な登場"
+          en_example: "reveal shot showing the hidden character"
+          
+        - id: 106
+          name: "Slow Motion"
+          ja_name: "スローモーション"
+          description: "動作を遅くして強調"
+          effect: "印象的・象徴的に魅せる"
+          en_example: "slow motion on the heroine turning around to make the moment striking"
+          
+        - id: 107
+          name: "Zoom In on Object of Interest"
+          ja_name: "注目オブジェクトズーム"
+          description: "注目するオブジェクトにズームイン"
+          effect: "オブジェクトの重要性を強調し、観客の注意を引く"
+          en_example: "zoom in on an object of interest"
+          
+        - id: 108
+          name: "Zoom In Quickly for Dramatic Effect"
+          ja_name: "劇的ズームイン"
+          description: "劇的な効果を狙って素早くズームイン"
+          effect: "緊張感やサスペンスを急激に高める"
+          en_example: "zoom in quickly for a dramatic effect"
+          
+        - id: 109
+          name: "Zoom Out From Character's Eye to Whole Scene"
+          ja_name: "目からシーン全体へズームアウト"
+          description: "キャラクターの目からシーン全体にズームアウト"
+          effect: "シーンの規模感を示し、キャラクターの視点を強調"
+          en_example: "zoom out from a character's eye to the whole scene"
+          
+        - id: 110
+          name: "Zoom Out Rapidly From Character to Crowd"
+          ja_name: "キャラクターから群衆へ急速ズームアウト"
+          description: "キャラクターから急速にズームアウトして群衆を見せる"
+          effect: "個人の存在感を薄め、群衆の広がりを強調"
+          en_example: "zoom out rapidly from a character to show a crowd"
+          
+        - id: 111
+          name: "Pan From Character's Face to Surrounding Area"
+          ja_name: "顔から周囲へパン"
+          description: "キャラクターの顔から周囲のエリアにパンする"
+          effect: "キャラクターの心情と周囲の関係を示す"
+          en_example: "pan from character's face to the surrounding area"
+          
+        - id: 112
+          name: "Tilt From Head to Object in Hand"
+          ja_name: "頭から手持ち物へティルト"
+          description: "キャラクターの頭から手に持っている物に向かって下に傾ける"
+          effect: "キャラクターの持ち物やその重要性を示す"
+          en_example: "tilt up from character's head to an object in their hand"
+          
+        - id: 113
+          name: "Tilt Up as Fireworks Explode"
+          ja_name: "花火ティルトアップ"
+          description: "花火が空で爆発する際に上向きに傾ける"
+          effect: "花火の壮大さやその広がりを強調"
+          en_example: "tilt up as fireworks explode in the sky"
+
+    - id: "time_lapse"
+      name: "タイムラプス系"
+      description: "時間経過やモーションを圧縮して表現するプロンプト"
+      prompts:
+        - id: 114
+          name: "Time-lapse"
+          ja_name: "タイムラプス"
+          description: "長時間の変化を短縮"
+          effect: "時間経過の象徴表現"
+          en_example: "time-lapse from the mountain peak showing clouds moving and day turning into night"
+          
+        - id: 115
+          name: "Motion Time-lapse"
+          ja_name: "モーションタイムラプス"
+          description: "タイムラプス中にカメラを動かす"
+          effect: "流動感と迫力を加える"
+          en_example: "motion time-lapse with a slow pan along the coastline"
+          
+        - id: 116
+          name: "Hyperlapse"
+          ja_name: "ハイパーラプス"
+          description: "タイムラプス＋自由に移動"
+          effect: "都市や自然の変化を動的に演出"
+          en_example: "hyperlapse walking down the main street with the tower anchored at the center"
+
+    - id: "advanced_complex"
+      name: "複合的・高度なカメラワーク"
+      description: "複数のカメラワークを組み合わせた、より高度な表現"
+      prompts:
+        - id: 117
+          name: "Rotational Shot"
+          ja_name: "ロトショット"
+          description: "カメラ自体が回転して視界を回す"
+          effect: "混乱・心理的高揚を表現"
+          en_example: "rotational shot on the rooftop spinning to express emotional chaos"
+          
+        - id: 118
+          name: "Follow Bouncing Ball"
+          ja_name: "ボール追従"
+          description: "地面を跳ねるボールを追跡する"
+          effect: "ボールの動きや運動感を捉える"
+          en_example: "follow a ball as it bounces across the ground"
+          
+        - id: 119
+          name: "Zoom In on Breaking News Headline"
+          ja_name: "ニュース見出しズーム"
+          description: "ニュースの見出しに素早くズームイン"
+          effect: "重要な情報や緊急性を強調"
+          en_example: "zoom in quickly on a breaking news headline"
+          
+        - id: 120
+          name: "Dolly Upward With Climbing Character"
+          ja_name: "登攀同行"
+          description: "登っているキャラクターと一緒に上昇する"
+          effect: "登攀の高さやキャラクターの努力感を強調"
+          en_example: "dolly upward alongside a climbing character"
+          
+        - id: 121
+          name: "Focus on Falling Leaves in Slow Motion"
+          ja_name: "落葉スローモーション"
+          description: "ゆっくりと落ちる葉にフォーカス"
+          effect: "細部に焦点を当て、シーンに詩的な雰囲気を与える"
+          en_example: "focus on falling leaves in slow motion"
+          
+        - id: 122
+          name: "Move Diagonally Across Crowded Street"
+          ja_name: "群衆斜め移動"
+          description: "混雑した通りを斜めに移動"
+          effect: "群衆の動きや都市のエネルギーを捉える"
+          en_example: "move diagonally across a crowded street"
+
+  usage_tips:
+    english_importance: "Sora 2やその他の動画生成AIを使用する場合、カメラワークの部分は英語プロンプトの記述も添えておくほうが安定する傾向があります。"
+    
+    combination_examples:
+      - name: "ドリーイン＋ティルトアップ"
+        description: "被写体に近づきながら視点を上に向ける"
+      - name: "パン＋ズームイン"
+        description: "視点を移しながら特定の要素を強調する"
+      - name: "オービット＋ドリーアウト"
+        description: "被写体を回転させながら引いていく"
+    
+    scene_recommendations:
+      - scene: "キャラクターの登場"
+        prompts: ["Hero Shot", "Dolly In"]
+        effect: "存在感と迫力を強調"
+      - scene: "会話シーン"
+        prompts: ["Arc Shot", "Over the Shoulder Shot"]
+        effect: "関係性と心理的距離を表現"
+      - scene: "アクションシーン"
+        prompts: ["Tracking Shot", "Handheld Shake"]
+        effect: "スピード感と臨場感"
+      - scene: "感動的な瞬間"
+        prompts: ["Slow Motion", "Zoom In"]
+        effect: "印象的で象徴的な表現"
+      - scene: "広大な風景"
+        prompts: ["Crane Up", "Slow Pan"]
+        effect: "スケール感と雄大さ"
+      - scene: "緊張感"
+        prompts: ["Dutch Angle", "Dolly Zoom"]
+        effect: "不安感と心理的圧迫感"
+      - scene: "クライマックス"
+        prompts: ["360° Shot", "Zoom In"]
+        effect: "迫力と決定的な瞬間"

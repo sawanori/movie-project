@@ -4,6 +4,19 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import { User, Session } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 
+// テストモード: E2Eテスト時に認証をバイパス
+const IS_TEST_MODE = process.env.NEXT_PUBLIC_E2E_TEST_MODE === "true";
+
+// テスト用モックユーザー
+const MOCK_USER: User = {
+  id: "test-user-id",
+  email: "test@example.com",
+  app_metadata: {},
+  user_metadata: {},
+  aud: "authenticated",
+  created_at: new Date().toISOString(),
+} as User;
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -15,11 +28,16 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(IS_TEST_MODE ? MOCK_USER : null);
   const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!IS_TEST_MODE);
 
   useEffect(() => {
+    // テストモードでは認証をスキップ
+    if (IS_TEST_MODE) {
+      return;
+    }
+
     const supabase = createClient();
 
     // 初期セッション取得

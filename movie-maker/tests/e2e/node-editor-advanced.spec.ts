@@ -128,12 +128,34 @@ test.describe('Node Editor - Provider-Specific Nodes', () => {
       const klingModeItem = page.locator('text=Kling モード');
       const klingElementsItem = page.locator('text=Kling 要素画像');
       const klingEndFrameItem = page.locator('text=Kling 終了フレーム');
+      const klingCameraControlItem = page.locator('text=カメラ6軸');
 
       // At least one Kling-specific node should be visible and enabled
       const hasKlingNodes = await klingModeItem.count() > 0 ||
                            await klingElementsItem.count() > 0 ||
-                           await klingEndFrameItem.count() > 0;
+                           await klingEndFrameItem.count() > 0 ||
+                           await klingCameraControlItem.count() > 0;
       expect(hasKlingNodes).toBe(true);
+    }
+  });
+
+  test('should show Kling Camera Control node in palette when Kling is selected', async ({ page }) => {
+    // Find the provider node and select Kling
+    const providerNode = page.locator('.react-flow__node').filter({ hasText: 'プロバイダー' });
+    await expect(providerNode.first()).toBeVisible();
+
+    const klingBtn = page.locator('button:has-text("Kling")');
+    if (await klingBtn.count() > 0) {
+      await klingBtn.first().click();
+      await page.waitForTimeout(500);
+
+      // Expand provider-specific category in palette
+      await page.locator('button:has-text("プロバイダー専用")').first().click();
+      await page.waitForTimeout(300);
+
+      // Check for Camera Control node (カメラ6軸)
+      const cameraControlItem = page.locator('text=カメラ6軸');
+      await expect(cameraControlItem.first()).toBeVisible({ timeout: 5000 });
     }
   });
 

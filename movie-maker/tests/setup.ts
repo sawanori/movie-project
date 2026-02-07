@@ -1,5 +1,5 @@
 import '@testing-library/dom'
-import { expect, afterEach } from 'vitest'
+import { afterEach, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
 
 // React Testing Library のクリーンアップ
