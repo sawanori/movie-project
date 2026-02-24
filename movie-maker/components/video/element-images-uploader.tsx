@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { X, Plus, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -31,23 +31,30 @@ export function ElementImagesUploader({
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
+  // valueの最新値をrefで追跡し、handleFileSelectのstale closureを防ぐ
+  const valueRef = useRef(value);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
   const isKling = videoProvider === "piapi_kling" || !videoProvider;
   const canAddMore = value.length < maxImages && !disabled && isKling;
 
+  // ボタンからの単一ファイル選択用: valueRefで最新値を参照してstale closureを回避
   const handleFileSelect = useCallback(async (file: File) => {
     if (!file.type.startsWith("image/")) return;
-    if (value.length >= maxImages) return;
+    if (valueRef.current.length >= maxImages) return;
 
     setUploading(true);
     try {
       const url = await onUpload(file);
-      onChange([...value, url]);
+      onChange([...valueRef.current, url]);
     } catch (error) {
       console.error("Upload failed:", error);
     } finally {
       setUploading(false);
     }
-  }, [value, onChange, onUpload, maxImages]);
+  }, [onChange, onUpload, maxImages]);
 
   const handleRemove = (index: number) => {
     onChange(value.filter((_, i) => i !== index));
@@ -79,13 +86,22 @@ export function ElementImagesUploader({
     const imageFiles = files.filter(file => file.type.startsWith("image/"));
 
     // 追加可能な枚数分だけ処理
-    const remainingSlots = maxImages - value.length;
+    const remainingSlots = maxImages - valueRef.current.length;
     const filesToUpload = imageFiles.slice(0, remainingSlots);
 
-    for (const file of filesToUpload) {
-      await handleFileSelect(file);
+    if (filesToUpload.length === 0) return;
+
+    setUploading(true);
+    try {
+      // 全ファイルを並列アップロードし、完了後にonChangeを1回だけ呼ぶことでstale closureを回避
+      const newUrls = await Promise.all(filesToUpload.map(file => onUpload(file)));
+      onChange([...valueRef.current, ...newUrls]);
+    } catch (error) {
+      console.error("Upload failed:", error);
+    } finally {
+      setUploading(false);
     }
-  }, [disabled, canAddMore, maxImages, value.length, handleFileSelect]);
+  }, [disabled, canAddMore, maxImages, onChange, onUpload]);
 
   // Kling以外は非表示
   if (!isKling) {
