@@ -30,7 +30,7 @@ from app.videos.schemas import (
     ConcatUpscaleResponse, ConcatUpscaleStatusResponse,
     # 60fps補間用
     InterpolateRequest, InterpolateResponse, InterpolateStatusResponse, InterpolateModel,
-    ProResConversionRequest,
+    ProResConversionRequest, ProResConversionResponse, ProResConversionStatusResponse,
     MotionType,
     # BGM AI生成用
     BGMGenerateRequest, BGMGenerateResponse, BGMStatusResponse,
@@ -724,6 +724,118 @@ async def get_concat_upscale_status(
     )
 
 
+# ===== 非同期ProRes変換エンドポイント =====
+
+
+@router.post("/prores/convert", response_model=ProResConversionResponse)
+async def start_prores_conversion(
+    background_tasks: BackgroundTasks,
+    user=Depends(get_current_user),
+    video_url: str = Body(..., description="変換元の動画URL"),
+    source_type: str = Body(..., description="ソースタイプ: 'storyboard' or 'concat'"),
+    source_id: str = Body(..., description="ソースID"),
+    deband_strength: float = Body(1.1, description="デバンド強度"),
+    deband_radius: int = Body(20, description="デバンド半径"),
+    apply_flat_look: bool = Body(True, description="フラットルック適用"),
+    contrast: float = Body(0.9, description="コントラスト"),
+    saturation: float = Body(0.85, description="彩度"),
+    brightness: float = Body(0.03, description="明るさ"),
+):
+    """
+    非同期ProRes変換を開始
+
+    動画をProRes 422 HQ (10bit)形式に変換するジョブを作成し、バックグラウンドで処理を開始する。
+    変換結果はステータスエンドポイントで確認できる。
+    """
+    if source_type == "storyboard":
+        storyboard_id = source_id
+        concat_id = None
+    elif source_type == "concat":
+        storyboard_id = None
+        concat_id = source_id
+    else:
+        raise HTTPException(status_code=400, detail="source_type は 'storyboard' または 'concat' を指定してください")
+
+    supabase = get_supabase()
+    insert_data = {
+        "user_id": user["id"],
+        "storyboard_id": storyboard_id,
+        "concat_id": concat_id,
+        "original_video_url": video_url,
+        "status": "pending",
+        "progress": 0,
+        "deband_strength": deband_strength,
+        "deband_radius": deband_radius,
+        "apply_flat_look": apply_flat_look,
+        "contrast": contrast,
+        "saturation": saturation,
+        "brightness": brightness,
+    }
+    result = supabase.table("prores_conversions").insert(insert_data).execute()
+    conversion = result.data[0]
+
+    from app.tasks.prores_processor import start_prores_processing
+    background_tasks.add_task(start_prores_processing, conversion["id"])
+
+    return ProResConversionResponse(
+        id=conversion["id"],
+        source_type=source_type,
+        source_id=source_id,
+        status="pending",
+        original_video_url=video_url,
+        progress=0,
+        created_at=conversion.get("created_at"),
+    )
+
+
+@router.get("/prores/{conversion_id}/status", response_model=ProResConversionStatusResponse)
+async def get_prores_conversion_status(
+    conversion_id: str,
+    user=Depends(get_current_user),
+):
+    """
+    非同期ProRes変換のステータスを取得
+
+    変換ジョブのID、ステータス、進捗率、変換済み動画URLを返す。
+    """
+    supabase = get_supabase()
+    try:
+        result = (
+            supabase.table("prores_conversions")
+            .select("*")
+            .eq("id", conversion_id)
+            .eq("user_id", user["id"])
+            .single()
+            .execute()
+        )
+        conversion = result.data
+    except Exception:
+        raise HTTPException(status_code=404, detail="変換ジョブが見つかりません")
+
+    if not conversion:
+        raise HTTPException(status_code=404, detail="変換ジョブが見つかりません")
+
+    status = conversion.get("status", "pending")
+    progress = conversion.get("progress", 0)
+    error_message = conversion.get("error_message", "不明なエラー")
+
+    messages = {
+        "pending": "ProRes変換を開始しています...",
+        "processing": f"ProRes変換中... ({progress}%)",
+        "completed": "ProRes変換が完了しました",
+        "failed": f"ProRes変換に失敗しました: {error_message}",
+    }
+    message = messages.get(status, f"処理中... ({status})")
+
+    return ProResConversionStatusResponse(
+        id=conversion["id"],
+        status=status,
+        progress=progress,
+        message=message,
+        prores_video_url=conversion.get("prores_video_url"),
+    )
+
+
 # ===== ProRes変換ダウンロード（デバンド + 10bit）=====
 
 @router.post("/download/prores")
@@ -765,7 +877,8 @@ async def download_as_prores(
     try:
         # 1. 動画をダウンロード
         logger.info(f"Downloading video: {video_url}")
-        async with aiohttp.ClientSession() as session:
+        download_timeout = aiohttp.ClientTimeout(total=120)  # 2分タイムアウト
+        async with aiohttp.ClientSession(timeout=download_timeout) as session:
             async with session.get(video_url) as resp:
                 if resp.status != 200:
                     raise HTTPException(status_code=400, detail="動画のダウンロードに失敗しました")
@@ -1996,9 +2109,12 @@ async def add_scene(
             storyboard_id,
             new_scene["scene_number"],
             video_provider,
-            None,  # custom_prompt: runway_promptはDB保存済み
+            None,  # custom_prompt
             video_mode,
             source_video_url,
+            None,  # kling_mode
+            None,  # image_tail_url
+            None,  # kling_duration
         )
         # usage count を1増加
         try:
@@ -2260,10 +2376,16 @@ async def regenerate_scene_video(
         image_tail_url = request.image_tail_url
         logger.info(f"[DEBUG] Using image_tail_url from request: {image_tail_url[:50]}...")
 
+    # Kling duration
+    kling_duration = None
+    if request and request.kling_duration:
+        kling_duration = request.kling_duration
+        logger.info(f"[DEBUG] Using kling_duration from request: {kling_duration}")
+
     # バックグラウンドで単一シーン再生成を開始
     from app.tasks import start_single_scene_regeneration
-    logger.info(f"[DEBUG] Calling start_single_scene_regeneration with custom_prompt={'Yes' if custom_prompt else 'No'}, video_mode={video_mode}, kling_mode={kling_mode}, image_tail_url={'Yes' if image_tail_url else 'No'}")
-    background_tasks.add_task(start_single_scene_regeneration, storyboard_id, scene_number, video_provider, custom_prompt, video_mode, None, kling_mode, image_tail_url)
+    logger.info(f"[DEBUG] Calling start_single_scene_regeneration with custom_prompt={'Yes' if custom_prompt else 'No'}, video_mode={video_mode}, kling_mode={kling_mode}, image_tail_url={'Yes' if image_tail_url else 'No'}, kling_duration={kling_duration}")
+    background_tasks.add_task(start_single_scene_regeneration, storyboard_id, scene_number, video_provider, custom_prompt, video_mode, None, kling_mode, image_tail_url, kling_duration)
 
     # usage count を1増加
     supabase.rpc("increment_video_count", {"user_id_param": user_id}).execute()
@@ -2441,6 +2563,9 @@ async def generate_storyboard_videos(
     if element_urls:
         logger.info(f"Using {len(element_urls)} element images for consistency")
 
+    # Kling duration（Klingプロバイダー使用時のみ）
+    kling_duration = request.kling_duration if request.kling_duration else None
+
     # バックグラウンドで4シーン並列生成を開始
     from app.tasks import start_storyboard_processing
     background_tasks.add_task(
@@ -2450,6 +2575,7 @@ async def generate_storyboard_videos(
         scene_video_modes,
         scene_end_frame_images,
         element_urls,
+        kling_duration,
     )
 
     # usage count を未完了シーン分のみ増加（リジューム時は完了済みシーンをカウントしない）
@@ -3554,6 +3680,7 @@ async def create_story_video(
         "end_frame_image_url": request.end_frame_image_url,
         # ★追加: Kling カメラコントロール（6軸スライダー）
         "kling_camera_control": request.kling_camera_control.model_dump() if request.kling_camera_control else None,
+        "kling_duration": request.kling_duration,
     }
 
     # Kling Elements用の画像URLリストを取得
@@ -4633,6 +4760,7 @@ async def generate_scene_image_endpoint(
             image_provider=request.image_provider.value,
             reference_images=reference_images_data,
             negative_prompt=request.negative_prompt,
+            image_look=request.image_look.value,
         )
         return GenerateSceneImageResponse(**result)
 
@@ -4796,6 +4924,8 @@ async def get_ad_creator_draft(
             trim_settings=draft.get("trim_settings") or {},
             transition=draft.get("transition", "none"),
             transition_duration=draft.get("transition_duration", 0.5),
+            target_duration=draft.get("target_duration"),
+            image_look=draft.get("image_look"),
             last_saved_at=draft.get("last_saved_at"),
             auto_saved=True,
         )
@@ -4845,6 +4975,8 @@ async def save_ad_creator_draft(
         "trim_settings": draft_data.get("trim_settings") or {},
         "transition": draft_data.get("transition", "none"),
         "transition_duration": draft_data.get("transition_duration", 0.5),
+        "target_duration": draft_data.get("target_duration"),
+        "image_look": draft_data.get("image_look"),
         "updated_at": now,
         "last_saved_at": now,
     }

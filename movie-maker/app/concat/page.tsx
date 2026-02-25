@@ -194,6 +194,8 @@ function ConcatPageContent() {
   const [trimSettings, setTrimSettings] = useState<Record<string, TrimSetting>>({});
   const [transition, setTransition] = useState<TransitionType>("none");
   const [transitionDuration, setTransitionDuration] = useState(0.5);
+  const [imageLook, setImageLook] = useState<string>("cinematic");
+  const imageLookRef = useRef<string>("cinematic");
   const [loading, setLoading] = useState(true);
   // 動画のアスペクト比キャッシュ（id -> aspectRatio）
   const [videoAspectRatios, setVideoAspectRatios] = useState<Record<string, AspectRatio>>({});
@@ -251,6 +253,11 @@ function ConcatPageContent() {
   // 1:1 アスペクト比ではシーン生成不可
   const canGenerateScene = selectedAspectRatio !== null && selectedAspectRatio !== "1:1";
 
+  // imageLookRef の同期
+  useEffect(() => {
+    imageLookRef.current = imageLook;
+  }, [imageLook]);
+
   // ドラフト自動保存フック
   const {
     saveStatus,
@@ -264,9 +271,7 @@ function ConcatPageContent() {
     checkDraftExists,
     fetchDraft,
   } = useAutoSaveAdCreatorDraft({
-    // TODO: 一時保存機能は読み込み速度の問題があるため一時的に無効化
-    // 改善後に再度有効化する
-    enabled: false, // !processing && concatStatus?.status !== "completed",
+    enabled: !processing && concatStatus?.status !== "completed",
     getAspectRatio: () => selectedAspectRatio,
     getAdMode: () => adMode,
     getAdScript: () => adScript,
@@ -317,6 +322,7 @@ function ConcatPageContent() {
     },
     getTransition: () => transition,
     getTransitionDuration: () => transitionDuration,
+    getImageLook: () => imageLookRef.current,
   });
 
   // シーン生成完了時のハンドラ
@@ -620,12 +626,7 @@ function ConcatPageContent() {
   };
 
   // ドラフト存在確認（軽量）→ モーダル表示
-  // TODO: 一時保存機能は読み込み速度の問題があるため一時的に無効化
   useEffect(() => {
-    // 一時保存機能無効化中はすぐにチェック完了としてUIを表示
-    setIsCheckingDraft(false);
-
-    /* 一時保存機能有効化時は以下を使用
     const checkDraft = async () => {
       if (user && !draftRestored) {
         const result = await checkDraftExists();
@@ -643,7 +644,6 @@ function ConcatPageContent() {
     } else if (!authLoading) {
       setIsCheckingDraft(false);
     }
-    */
   }, [user, authLoading]);
 
   // プロジェクト保存済みフラグ（二重保存防止）- useRefで管理
@@ -876,6 +876,11 @@ function ConcatPageContent() {
     // CM目標尺を復元
     if (draft.target_duration !== undefined && draft.target_duration !== null) {
       setTargetDuration(draft.target_duration);
+    }
+
+    // 画像ルック/テイストを復元（旧ドラフトはnull → "cinematic"にフォールバック）
+    if (draft.image_look) {
+      setImageLook(draft.image_look);
     }
 
     // カットを復元
@@ -1247,6 +1252,7 @@ function ConcatPageContent() {
   const [isConvertingProRes, setIsConvertingProRes] = useState(false);
   const [proResConversionPhase, setProResConversionPhase] = useState<'idle' | 'upscaling' | 'converting'>('idle');
   const [upscaleForProResProgress, setUpscaleForProResProgress] = useState(0);
+  const [proResConversionProgress, setProResConversionProgress] = useState(0);
   // 60fps補間用
   const [enable60fps, setEnable60fps] = useState(false);
   const [is60fpsProcessing, setIs60fpsProcessing] = useState(false);
@@ -1322,26 +1328,56 @@ function ConcatPageContent() {
       return;
     }
 
-    // For ProRes, convert on-the-fly and download
+    // For ProRes, start async conversion job and poll
     if (selectedResolution === 'prores') {
       setIsConvertingProRes(true);
+      setProResConversionProgress(0);
       try {
-        const blob = await videosApi.downloadAsProRes(downloadUrl);
-        const url = window.URL.createObjectURL(blob);
+        // Start async ProRes conversion
+        const job = await videosApi.startProResConversion({
+          video_url: downloadUrl,
+          source_type: 'concat',
+          source_id: concatJobId,
+        });
+
+        // Poll for completion (3s interval, max 200 attempts = 10 min)
+        let proresUrl: string | null = null;
+        const maxAttempts = 200;
+        let attempts = 0;
+
+        while (!proresUrl && attempts < maxAttempts) {
+          await new Promise(r => setTimeout(r, 3000));
+          attempts++;
+
+          const status = await videosApi.getProResConversionStatus(job.id);
+          setProResConversionProgress(status.progress || Math.min(attempts * 2, 95));
+
+          if (status.status === 'completed' && status.prores_video_url) {
+            proresUrl = status.prores_video_url;
+          } else if (status.status === 'failed') {
+            throw new Error(status.message || 'ProRes変換に失敗しました');
+          }
+        }
+
+        if (!proresUrl) {
+          throw new Error('ProRes変換がタイムアウトしました');
+        }
+
+        // Download the converted file
         const a = document.createElement("a");
-        a.href = url;
+        a.href = proresUrl;
         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, "");
         a.download = `ad_video_prores_${timestamp}.mov`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
         setShowDownloadModal(false);
       } catch (error) {
         console.error("ProRes conversion failed:", error);
         setUpscaleError(error instanceof Error ? error.message : "ProRes変換に失敗しました");
       } finally {
         setIsConvertingProRes(false);
+        setProResConversionProgress(0);
       }
       return;
     }
@@ -1381,19 +1417,47 @@ function ConcatPageContent() {
           throw new Error('アップスケールがタイムアウトしました');
         }
 
-        // Phase 2: ProRes conversion
+        // Phase 2: ProRes conversion (async job)
         setProResConversionPhase('converting');
+        setProResConversionProgress(0);
 
-        const blob = await videosApi.downloadAsProRes(upscaledUrl);
-        const url = window.URL.createObjectURL(blob);
+        const proResJob = await videosApi.startProResConversion({
+          video_url: upscaledUrl,
+          source_type: 'concat',
+          source_id: concatJobId,
+        });
+
+        // Poll for ProRes completion
+        let proresUrl: string | null = null;
+        const proResMaxAttempts = 200;
+        let proResAttempts = 0;
+
+        while (!proresUrl && proResAttempts < proResMaxAttempts) {
+          await new Promise(r => setTimeout(r, 3000));
+          proResAttempts++;
+
+          const proResStatus = await videosApi.getProResConversionStatus(proResJob.id);
+          setProResConversionProgress(proResStatus.progress || Math.min(proResAttempts * 2, 95));
+
+          if (proResStatus.status === 'completed' && proResStatus.prores_video_url) {
+            proresUrl = proResStatus.prores_video_url;
+          } else if (proResStatus.status === 'failed') {
+            throw new Error(proResStatus.message || 'ProRes変換に失敗しました');
+          }
+        }
+
+        if (!proresUrl) {
+          throw new Error('ProRes変換がタイムアウトしました');
+        }
+
+        // Download the converted file
         const a = document.createElement("a");
-        a.href = url;
+        a.href = proresUrl;
         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, "");
         a.download = `ad_video_prores_${targetResolution}_${timestamp}.mov`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
         setShowDownloadModal(false);
       } catch (error) {
         console.error("ProRes + Upscale failed:", error);
@@ -1556,7 +1620,7 @@ function ConcatPageContent() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => saveDraft()}
+              onClick={() => saveDraft(true)}
               disabled={processing || concatStatus?.status === "completed"}
               className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-600"
             >
@@ -2670,8 +2734,8 @@ function ConcatPageContent() {
                   </p>
                   <p className="mt-2 text-sm text-zinc-400">
                     {proResConversionPhase === 'upscaling' ? `ステップ 1/2: 高解像度化 (${upscaleForProResProgress}%)` :
-                     proResConversionPhase === 'converting' ? 'ステップ 2/2: ProRes変換中...' :
-                     selectedResolution === 'prores' ? 'デバンド処理を適用中（約30秒〜1分）' : '処理には1〜2分かかります'}
+                     proResConversionPhase === 'converting' ? `ステップ 2/2: ProRes変換中... (${proResConversionProgress}%)` :
+                     selectedResolution === 'prores' ? `ProRes変換中... (${proResConversionProgress}%)` : '処理には1〜2分かかります'}
                   </p>
                   {proResConversionPhase === 'upscaling' && (
                     <div className="mt-4 mx-auto w-48">
@@ -2679,6 +2743,16 @@ function ConcatPageContent() {
                         <div
                           className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300"
                           style={{ width: `${upscaleForProResProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {(isConvertingProRes || proResConversionPhase === 'converting') && (
+                    <div className="mt-4 mx-auto w-48">
+                      <div className="h-2 overflow-hidden rounded-full bg-zinc-700">
+                        <div
+                          className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
+                          style={{ width: `${proResConversionProgress}%` }}
                         />
                       </div>
                     </div>

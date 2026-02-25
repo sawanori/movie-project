@@ -54,6 +54,18 @@ class ImageProvider(str, Enum):
     BFL_FLUX2_PRO = "bfl_flux2_pro"  # BFL FLUX.2 Pro - 最高品質、公式API
 
 
+class ImageLook(str, Enum):
+    """画像のルック/テイスト"""
+    REALISTIC = "realistic"            # 実写・フォトリアル
+    CINEMATIC = "cinematic"            # シネマティック（現在のデフォルト）
+    ANIME = "anime"                    # アニメ
+    ILLUSTRATION = "illustration"      # デジタルイラスト
+    WATERCOLOR = "watercolor"          # 水彩画
+    THREE_D_RENDER = "3d_render"       # 3DCG
+    FLAT_DESIGN = "flat_design"        # フラットデザイン
+    OIL_PAINTING = "oil_painting"      # 油絵
+
+
 class ReferenceImagePurpose(str, Enum):
     """参照画像の用途"""
     CHARACTER = "character"    # キャラクター一貫性（同一人物を維持）
@@ -292,6 +304,10 @@ class StoryVideoCreate(BaseModel):
         default=None,
         description="Kling 6軸カメラコントロール（camera_workより優先）"
     )
+    kling_duration: Literal[5, 10] | None = Field(
+        default=None,
+        description="Kling AI動画のduration（秒）。5または10"
+    )
     # V2V用フィールド
     video_mode: Optional[str] = Field("i2v", description="動画生成モード: 'i2v' or 'v2v'")
     source_video_url: Optional[str] = Field(None, description="V2V参照動画URL")
@@ -303,6 +319,9 @@ class StoryVideoCreate(BaseModel):
         if self.element_images:
             if self.video_provider and self.video_provider != VideoProvider.PIAPI_KLING:
                 raise ValueError("Elements機能はKlingプロバイダーのみ対応しています")
+        if self.kling_duration is not None:
+            if self.video_provider and self.video_provider != VideoProvider.PIAPI_KLING:
+                raise ValueError("kling_duration はKlingプロバイダーのみ対応しています")
         return self
 
 
@@ -744,6 +763,10 @@ class StoryboardGenerateRequest(BaseModel):
         max_length=3,
         description="一貫性向上用の追加画像（ストーリーボード保存値を上書き）。Kling専用機能"
     )
+    kling_duration: Literal[5, 10] | None = Field(
+        default=None,
+        description="Kling AI動画のduration（秒）。5または10。Klingプロバイダー使用時のみ有効"
+    )
 
     @model_validator(mode='after')
     def validate_kling_only_features(self) -> Self:
@@ -761,6 +784,10 @@ class RegenerateVideoRequest(BaseModel):
     video_mode: VideoMode | None = Field(None, description="動画生成モード（i2v: 画像から生成, v2v: 直前の動画から継続）。未指定時はi2v")
     kling_mode: KlingMode | None = Field(None, description="Kling AIモード（std: 標準, pro: 高品質）。Klingプロバイダー使用時のみ有効")
     image_tail_url: str | None = Field(None, description="終了フレーム画像URL（Kling専用オプション）。指定時は開始画像→終了画像への遷移動画を生成")
+    kling_duration: Literal[5, 10] | None = Field(
+        default=None,
+        description="Kling AI動画のduration（秒）。5または10。Klingプロバイダー使用時のみ有効"
+    )
 
 
 class StoryboardConcatenateRequest(BaseModel):
@@ -1193,7 +1220,7 @@ class AdScriptGenerateRequest(BaseModel):
     description: str = Field(
         ...,
         min_length=10,
-        max_length=1000,
+        max_length=2000,
         description="広告の内容（どんな広告を作りたいか）"
     )
     target_duration: int | None = Field(
@@ -1447,6 +1474,11 @@ class AdCreatorDraftMetadata(BaseModel):
     trim_settings: dict = Field(default_factory=dict, description="トリム設定")
     transition: str = Field("none", description="トランジション効果")
     transition_duration: float = Field(0.5, description="トランジション時間（秒）")
+    target_duration: int | None = Field(default=None, description="CM全体の目標尺（秒）")
+    image_look: str | None = Field(
+        default=None,
+        description="画像生成のルック/テイスト"
+    )
     last_saved_at: Optional[str] = Field(None, description="最終保存時刻（ISO 8601）")
     auto_saved: bool = Field(False, description="自動保存フラグ")
 
@@ -1504,6 +1536,10 @@ class GenerateSceneImageRequest(BaseModel):
         default=None,
         max_length=1000,
         description="ネガティブプロンプト（BFL FLUX.2のみ対応）"
+    )
+    image_look: ImageLook = Field(
+        default=ImageLook.CINEMATIC,
+        description="画像のルック/テイスト（実写、アニメ等）"
     )
 
     @model_validator(mode='after')
