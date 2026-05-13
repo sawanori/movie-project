@@ -207,6 +207,10 @@ def get_video_provider(provider_name: Optional[str] = None) -> VideoProviderInte
         from app.external.hailuo_provider import HailuoProvider
         logger.info("Using Hailuo video provider")
         return HailuoProvider()
+    elif provider_name == "seedance":
+        from app.external.piapi_seedance_provider import PiAPISeedanceProvider
+        logger.info("Using PiAPI Seedance video provider")
+        return PiAPISeedanceProvider()
     else:
         from app.external.runway_provider import RunwayProvider
         logger.info("Using Runway video provider")

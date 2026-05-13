@@ -2,7 +2,7 @@ import type { Node, Edge } from '@xyflow/react';
 
 // ========== ビデオプロバイダー型（既存型との互換性維持） ==========
 
-export type VideoProvider = 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo';
+export type VideoProvider = 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance';
 
 // ========== ノードタイプ定義 ==========
 
@@ -423,6 +423,7 @@ export const PROVIDER_NODE_AVAILABILITY: Record<VideoProvider, NodeType[]> = {
   veo: [],
   domoai: [],
   hailuo: ['hailuoEndFrame'],
+  seedance: [],
 };
 
 // ========== ワークフロー管理型（Phase 4追加） ==========

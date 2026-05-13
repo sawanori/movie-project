@@ -100,6 +100,10 @@ export function getCameraSupportLevel(
       // DomoAIはAPIがカメラパラメータをサポートしないため全てプロンプト
       return 'prompt';
 
+    case 'seedance':
+      // Seedance はAPIレベルのカメラ制御なし。プロンプト追従のみ。
+      return 'prompt';
+
     case 'runway':
       // Runwayは文字列パススルーで全てネイティブ扱い
       return 'native';

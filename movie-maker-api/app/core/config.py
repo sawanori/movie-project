@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     PIAPI_KLING_VERSION: str = "2.6"
     PIAPI_KLING_MODE: str = "std"  # "std" or "pro"
 
+    # PiAPI Seedance Settings
+    PIAPI_SEEDANCE_TASK_TYPE: str = "seedance-2-preview-vip"  # or "seedance-2-preview"
+    PIAPI_SEEDANCE_RESOLUTION: str = "720p"  # "720p" or "1080p" (VIP tier)
+
     # OpenAI Image Generation (GPT Image 2)
     OPENAI_IMAGE_MODEL: str = "gpt-image-2"
 
@@ -57,7 +61,7 @@ class Settings(BaseSettings):
     HAILUO_PROMPT_OPTIMIZER: bool = False
 
     # Video Provider Settings
-    # "runway", "veo", "domoai", "piapi_kling", or "hailuo" - 動画生成に使用するプロバイダー
+    # "runway", "veo", "domoai", "piapi_kling", "hailuo", or "seedance" - 動画生成に使用するプロバイダー
     VIDEO_PROVIDER: str = "runway"
 
     # Topaz Video API (for 60fps frame interpolation)

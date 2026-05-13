@@ -194,7 +194,7 @@ export const videosApi = {
   // 日本語プロンプトを英語に翻訳（テンプレート適用）
   translateStoryPrompt: (data: {
     description_ja: string;
-    video_provider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo';
+    video_provider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance';
     subject_type?: 'person' | 'object' | 'animation';  // 被写体タイプ（人物/物体/アニメーション）
     camera_work?: string;  // カメラワーク（例: "slow zoom in", "pan left"）
     animation_category?: '2d' | '3d' | null;  // アニメーションカテゴリ（animation選択時）
@@ -215,7 +215,7 @@ export const videosApi = {
     image_url: string;
     story_text: string;
     aspect_ratio?: '9:16' | '16:9';  // アスペクト比（デフォルト: 9:16 縦長）
-    video_provider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo';  // 動画生成プロバイダー（デフォルト: runway）
+    video_provider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance';  // 動画生成プロバイダー（デフォルト: runway）
     bgm_track_id?: string;
     custom_bgm_url?: string;  // カスタムBGM（プリセットより優先）
     overlay?: {
@@ -550,7 +550,7 @@ export interface DraftMetadata {
   use_lut: boolean;
   lut_intensity: number;
   apply_trim: boolean;
-  video_provider: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo';
+  video_provider: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance';
   aspect_ratio: '9:16' | '16:9';
   selected_mood: string | null;
   custom_mood_text: string | null;
@@ -610,13 +610,13 @@ export interface Storyboard {
   total_duration: number | null;
   error_message: string | null;
   created_at: string;
-  video_provider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | null;
+  video_provider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance' | null;
   draft_metadata?: DraftMetadata | null;  // 編集中のUI状態（ドラフト保存用）
 }
 
 export const storyboardApi = {
   // ストーリーボードを生成（画像から4シーン構成を自動生成、プロバイダー別テンプレート適用）
-  create: (imageUrl: string, mood?: string, videoProvider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo', aspectRatio?: '9:16' | '16:9', elementImages?: { image_url: string }[]): Promise<Storyboard> =>
+  create: (imageUrl: string, mood?: string, videoProvider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance', aspectRatio?: '9:16' | '16:9', elementImages?: { image_url: string }[]): Promise<Storyboard> =>
     fetchWithAuth("/api/v1/videos/storyboard", {
       method: "POST",
       body: JSON.stringify({
@@ -665,7 +665,7 @@ export const storyboardApi = {
     custom_bgm_url?: string;
     film_grain?: 'none' | 'light' | 'medium' | 'heavy';
     use_lut?: boolean;
-    video_provider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo';
+    video_provider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance';
     scene_video_modes?: Record<number, 'i2v' | 'v2v'>;  // シーンごとのI2V/V2V設定
     scene_end_frame_images?: Record<number, string>;  // シーンごとの終了フレーム画像URL（Kling専用）
     element_images?: { image_url: string }[];  // 一貫性向上用の追加画像（Kling専用、最大3枚）
@@ -714,7 +714,7 @@ export const storyboardApi = {
 
   // 単一シーンの動画を再生成
   regenerateVideo: (storyboardId: string, sceneNumber: number, options?: {
-    video_provider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo';
+    video_provider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance';
     prompt?: string;
     video_mode?: 'i2v' | 'v2v';  // i2v: 画像から動画を生成, v2v: 直前の動画から継続
     kling_mode?: 'std' | 'pro';  // Kling AIモード（std: 標準, pro: 高品質）
@@ -965,7 +965,7 @@ export const storyboardApi = {
 // Config API
 export const configApi = {
   /** 現在の動画生成プロバイダーを取得 */
-  getVideoProvider: async (): Promise<'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo'> => {
+  getVideoProvider: async (): Promise<'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance'> => {
     const res = await fetchWithAuth("/api/v1/config/video-provider");
     return res.provider || 'runway';
   },

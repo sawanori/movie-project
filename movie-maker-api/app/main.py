@@ -56,6 +56,9 @@ async def health_check():
 
 @app.get("/api/v1/config/video-provider")
 async def get_video_provider():
-    """現在の動画生成プロバイダーを返す"""
+    """現在の動画生成プロバイダーを返す
+
+    有効値: "runway", "veo", "domoai", "piapi_kling", "hailuo", "seedance"
+    """
     provider = getattr(settings, 'VIDEO_PROVIDER', 'runway')
     return {"provider": provider}

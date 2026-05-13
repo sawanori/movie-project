@@ -21,6 +21,7 @@ const PROVIDER_SPECIFIC_NODES: Record<VideoProvider, NodeType[]> = {
   veo: [],
   domoai: [],
   hailuo: ['hailuoEndFrame'],
+  seedance: [],
 };
 
 /**

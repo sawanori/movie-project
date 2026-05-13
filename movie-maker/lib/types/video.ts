@@ -42,7 +42,7 @@ export function getAspectRatioValue(ratio: AspectRatio): number {
 }
 
 // 動画生成プロバイダーの型定義
-export type VideoProvider = 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo';
+export type VideoProvider = 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance';
 
 export interface VideoProviderOption {
   value: VideoProvider;
@@ -76,5 +76,10 @@ export const VIDEO_PROVIDERS: VideoProviderOption[] = [
     value: "hailuo",
     label: "HailuoAI",
     description: "MiniMax製・カメラワーク",
+  },
+  {
+    value: "seedance" as const,
+    label: "Seedance 2.0",
+    description: "ByteDance製・高品質I2V/T2V (PiAPI経由)",
   },
 ];

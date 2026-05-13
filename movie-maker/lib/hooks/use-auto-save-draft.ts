@@ -53,7 +53,7 @@ export interface UseAutoSaveDraftOptions {
   getUseLut: () => boolean;
   getLutIntensity: () => number;
   getApplyTrim: () => boolean;
-  getVideoProvider: () => 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo';
+  getVideoProvider: () => 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance';
   getAspectRatio: () => '9:16' | '16:9';
   getSelectedMood: () => string | null;
   getCustomMoodText: () => string | null;
