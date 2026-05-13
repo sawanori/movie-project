@@ -183,43 +183,10 @@ output_template: |
   {cinematography}, {subject} {action} in {scene}. {style}. {dialogue} {sfx} {ambience} {music} --neg {negative_prompt}
 ```
 
-### 4.4. OpenAI Sora 2
-
-- **概要:** 自然言語の深い理解力と物語性の表現に優れる。日本語の解釈能力が高い。
-- **参照元:** [6]
-
-```yaml
-platform: openai-sora
-version: '2.0'
-mode: [text-to-video]
-
-components:
-  scene: [string] # 物語の舞台設定
-  subject: [string] # 登場人物
-  action: [string] # 物語のプロットやキャラクターの感情の動きを含む
-  cinematography: [string]
-  style: [string]
-  audio:
-    dialogue:
-      - text: [string] # 日本語のセリフも自然に生成可能
-    sfx: [list]
-    ambience: [string]
-    music: [string]
-
-parameters:
-  aspect_ratio: [string]
-  duration: [integer] # 最大20秒程度
-  quality: [string]
-
-# 出力テンプレート: 物語を語るような自由な文章形式
-output_template: |
-  {subject} {action} in {scene}. The camera {cinematography}. The overall style is {style}.
-```
-
-### 4.5. Vidu AI
+### 4.4. Vidu AI
 
 - **概要:** キャラクターの一貫性維持と、複数要素の統合に特化。`@`構文による複数キャラ制御が強力。
-- **参照元:** [7]
+- **参照元:** [6]
 
 ```yaml
 platform: vidu-ai
@@ -449,9 +416,7 @@ placeholders:
 
 [5] RUNWAY Help Center. "Gen-4 Video Prompting Guide". https://help.runwayml.com/hc/en-us/articles/39789879462419-Gen-4-Video-Prompting-Guide
 
-[6] romptn Magazine. "Sora 2のプロンプト完全ガイド". https://romptn.com/article/54141
-
-[7] Qiita. "Vidu AIで動画生成｜効果的なプロンプトの書き方完全ガイド". https://qiita.com/GeneLab_999/items/313b9d1c8e5dd4039fd5
+[6] Qiita. "Vidu AIで動画生成｜効果的なプロンプトの書き方完全ガイド". https://qiita.com/GeneLab_999/items/313b9d1c8e5dd4039fd5
 
 [8] SHIFT AI. "動画生成AIプロンプト完全ガイド". https://ai-keiei.shift-ai.co.jp/video-ai-prompt/
 

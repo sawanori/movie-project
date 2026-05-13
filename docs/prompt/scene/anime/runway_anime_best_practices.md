@@ -1251,7 +1251,6 @@ Children jumping at the beach. Static camera, wide shot.
 | **Runway Gen-4.5** | キャラ一貫性、カメラワーク | 日本語対応が弱い |
 | **Vidu** | 高速生成 | キャラ一貫性が劣る |
 | **Kling** | 高品質 | 操作性が複雑 |
-| **Sora** | 高精度 | 利用制限が厳しい |
 
 ---
 
