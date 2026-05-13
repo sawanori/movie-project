@@ -216,7 +216,9 @@ class PiAPISeedanceProvider(VideoProviderInterface):
                 )
                 response.raise_for_status()
                 data = response.json()["data"]
-                status = data.get("status", "")
+                # PiAPI は lowercase で返すが、ドキュメント上 Title case 表記なので
+                # 両対応するため title-case に正規化して比較する
+                status = data.get("status", "").strip().title()
 
                 if status in ("Pending", "Staged"):
                     return VideoStatus(status=VideoGenerationStatus.PENDING, progress=0)

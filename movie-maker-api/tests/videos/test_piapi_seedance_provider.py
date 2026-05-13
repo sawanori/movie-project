@@ -108,6 +108,39 @@ async def test_check_status_completed(provider):
 
 
 # ---------------------------------------------------------------------------
+# 回帰防止: PiAPI の実 API は lowercase ステータスを返す
+# 実 E2E (T2-8) で発覚: 公式ドキュメントには Title case と書いてあるが
+# 実 API レスポンスは "pending"/"processing"/"completed"/"failed"。
+# 大文字小文字どちらでも動くように Title case 正規化を行う。
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw_status,expected", [
+    ("pending", VideoGenerationStatus.PENDING),
+    ("processing", VideoGenerationStatus.PROCESSING),
+    ("completed", VideoGenerationStatus.COMPLETED),
+    ("failed", VideoGenerationStatus.FAILED),
+    ("staged", VideoGenerationStatus.PENDING),
+])
+async def test_check_status_handles_lowercase_status(provider, raw_status, expected):
+    """PiAPI 実 API の lowercase ステータスでも正しくマップされること"""
+    payload = {"data": {"status": raw_status, "output": {"video": "https://mp4.example/out.mp4"}}}
+    if raw_status == "failed":
+        payload["data"]["error"] = {"message": "insufficient_credit"}
+    mock_response = _make_mock_response(payload)
+
+    mock_client = MagicMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    with patch("app.external.piapi_seedance_provider.httpx.AsyncClient", return_value=mock_client):
+        status = await provider.check_status("seed_lc")
+
+    assert status.status == expected, f"raw='{raw_status}' should map to {expected}"
+
+
+# ---------------------------------------------------------------------------
 # T2-6 テストケース 3: test_check_status_failed_credit
 # ---------------------------------------------------------------------------
 
