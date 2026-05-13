@@ -864,6 +864,43 @@ async def generate_image_from_text(
 
     logger = logging.getLogger(__name__)
 
+    # OpenAI GPT Image 2 プロバイダー
+    if image_provider == "openai_gpt_image2":
+        from app.external.openai_gpt_image2_provider import OpenAIGPTImage2Provider
+
+        # 1. 入力テキストを決定
+        if free_text_description:
+            prompt_ja = free_text_description
+        elif structured_input:
+            prompt_ja = _structured_input_to_text(structured_input)
+        else:
+            raise ValueError("プロンプトが指定されていません")
+
+        # 2. 日本語→英語翻訳
+        prompt_en = await _translate_text_to_english(prompt_ja)
+
+        # 3. GPT Image 2 で画像生成（R2 URL が返る）
+        provider = OpenAIGPTImage2Provider()
+        image_url = await provider.generate_image(
+            prompt=prompt_en,
+            aspect_ratio=aspect_ratio,
+        )
+
+        # 4. R2 key の抽出（URLからパス部分を逆算）
+        r2_key = image_url.split("/", 3)[-1] if "/" in image_url else f"generated/gpt2_{uuid4().hex}.png"
+
+        logger.info(f"GPT Image 2 generation completed: {image_url}")
+        return {
+            "image_url": image_url,
+            "generated_prompt_ja": prompt_ja,
+            "generated_prompt_en": prompt_en,
+            "r2_key": r2_key,
+            "width": None,
+            "height": None,
+            "aspect_ratio": aspect_ratio,
+            "image_provider": image_provider,
+        }
+
     # BFL FLUX.2 Pro プロバイダーの場合
     if image_provider == "bfl_flux2_pro":
         from app.external.bfl_flux2_provider import BFLFlux2Provider

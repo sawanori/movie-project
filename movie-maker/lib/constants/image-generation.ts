@@ -6,7 +6,7 @@
 // ===== 画像生成プロバイダー =====
 
 // 画像生成プロバイダー型
-export type ImageProvider = "nanobanana" | "bfl_flux2_pro";
+export type ImageProvider = "nanobanana" | "bfl_flux2_pro" | "openai_gpt_image2";
 
 // プロバイダー情報（機能制限を含む）
 export const IMAGE_PROVIDERS = [
@@ -27,6 +27,15 @@ export const IMAGE_PROVIDERS = [
     supportsStructuredInput: false,
     supportsReferenceImage: true,   // 複数参照画像対応
     maxReferenceImages: 8,  // 最大8枚
+  },
+  {
+    value: "openai_gpt_image2" as const,
+    label: "GPT Image 2 (OpenAI)",
+    maxLength: 32000,
+    description: "OpenAI 最新モデル・高解像度 (Phase 1 は text-to-image のみ)",
+    supportsStructuredInput: false,
+    supportsReferenceImage: false,
+    // maxReferenceImages: 1,  // Phase 3+ で /edits 実装時に有効化
   },
 ] as const;
 
@@ -52,7 +61,8 @@ export function getProviderMaxLength(provider: ImageProvider): number {
 
 // プロバイダーの最大参照画像数を取得
 export function getProviderMaxReferenceImages(provider: ImageProvider): number {
-  return getProviderInfo(provider).maxReferenceImages;
+  const info = getProviderInfo(provider);
+  return "maxReferenceImages" in info ? (info as { maxReferenceImages: number }).maxReferenceImages : 0;
 }
 
 // ===== 構造化入力オプション =====

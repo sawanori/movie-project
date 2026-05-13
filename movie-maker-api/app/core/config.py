@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     PIAPI_KLING_VERSION: str = "2.6"
     PIAPI_KLING_MODE: str = "std"  # "std" or "pro"
 
+    # OpenAI Image Generation (GPT Image 2)
+    OPENAI_IMAGE_MODEL: str = "gpt-image-2"
+
     # PiAPI Flux Settings (Image Generation)
     PIAPI_FLUX_MODEL: str = "Qubico/flux1-dev"  # or "Qubico/flux1-schnell"
 

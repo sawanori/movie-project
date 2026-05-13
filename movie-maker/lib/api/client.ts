@@ -1565,7 +1565,7 @@ export interface GenerateSceneImageRequest {
   dialogue?: string;          // カットのセリフ（オプション）
   description_ja?: string;    // カットの脚本（日本語）
   aspect_ratio?: '9:16' | '16:9';  // アスペクト比（デフォルト: 9:16）
-  image_provider?: 'nanobanana' | 'bfl_flux2_pro';  // 画像生成プロバイダー
+  image_provider?: 'nanobanana' | 'bfl_flux2_pro' | 'openai_gpt_image2';  // 画像生成プロバイダー
   reference_images?: ReferenceImage[];  // 参照画像（BFL FLUX.2用、最大8枚）
   negative_prompt?: string;   // ネガティブプロンプト（BFL FLUX.2のみ対応）
 }
