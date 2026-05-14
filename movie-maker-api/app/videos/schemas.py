@@ -52,6 +52,7 @@ class ImageProvider(str, Enum):
     """画像生成プロバイダー"""
     NANOBANANA = "nanobanana"      # Nano Banana (Gemini) - 高品質、長文対応
     BFL_FLUX2_PRO = "bfl_flux2_pro"  # BFL FLUX.2 Pro - 最高品質、公式API
+    OPENAI_GPT_IMAGE2 = "openai_gpt_image2"  # OpenAI GPT Image 2 - text-to-image のみ (Phase 1)
 
 
 class ImageLook(str, Enum):
@@ -88,6 +89,7 @@ class ReferenceImage(BaseModel):
 IMAGE_PROVIDER_LIMITS: dict[ImageProvider, int] = {
     ImageProvider.NANOBANANA: 50000,
     ImageProvider.BFL_FLUX2_PRO: 10000,  # FLUX.2は長文対応
+    ImageProvider.OPENAI_GPT_IMAGE2: 32000,  # GPT Image 2 (Design Doc §4.1)
 }
 
 # Flux用: アスペクト比→ピクセル変換
@@ -461,6 +463,53 @@ class TransitionType(str, Enum):
     SLIDEDOWN = "slidedown" # 下へスライド
     CIRCLEOPEN = "circleopen"   # 円形オープン
     CIRCLECLOSE = "circleclose" # 円形クローズ
+
+
+# ===== タイムライン編集用スキーマ =====
+
+class TimelineTransitionType(str, Enum):
+    """タイムライン編集用トランジション種類"""
+    NONE = "none"
+    CROSSFADE = "crossfade"
+    FADE_BLACK = "fade_black"
+    FADE_WHITE = "fade_white"
+    WIPE_LEFT = "wipe_left"
+
+
+class TransitionUpdate(BaseModel):
+    """シーン間トランジション更新リクエスト"""
+    transition_type: TimelineTransitionType = Field(
+        TimelineTransitionType.NONE,
+        description="トランジション種類"
+    )
+    transition_duration: float = Field(
+        0.5,
+        ge=0.1,
+        le=2.0,
+        description="トランジション時間（秒、0.1〜2.0）"
+    )
+
+
+class TimelineExportRequest(BaseModel):
+    """タイムラインエクスポートリクエスト"""
+    include_bgm: bool = Field(True, description="BGMを含めるか")
+    include_transitions: bool = Field(True, description="トランジションを含めるか")
+    output_format: str = Field("mp4", description="出力フォーマット（mp4, mov）")
+
+
+class TimelineExportResponse(BaseModel):
+    """タイムラインエクスポートレスポンス"""
+    storyboard_id: str
+    status: str
+    message: str
+    final_video_url: str | None = None
+
+
+class TransitionUpdateResponse(BaseModel):
+    """シーン間トランジション更新レスポンス"""
+    scene_id: str
+    transition_type: str
+    transition_duration: float
 
 
 class ConcatVideoRequest(BaseModel):
@@ -1799,6 +1848,14 @@ class GenerateImageFromTextRequest(BaseModel):
                     f"現在{len(self.reference_images)}枚指定されています。"
                 )
 
+        # GPT Image 2: Phase 1 は text-to-image のみ (/edits は Phase 3+)
+        if self.image_provider == ImageProvider.OPENAI_GPT_IMAGE2:
+            if self.reference_image_url or self.reference_images:
+                raise ValueError(
+                    "GPT Image 2 は現在 text-to-image のみ対応しています。"
+                    "参照画像を使う場合は Nano Banana または BFL FLUX.2 Pro を選択してください。"
+                )
+
         return self
 
 
@@ -1890,4 +1947,24 @@ class VideoUploadResponse(BaseModel):
     """動画アップロードレスポンス"""
     video_url: str = Field(..., description="アップロードされた動画のURL")
     thumbnail_url: Optional[str] = Field(None, description="サムネイルURL")
+    duration: float = Field(..., description="動画の長さ（秒）")
+
+
+# ===== T2V (Text-to-Video) スキーマ =====
+
+class T2VVideoCreate(BaseModel):
+    """T2V動画生成リクエスト"""
+    prompt: str = Field(..., min_length=1, description="動画生成プロンプト")
+    duration: int = Field(5, description="動画長さ（秒）")
+    aspect_ratio: str = Field("9:16", description="アスペクト比 ('9:16' or '16:9')")
+    video_provider: Optional[str] = Field(None, description="使用するプロバイダー名（オプション）")
+
+
+class T2VVideoResponse(BaseModel):
+    """T2V動画生成レスポンス"""
+    id: str = Field(..., description="動画生成ID")
+    status: str = Field(..., description="生成ステータス")
+    progress: int = Field(0, description="進捗 (0-100)")
+    video_url: Optional[str] = Field(None, description="完成した動画のURL")
+    created_at: str = Field(..., description="作成日時")
     duration: Optional[float] = Field(None, description="動画の長さ（秒）")
