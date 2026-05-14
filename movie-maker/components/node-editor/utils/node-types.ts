@@ -75,7 +75,7 @@ export const defaultEdgeOptions = {
 export const fitViewOptions = {
   padding: 0.2,
   maxZoom: 1.5,
-  minZoom: 0.5,
+  minZoom: 0.1,
 };
 
 /**

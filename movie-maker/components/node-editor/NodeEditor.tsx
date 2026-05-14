@@ -985,6 +985,8 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
           connectionLineStyle={connectionLineStyle}
           fitView
           fitViewOptions={fitViewOptions}
+          minZoom={0.1}
+          maxZoom={2}
           className="bg-[#212121]"
           selectionOnDrag
           selectNodesOnDrag
