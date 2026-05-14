@@ -1814,6 +1814,106 @@ class FFmpegService:
         logger.info(f"ProRes HD変換完了: {output_path}")
         return output_path
 
+    def _has_audio_track(self, video_path: str) -> bool:
+        """
+        動画ファイルに音声トラックが含まれるか確認 (ffprobe 使用)
+
+        Args:
+            video_path: 動画ファイルパス
+
+        Returns:
+            bool: 音声ストリームが 1 件以上あれば True。ffprobe 失敗時は安全側 (False) を返す
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v", "quiet",
+                    "-select_streams", "a:0",
+                    "-show_entries", "stream=codec_type",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    video_path,
+                ],
+                capture_output=True,
+                text=True,
+            )
+            return "audio" in result.stdout
+        except Exception as e:
+            logger.warning(f"ffprobe 音声トラック確認に失敗 (安全側: False を返す): {e}")
+            return False
+
+    async def mix_audio_to_video(
+        self,
+        video_path: str,
+        audio_path: str,
+        output_path: str,
+    ) -> str:
+        """
+        動画にセリフ音声を被せる
+
+        元動画に音声トラックがある場合は amix フィルターで合成 (overlay) する。
+        音声トラックがない場合は音声トラックを追加するのみ (replace)。
+        どちらも -shortest で動画長でカットする。
+
+        Args:
+            video_path: 入力動画ファイルパス
+            audio_path: 入力音声ファイルパス (TTS 出力)
+            output_path: 出力動画ファイルパス
+
+        Returns:
+            str: output_path
+
+        Raises:
+            FFmpegError: ffmpeg 処理に失敗した場合
+        """
+        has_audio = self._has_audio_track(video_path)
+
+        if has_audio:
+            # 元動画に音声トラックあり: amix フィルターでオーバーレイ合成
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-i", audio_path,
+                "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first[aout]",
+                "-map", "0:v",
+                "-map", "[aout]",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-shortest",
+                output_path,
+            ]
+            logger.info(f"mix_audio_to_video: amix モード (元音声あり) → {output_path}")
+        else:
+            # 元動画に音声トラックなし: 音声トラックを追加するのみ
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-i", audio_path,
+                "-map", "0:v",
+                "-map", "1:a",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-shortest",
+                output_path,
+            ]
+            logger.info(f"mix_audio_to_video: add-audio モード (元音声なし) → {output_path}")
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            error_msg = stderr.decode() if stderr else "不明なエラー"
+            logger.error(f"mix_audio_to_video FFmpegエラー: {error_msg}")
+            raise FFmpegError(f"音声ミックスに失敗: {error_msg}")
+
+        logger.info(f"mix_audio_to_video 完了: {output_path}")
+        return output_path
+
 
 # シングルトンインスタンス
 ffmpeg_service = FFmpegService()

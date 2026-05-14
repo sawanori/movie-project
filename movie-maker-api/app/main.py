@@ -17,6 +17,7 @@ from app.webhooks.polar import router as webhooks_router
 from app.webhooks.suno import router as suno_webhooks_router
 from app.library.router import router as library_router
 from app.workflows.router import router as workflows_router
+from app.dialogue.router import router as dialogue_router
 
 app = FastAPI(
     title="Movie Maker API",
@@ -47,6 +48,7 @@ app.include_router(library_router, prefix="/api/v1")
 app.include_router(workflows_router, prefix="/api/v1")
 app.include_router(webhooks_router, prefix="/api/v1")
 app.include_router(suno_webhooks_router, prefix="/api/v1")
+app.include_router(dialogue_router, prefix="/api/v1")
 
 
 @app.get("/health")

@@ -17,6 +17,7 @@ from app.tasks.storyboard_processor import (
 from app.tasks.upscale_processor import process_upscale, start_upscale_processing
 from app.tasks.interpolation_processor import process_interpolation, start_interpolation_processing
 from app.tasks.topaz_upscale_processor import process_topaz_upscale, start_topaz_upscale_processing
+from app.tasks.dialogue_processor import process_dialogue_generation, start_dialogue_processing
 
 __all__ = [
     "process_video_generation",
@@ -39,4 +40,6 @@ __all__ = [
     "start_interpolation_processing",
     "process_topaz_upscale",
     "start_topaz_upscale_processing",
+    "process_dialogue_generation",
+    "start_dialogue_processing",
 ]
