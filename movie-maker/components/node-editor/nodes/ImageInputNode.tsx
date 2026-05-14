@@ -163,16 +163,21 @@ export function ImageInputNode({ data, selected, id }: ImageInputNodeProps) {
     disabled: isUploading,
   });
 
-  const handleUrlSubmit = useCallback(() => {
-    if (urlInput.trim()) {
+  // URL 入力を即時反映する (「適用」ボタン廃止に伴い)。
+  // 空文字なら imageUrl をクリア、それ以外なら即座にノードデータへ反映。
+  const handleUrlChange = useCallback(
+    (value: string) => {
+      setUrlInput(value);
+      const trimmed = value.trim();
       updateNodeData({
-        imageUrl: urlInput.trim(),
-        imagePreview: urlInput.trim(),
-        isValid: true,
+        imageUrl: trimmed || null,
+        imagePreview: trimmed || null,
+        isValid: !!trimmed,
         errorMessage: undefined,
       });
-    }
-  }, [urlInput, updateNodeData]);
+    },
+    [updateNodeData]
+  );
 
   const handleClear = useCallback(() => {
     setUrlInput('');
@@ -276,14 +281,11 @@ export function ImageInputNode({ data, selected, id }: ImageInputNodeProps) {
         <div className="space-y-2 mb-3">
           <input
             type="text"
-            placeholder="画像URLを入力"
+            placeholder="画像URLを入力 (入力即反映)"
             value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
+            onChange={(e) => handleUrlChange(e.target.value)}
             className={nodeInputClassName}
           />
-          <button onClick={handleUrlSubmit} className={nodeButtonClassName}>
-            適用
-          </button>
         </div>
       )}
 
