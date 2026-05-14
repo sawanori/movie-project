@@ -40,6 +40,7 @@ class VideoProvider(str, Enum):
     DOMOAI = "domoai"      # DomoAI Enterprise（アニメスタイル対応）
     PIAPI_KLING = "piapi_kling"  # Kling AI via PiAPI（高品質・5秒）
     HAILUO = "hailuo"      # HailuoAI (MiniMax)（カメラワーク・6秒）
+    SEEDANCE = "seedance"  # ByteDance Seedance 2.0 via PiAPI（5/10/15秒、480p/720p/1080p）
 
 
 class VideoMode(str, Enum):
