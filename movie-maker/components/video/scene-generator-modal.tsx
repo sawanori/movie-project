@@ -362,7 +362,11 @@ export function SceneGeneratorModal({
       poll();
       pollingIntervalRef.current = setInterval(poll, 3000);
 
-      // タイムアウト（5分）
+      // タイムアウト（15分）
+      // バックエンドの polling は最大 10 分 (60 attempts × 10s 間隔) なので、
+      // フロントは余裕を持って 15 分に設定。Seedance / Veo / Hailuo はピーク帯に
+      // 5 分以上かかることがあり、旧 5 分設定だとバックエンドが成功する前に
+      // フロントが諦めて「タイムアウト」alert を出していた。
       timeoutRef.current = setTimeout(() => {
         if (pollingIntervalRef.current) {
           clearInterval(pollingIntervalRef.current);
@@ -370,7 +374,7 @@ export function SceneGeneratorModal({
         }
         alert("生成がタイムアウトしました。もう一度お試しください。");
         setGenerating(false);
-      }, 5 * 60 * 1000);
+      }, 15 * 60 * 1000);
     },
     [onVideoGenerated, resetModal, onClose]
   );
