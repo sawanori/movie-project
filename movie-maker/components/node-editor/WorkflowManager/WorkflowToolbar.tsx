@@ -1,6 +1,6 @@
 'use client';
 
-import { Save, FolderOpen, FilePlus, Cloud, HardDrive } from 'lucide-react';
+import { Save, FolderOpen, FilePlus, Cloud, HardDrive, CopyPlus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface WorkflowToolbarProps {
@@ -8,11 +8,13 @@ interface WorkflowToolbarProps {
   isUnsaved: boolean;
   isCloudSynced: boolean;
   saveError: string | null;
+  selectedNodeCount: number;
   onSave: () => void;
   onSaveAs: () => void;
   onOpen: () => void;
   onNew: () => void;
   onClearError: () => void;
+  onDuplicate: () => void;
 }
 
 export function WorkflowToolbar({
@@ -20,11 +22,13 @@ export function WorkflowToolbar({
   isUnsaved,
   isCloudSynced,
   saveError,
+  selectedNodeCount,
   onSave,
   onSaveAs,
   onOpen,
   onNew,
   onClearError,
+  onDuplicate,
 }: WorkflowToolbarProps) {
   return (
     <div className="flex items-center gap-2 px-3 py-2 bg-[#1a1a1a] border-b border-[#404040]">
@@ -45,6 +49,11 @@ export function WorkflowToolbar({
             <HardDrive className="w-4 h-4 text-gray-500 shrink-0" />
           </span>
         )}
+        {selectedNodeCount > 0 && (
+          <span className="text-xs text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-full shrink-0">
+            {selectedNodeCount}個選択中
+          </span>
+        )}
       </div>
 
       {/* エラー表示 */}
@@ -59,6 +68,19 @@ export function WorkflowToolbar({
 
       {/* アクションボタン */}
       <div className="flex items-center gap-1 shrink-0">
+        <button
+          onClick={onDuplicate}
+          disabled={selectedNodeCount === 0}
+          className={cn(
+            'p-2 rounded-lg transition-colors',
+            selectedNodeCount > 0
+              ? 'text-blue-400 hover:bg-blue-400/10 hover:text-blue-300'
+              : 'text-gray-600 cursor-not-allowed'
+          )}
+          title="複製 (Cmd+D / Ctrl+D)"
+        >
+          <CopyPlus className="w-4 h-4" />
+        </button>
         <button
           onClick={onNew}
           className="p-2 rounded-lg hover:bg-[#2a2a2a] text-gray-400 hover:text-white transition-colors"

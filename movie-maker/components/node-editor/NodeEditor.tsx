@@ -129,6 +129,48 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
     setEdges((eds) => [...eds, ...newEdges]);
   }, [setNodes, setEdges]);
 
+  // 一発複製機能 (Cmd+D / Ctrl+D)
+  // clipboard を経由せず、選択中ノード + 内部エッジを即オフセット複製する。
+  const handleDuplicate = useCallback(() => {
+    const selectedNodes = getNodes().filter((n) => n.selected) as WorkflowNode[];
+    if (selectedNodes.length === 0) return;
+
+    const selectedNodeIds = new Set(selectedNodes.map((n) => n.id));
+    const selectedEdges = getEdges().filter(
+      (edge) => selectedNodeIds.has(edge.source) && selectedNodeIds.has(edge.target)
+    );
+
+    const now = Date.now();
+    const idMap = new Map<string, string>();
+    const newNodes = selectedNodes.map((node, index) => {
+      const newId = `${node.type}-${now}-${index}`;
+      idMap.set(node.id, newId);
+      return {
+        ...node,
+        id: newId,
+        position: { x: node.position.x + 50, y: node.position.y + 50 },
+        selected: true,
+        data: { ...node.data },
+      };
+    });
+    const newEdges = selectedEdges.map((edge, index) => ({
+      ...edge,
+      id: `e-${now}-${index}`,
+      source: idMap.get(edge.source) || edge.source,
+      target: idMap.get(edge.target) || edge.target,
+      selected: true,
+    }));
+
+    setNodes((nds) => [
+      ...nds.map((n) => ({ ...n, selected: false })),
+      ...newNodes,
+    ]);
+    setEdges((eds) => [
+      ...eds.map((e) => ({ ...e, selected: false })),
+      ...newEdges,
+    ]);
+  }, [getNodes, getEdges, setNodes, setEdges]);
+
   // キーボードショートカット
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -144,6 +186,13 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
         if (activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA') return;
         e.preventDefault();
         handlePaste();
+      }
+      // Ctrl+D / Cmd+D で複製 (1ステップ)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+        const activeElement = document.activeElement;
+        if (activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA') return;
+        e.preventDefault();  // ブラウザのブックマーク登録を抑止
+        handleDuplicate();
       }
       // Ctrl+X / Cmd+X で選択中のノード・エッジを削除
       if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
@@ -161,7 +210,7 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleCopy, handlePaste]);
+  }, [handleCopy, handlePaste, handleDuplicate]);
 
   // ワークフローマネージャー（クラウド機能付き）
   const {
@@ -910,6 +959,8 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
         onOpen={() => setIsOpenModalOpen(true)}
         onNew={handleReset}
         onClearError={clearSaveError}
+        selectedNodeCount={nodes.filter((n) => n.selected).length}
+        onDuplicate={handleDuplicate}
       />
 
       <div className="flex flex-1 overflow-hidden">
