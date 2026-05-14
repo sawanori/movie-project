@@ -19,3 +19,6 @@ export { BGMNode } from './BGMNode';
 export { FilmGrainNode } from './FilmGrainNode';
 export { LUTNode } from './LUTNode';
 export { OverlayNode } from './OverlayNode';
+
+// Phase 4: Dialogue ノード (Pipeline 型)
+export { DialogueNode } from './DialogueNode';

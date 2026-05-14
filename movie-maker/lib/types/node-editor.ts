@@ -26,7 +26,8 @@ export type NodeType =
   | 'bgm'
   | 'filmGrain'
   | 'lut'
-  | 'overlay';
+  | 'overlay'
+  | 'dialogue';
 
 // ========== サブジェクトタイプ ==========
 
@@ -162,6 +163,42 @@ export interface OverlayNodeData extends BaseNodeData {
   color: string;
 }
 
+// ========== Phase 4: Dialogue ノードデータ (Pipeline 型) ==========
+
+export interface DialogueNodeData extends BaseNodeData {
+  type: 'dialogue';
+  // 入力設定
+  text: string;
+  voiceId: string | null;
+  language: 'ja';      // 固定
+  speed: number;       // デフォルト 1.0
+  // 実行状態
+  status: 'idle' | 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;    // 0-100 (UI 表示用、ポーリング回数ベース)
+  generationId: string | null;
+  // 出力
+  outputVideoUrl: string | null;
+}
+
+// ========== B2 解決: 動画出力共通インターフェース ==========
+
+/**
+ * 動画出力を持つノードの共通インターフェース。
+ * GenerateNodeData (videoUrl) と DialogueNodeData (outputVideoUrl) の両方に対応する。
+ */
+export interface HasVideoOutput {
+  videoUrl?: string | null;
+  outputVideoUrl?: string | null;
+}
+
+/**
+ * ノードデータから動画 URL を取得するヘルパー関数。
+ */
+export function getNodeVideoOutput(data: unknown): string | null {
+  const d = data as HasVideoOutput;
+  return d?.outputVideoUrl ?? d?.videoUrl ?? null;
+}
+
 // ========== Union Type ==========
 
 export type WorkflowNodeData =
@@ -180,7 +217,8 @@ export type WorkflowNodeData =
   | BGMNodeData
   | FilmGrainNodeData
   | LUTNodeData
-  | OverlayNodeData;
+  | OverlayNodeData
+  | DialogueNodeData;
 
 // ========== ワークフローノード・エッジ型 ==========
 
@@ -342,6 +380,20 @@ export function createDefaultNodeData(type: NodeType): WorkflowNodeData {
         font: 'sans-serif',
         color: '#ffffff',
       };
+    case 'dialogue':
+      return {
+        type: 'dialogue',
+        isValid: false,
+        errorMessage: undefined,
+        text: '',
+        voiceId: null,
+        language: 'ja',
+        speed: 1.0,
+        status: 'idle',
+        progress: 0,
+        generationId: null,
+        outputVideoUrl: null,
+      };
     default:
       throw new Error(`Unknown node type: ${type}`);
   }
@@ -383,6 +435,9 @@ export const HANDLE_IDS = {
   FILM_GRAIN_OUTPUT: 'film_grain',
   LUT_OUTPUT: 'lut',
   OVERLAY_OUTPUT: 'overlay',
+  // Phase 4: Dialogue (Pipeline 型)
+  DIALOGUE_VIDEO_INPUT: 'dialogue_video_input',
+  DIALOGUE_VIDEO_OUTPUT: 'dialogue_video_output',
 } as const;
 
 // ========== ノードカテゴリ定義 ==========
@@ -406,7 +461,7 @@ export const NODE_CATEGORIES = {
   'post-processing': {
     label: '後処理',
     description: 'BGM・フィルター等',
-    nodes: ['bgm', 'filmGrain', 'lut', 'overlay'] as NodeType[],
+    nodes: ['bgm', 'filmGrain', 'lut', 'overlay', 'dialogue'] as NodeType[],
   },
   output: {
     label: '出力',

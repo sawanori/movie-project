@@ -17,6 +17,8 @@ import { BGMNode } from '../nodes/BGMNode';
 import { FilmGrainNode } from '../nodes/FilmGrainNode';
 import { LUTNode } from '../nodes/LUTNode';
 import { OverlayNode } from '../nodes/OverlayNode';
+// Phase 4
+import { DialogueNode } from '../nodes/DialogueNode';
 
 /**
  * ノードタイプ登録
@@ -41,6 +43,8 @@ export const nodeTypes: NodeTypes = {
   filmGrain: FilmGrainNode,
   lut: LUTNode,
   overlay: OverlayNode,
+  // Phase 4: Dialogue ノード
+  dialogue: DialogueNode,
 };
 
 /**

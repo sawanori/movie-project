@@ -1895,3 +1895,78 @@ export const workflowsApi = {
     }),
 };
 
+// ===== Text-to-Speech (TTS) API =====
+
+export interface TTSCreateRequest {
+  text: string;
+  voice_id: string;
+  language?: string;
+  speed?: number;
+}
+
+export interface TTSCreateResponse {
+  id: string;
+  status: string;
+  audio_url?: string;
+  duration_seconds?: number;
+  created_at: string;
+}
+
+export interface TTSStatusResponse {
+  id: string;
+  status: string;
+  audio_url?: string;
+  duration_seconds?: number;
+}
+
+export interface VoiceInfo {
+  voice_id: string;
+  name: string;
+  language?: string;
+  preview_url?: string;
+}
+
+export const ttsApi = {
+  generate: (data: TTSCreateRequest): Promise<TTSCreateResponse> =>
+    fetchWithAuth('/api/v1/tts', { method: 'POST', body: JSON.stringify(data) }),
+
+  getStatus: (id: string): Promise<TTSStatusResponse> =>
+    fetchWithAuth(`/api/v1/tts/${id}/status`),
+
+  listVoices: (lang?: string): Promise<VoiceInfo[]> =>
+    fetchWithAuth(`/api/v1/tts/voices${lang ? `?lang=${lang}` : ''}`),
+};
+
+// ===== Dialogue (TTS + ffmpeg ミックス) API =====
+
+type DialogueCreatePayload = {
+  video_url: string;
+  text: string;
+  voice_id: string;
+  speed?: number;
+};
+
+type DialogueCreateResult = {
+  id: string;
+  status: string;
+  created_at: string;
+};
+
+type DialogueStatusResult = {
+  id: string;
+  status: string;
+  output_video_url: string | null;
+  error_message: string | null;
+};
+
+export const dialogueApi = {
+  create: (payload: DialogueCreatePayload): Promise<DialogueCreateResult> =>
+    fetchWithAuth('/api/v1/dialogue', {
+      method: 'POST',
+      body: JSON.stringify({ ...payload, language: 'ja' }),
+    }),
+
+  getStatus: (generationId: string): Promise<DialogueStatusResult> =>
+    fetchWithAuth(`/api/v1/dialogue/${generationId}/status`),
+};
+

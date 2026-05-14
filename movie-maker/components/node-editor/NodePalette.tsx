@@ -13,6 +13,7 @@ import {
   Sliders,
   Palette,
   Layers,
+  Mic,
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
@@ -147,6 +148,13 @@ const NODE_ITEMS: NodePaletteItem[] = [
     icon: 'type',
     category: 'post-processing',
   },
+  {
+    type: 'dialogue',
+    label: 'セリフ (TTS)',
+    description: 'テキストから音声を生成して被せる',
+    icon: 'mic',
+    category: 'post-processing',
+  },
   // 出力
   {
     type: 'generate',
@@ -200,6 +208,8 @@ function getIcon(iconName: string, className?: string) {
       return <Palette className={iconClass} />;
     case 'layers':
       return <Layers className={iconClass} />;
+    case 'mic':
+      return <Mic className={iconClass} />;
     default:
       return <Settings className={iconClass} />;
   }

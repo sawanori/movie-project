@@ -37,9 +37,14 @@ import type {
   VideoProvider,
   ProviderNodeData,
   GenerateNodeData,
+  DialogueNodeData,
 } from '@/lib/types/node-editor';
-import { createDefaultNodeData as createData } from '@/lib/types/node-editor';
-import { videosApi } from '@/lib/api/client';
+import { createDefaultNodeData as createData, getNodeVideoOutput } from '@/lib/types/node-editor';
+import { videosApi, dialogueApi } from '@/lib/api/client';
+
+// Dialogue ポーリング設定 (5 秒 × 180 回 = 最大 15 分)
+const DIALOGUE_MAX_POLLING_ATTEMPTS = 180;
+const DIALOGUE_POLLING_INTERVAL_MS = 5000;
 
 interface NodeEditorProps {
   onVideoGenerated?: (videoUrl: string) => void;
@@ -418,14 +423,127 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
       }
     };
 
+    // Dialogue ノード実行ハンドラ (B4: 既存 useEffect 内に追加して edges を stale にしない)
+    const handleStartDialogue = async (e: Event) => {
+      const { nodeId } = (e as CustomEvent<{ nodeId: string }>).detail;
+
+      const dispatchUpdate = (updates: Partial<DialogueNodeData>) => {
+        window.dispatchEvent(
+          new CustomEvent('nodeDataUpdate', {
+            detail: { nodeId, updates },
+          })
+        );
+      };
+
+      // 1. upstream edge を検索 (dialogue_video_input handle に繋がるエッジ)
+      const upstreamEdge = edges.find(
+        (edge) =>
+          edge.target === nodeId && edge.targetHandle === 'dialogue_video_input'
+      );
+      if (!upstreamEdge) {
+        dispatchUpdate({
+          errorMessage: '動画ノードを接続してください',
+          status: 'failed',
+        });
+        return;
+      }
+
+      // 2. upstream ノードの動画 URL を取得 (B2: HasVideoOutput 共通インターフェース使用)
+      const upstreamNode = nodes.find((n) => n.id === upstreamEdge.source);
+      const videoUrl = getNodeVideoOutput(upstreamNode?.data);
+      if (!videoUrl) {
+        dispatchUpdate({
+          errorMessage:
+            '動画の生成が完了していません。先に動画を生成してください',
+          status: 'failed',
+        });
+        return;
+      }
+
+      // 3. DialogueNode のデータを取得
+      const dialogueNode = nodes.find((n) => n.id === nodeId);
+      const dialogueData = dialogueNode?.data as DialogueNodeData | undefined;
+      if (!dialogueData?.text || !dialogueData?.voiceId) {
+        dispatchUpdate({
+          errorMessage: 'セリフと声を入力してください',
+          status: 'failed',
+        });
+        return;
+      }
+
+      // 4. pending 状態に更新
+      dispatchUpdate({ status: 'pending', errorMessage: undefined });
+
+      try {
+        // 5. dialogueApi.create() を呼び出し
+        const result = await dialogueApi.create({
+          video_url: videoUrl,
+          text: dialogueData.text,
+          voice_id: dialogueData.voiceId,
+          speed: dialogueData.speed,
+        });
+        const generationId = result.id;
+
+        dispatchUpdate({ generationId, status: 'processing' });
+
+        // 6. ポーリング
+        for (
+          let attempt = 0;
+          attempt < DIALOGUE_MAX_POLLING_ATTEMPTS;
+          attempt++
+        ) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, DIALOGUE_POLLING_INTERVAL_MS)
+          );
+          const status = await dialogueApi.getStatus(generationId);
+
+          const progress = Math.min(
+            Math.round((attempt / DIALOGUE_MAX_POLLING_ATTEMPTS) * 100),
+            99
+          );
+          dispatchUpdate({ progress });
+
+          if (status.status === 'completed') {
+            dispatchUpdate({
+              status: 'completed',
+              outputVideoUrl: status.output_video_url,
+              progress: 100,
+            });
+            return;
+          }
+          if (status.status === 'failed') {
+            dispatchUpdate({
+              status: 'failed',
+              errorMessage: status.error_message ?? '処理に失敗しました',
+            });
+            return;
+          }
+        }
+
+        // ポーリングタイムアウト
+        dispatchUpdate({
+          status: 'failed',
+          errorMessage: 'タイムアウトしました (15 分)。再試行してください',
+        });
+      } catch (err) {
+        dispatchUpdate({
+          status: 'failed',
+          errorMessage:
+            err instanceof Error ? err.message : '予期しないエラーが発生しました',
+        });
+      }
+    };
+
     window.addEventListener('nodeDataUpdate', handleNodeDataUpdate);
     window.addEventListener('providerChange', handleProviderChange);
     window.addEventListener('startGeneration', handleStartGeneration);
+    window.addEventListener('startDialogue', handleStartDialogue);
 
     return () => {
       window.removeEventListener('nodeDataUpdate', handleNodeDataUpdate);
       window.removeEventListener('providerChange', handleProviderChange);
       window.removeEventListener('startGeneration', handleStartGeneration);
+      window.removeEventListener('startDialogue', handleStartDialogue);
     };
   }, [nodes, edges, setNodes, onVideoGenerated]);
 
