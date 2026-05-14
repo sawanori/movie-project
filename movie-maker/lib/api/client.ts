@@ -13,17 +13,38 @@ async function getAuthToken(): Promise<string | null> {
   }
 }
 
+/**
+ * Supabase refresh_token を使って access_token を更新する。
+ * fetchWithAuth が 401 を受信した時に 1 度だけ呼び出される (自動リカバリー)。
+ */
+async function refreshAuthToken(): Promise<string | null> {
+  try {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.refreshSession();
+    return session?.access_token || null;
+  } catch {
+    return null;
+  }
+}
+
 interface FetchWithAuthOptions extends RequestInit {
   /** タイムアウト（ミリ秒）- デフォルト: 120000 (2分) */
   timeout?: number;
 }
 
-async function fetchWithAuth(endpoint: string, options: FetchWithAuthOptions = {}) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchWithAuth(
+  endpoint: string,
+  options: FetchWithAuthOptions = {},
+  _isRetry: boolean = false,
+): Promise<any> {
   const token = await getAuthToken();
   const { timeout = 120000, ...fetchOptions } = options;
 
+  // FormData の場合は Content-Type をブラウザに任せる (boundary 自動付与のため)
+  const isFormData = fetchOptions.body instanceof FormData;
   const headers: HeadersInit = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...fetchOptions.headers,
   };
 
@@ -43,6 +64,16 @@ async function fetchWithAuth(endpoint: string, options: FetchWithAuthOptions = {
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
+
+    // 401 を受信したら refresh_token で 1 回だけリトライ
+    // (access_token が expire しただけのケースを自動回避する)
+    if (response.status === 401 && !_isRetry) {
+      const newToken = await refreshAuthToken();
+      if (newToken) {
+        return fetchWithAuth(endpoint, options, true);
+      }
+      // refresh 失敗時は下のエラー処理に落ちる
+    }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: "Unknown error" }));
@@ -139,48 +170,25 @@ export const videosApi = {
   delete: (id: string) =>
     fetchWithAuth(`/api/v1/videos/${id}`, { method: "DELETE" }),
 
-  uploadImage: async (file: File) => {
-    const token = await getAuthToken();
+  // fetchWithAuth 経由で 401 自動リトライの恩恵を受ける
+  uploadImage: async (file: File): Promise<{ image_url: string }> => {
     const formData = new FormData();
     formData.append("file", file);
-
-    const response = await fetch(`${API_URL}/api/v1/videos/upload-image`, {
+    return fetchWithAuth("/api/v1/videos/upload-image", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
       body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: "Upload failed" }));
-      throw new Error(error.detail);
-    }
-
-    return response.json();
+    }) as Promise<{ image_url: string }>;
   },
 
   uploadImages: async (files: File[]): Promise<{ image_urls: string[] }> => {
-    const token = await getAuthToken();
     const formData = new FormData();
     files.forEach((file) => {
       formData.append("files", file);
     });
-
-    const response = await fetch(`${API_URL}/api/v1/videos/upload-images`, {
+    return fetchWithAuth("/api/v1/videos/upload-images", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
       body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: "Upload failed" }));
-      throw new Error(error.detail);
-    }
-
-    return response.json();
+    }) as Promise<{ image_urls: string[] }>;
   },
 
   // ===== AI主導ストーリーテリング用API =====
