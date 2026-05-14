@@ -1560,7 +1560,9 @@ function StoryboardPageContent() {
 
     let sawGenerating = false;  // Track if we saw "generating" status
     let pollCount = 0;
-    const maxPolls = 120;  // Max 6 minutes (120 * 3s)
+    // 最大15分 (300 × 3s)。Seedance / Veo / Hailuo はピーク帯に 5 分以上
+    // かかるためフロント側は余裕を持って設定。バックエンドは 10 分で諦める。
+    const maxPolls = 300;
 
     const poll = async () => {
       pollCount++;

@@ -340,7 +340,10 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
 
         // ステータスをポーリング
         const pollStatus = async (): Promise<string | null> => {
-          const maxAttempts = 60; // 最大5分（5秒×60回）
+          // 最大15分（5秒×180回）。Seedance / Veo / Hailuo はピーク帯に
+          // 5分以上かかることがあるため、Runway 時代の 5 分設定だと早期失敗していた。
+          // バックエンドは 10 分で諦めるので、フロントは余裕を持って 15 分。
+          const maxAttempts = 180;
           for (let i = 0; i < maxAttempts; i++) {
             const status = await videosApi.getStatus(videoId);
             const progress = Math.min(10 + Math.floor((i / maxAttempts) * 90), 95);
