@@ -162,6 +162,38 @@ body {
   box-shadow: 0 0 60px var(--color-accent-glow);
 }
 
+/* Tailwind CSS v4 missing arbitrary value utilities workaround */
+.opacity-\[0\.03\] {
+  opacity: 0.03;
+}
+
+/* Tailwind CSS v4 missing responsive grid utilities workaround.
+   v4 の JIT スキャナが下記クラスを生成しないバグへの対処。
+   `.sm\:grid-cols-2` 形式のクラスセレクタで書くと Lightning CSS が
+   Tailwind 由来クラスとして dedup → 配信 CSS から消える。
+   属性セレクタ `[class~="..."]` で書くと dedup を回避できる。 */
+@media (min-width: 40rem) {
+  [class~="sm:grid-cols-2"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 64rem) {
+  [class~="lg:grid-cols-2"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  [class~="lg:grid-cols-3"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 80rem) {
+  [class~="xl:grid-cols-4"] {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  [class~="xl:grid-cols-5"] {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
 /* Reduce motion for accessibility */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
