@@ -599,13 +599,25 @@ def _enhance_prompt_for_reference(prompt: str, reference_images: list[dict]) -> 
 
 # ===== シーン画像生成サービス =====
 
+IMAGE_LOOK_PROMPTS: dict[str, str] = {
+    "realistic": "photorealistic photography, natural lighting, shot on professional camera",
+    "cinematic": "cinematic photography, shot on ARRI ALEXA 35, dramatic lighting, film grain",
+    "anime": "anime style, cel shading, vibrant colors, clean lines, Japanese animation aesthetic",
+    "illustration": "digital illustration, clean vector-like lines, professional artwork",
+    "watercolor": "watercolor painting style, soft edges, translucent colors, paper texture",
+    "3d_render": "3D rendered, Pixar-style, smooth surfaces, volumetric lighting",
+    "flat_design": "flat design, vector art, minimal shadows, bold geometric shapes",
+    "oil_painting": "oil painting style, rich textures, visible brushstrokes, classical composition",
+}
+
 async def generate_scene_image(
     description_ja: str | None,
     dialogue: str | None = None,
     aspect_ratio: str = "9:16",
     image_provider: str = "nanobanana",
     reference_images: list[dict] | None = None,
-    negative_prompt: str | None = None
+    negative_prompt: str | None = None,
+    image_look: str = "cinematic",
 ) -> dict:
     """
     脚本（とオプションでセリフ）からシーン画像を生成
@@ -657,7 +669,12 @@ async def generate_scene_image(
         # 2. 日本語→英語翻訳
         prompt_en = await _translate_text_to_english(prompt_ja)
 
-        # 3. 参照画像がある場合、プロンプトを強化
+        # 3. スタイルプレフィックスを付与
+        style_prefix = IMAGE_LOOK_PROMPTS.get(image_look, "")
+        if style_prefix:
+            prompt_en = f"{style_prefix}. {prompt_en}"
+
+        # 4. 参照画像がある場合、プロンプトを強化
         if reference_images:
             prompt_en = _enhance_prompt_for_reference(prompt_en, reference_images)
 
@@ -716,7 +733,8 @@ async def generate_scene_image(
     prompt_ja, prompt_en = await generate_image_prompt_from_scene(
         description_ja=description_ja,
         dialogue=dialogue,
-        aspect_ratio=aspect_ratio
+        aspect_ratio=aspect_ratio,
+        image_look=image_look,
     )
     logger.info(f"Generated prompt: {prompt_en[:100]}...")
 
@@ -866,7 +884,10 @@ async def generate_image_from_text(
 
     # OpenAI GPT Image 2 プロバイダー
     if image_provider == "openai_gpt_image2":
-        from app.external.openai_gpt_image2_provider import OpenAIGPTImage2Provider
+        from app.external.openai_gpt_image2_provider import (
+            OpenAIGPTImage2Provider,
+            ASPECT_RATIO_TO_SIZE,
+        )
 
         # 1. 入力テキストを決定
         if free_text_description:
@@ -889,14 +910,22 @@ async def generate_image_from_text(
         # 4. R2 key の抽出（URLからパス部分を逆算）
         r2_key = image_url.split("/", 3)[-1] if "/" in image_url else f"generated/gpt2_{uuid4().hex}.png"
 
-        logger.info(f"GPT Image 2 generation completed: {image_url}")
+        # 5. 生成サイズを aspect_ratio から逆引き（GenerateSceneImageResponse が int 必須のため）
+        resolved_size = ASPECT_RATIO_TO_SIZE.get(aspect_ratio, "1024x1024")
+        try:
+            width_str, height_str = resolved_size.split("x", 1)
+            width, height = int(width_str), int(height_str)
+        except (ValueError, AttributeError):
+            width, height = 1024, 1024  # fallback (例: size="auto" の場合)
+
+        logger.info(f"GPT Image 2 generation completed: {image_url} ({width}x{height})")
         return {
             "image_url": image_url,
             "generated_prompt_ja": prompt_ja,
             "generated_prompt_en": prompt_en,
             "r2_key": r2_key,
-            "width": None,
-            "height": None,
+            "width": width,
+            "height": height,
             "aspect_ratio": aspect_ratio,
             "image_provider": image_provider,
         }
