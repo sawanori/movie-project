@@ -102,7 +102,7 @@ export function TrimVideoNode({ data, selected, id }: TrimVideoNodeProps) {
           type="number"
           min={0}
           step={0.1}
-          value={data.startSeconds}
+          value={data.startSeconds ?? 0}
           onChange={(e) =>
             updateNodeData({ startSeconds: parseFloat(e.target.value) || 0 })
           }

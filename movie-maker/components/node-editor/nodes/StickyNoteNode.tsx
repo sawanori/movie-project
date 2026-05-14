@@ -57,7 +57,7 @@ export function StickyNoteNode({ data, selected, id }: StickyNoteNodeProps) {
       </div>
 
       <textarea
-        value={data.text}
+        value={data.text ?? ''}
         onChange={(e) => updateNodeData({ text: e.target.value })}
         placeholder="メモを入力..."
         rows={4}

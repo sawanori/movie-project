@@ -101,7 +101,7 @@ export function GetVideoFrameNode({ data, selected, id }: GetVideoFrameNodeProps
       <div>
         <label className={nodeLabelClassName}>抽出位置</label>
         <select
-          value={data.direction}
+          value={data.direction ?? 'first'}
           onChange={(e) =>
             updateNodeData({ direction: e.target.value as 'first' | 'last' })
           }

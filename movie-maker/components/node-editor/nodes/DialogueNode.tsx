@@ -117,7 +117,7 @@ export function DialogueNode({ data, selected, id }: DialogueNodeProps) {
       <div>
         <label className={nodeLabelClassName}>セリフテキスト</label>
         <textarea
-          value={data.text}
+          value={data.text ?? ''}
           onChange={(e) => {
             const newText = e.target.value;
             updateNodeData({ text: newText, isValid: !!newText.trim() && !!data.voiceId });
@@ -169,7 +169,7 @@ export function DialogueNode({ data, selected, id }: DialogueNodeProps) {
           min={0.25}
           max={4.0}
           step={0.05}
-          value={data.speed}
+          value={data.speed ?? 1.0}
           onChange={(e) =>
             updateNodeData({ speed: parseFloat(e.target.value) })
           }
