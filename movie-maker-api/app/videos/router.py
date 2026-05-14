@@ -61,6 +61,16 @@ from app.videos.schemas import (
     ScreenshotSource, ScreenshotCreateRequest, ScreenshotResponse, ScreenshotListResponse,
     # 動画アップロード用
     VideoUploadResponse,
+    # タイムライン編集用
+    TransitionUpdate, TimelineExportRequest, TimelineExportResponse, TransitionUpdateResponse,
+    # T2V (Text-to-Video) 用
+    T2VVideoCreate, T2VVideoResponse,
+    # Stitch Videos 用
+    StitchVideosRequest, StitchVideosResponse, StitchStatusResponse,
+    # フレーム抽出用
+    ExtractFrameRequest, ExtractFrameResponse,
+    # Trim Video 用
+    TrimVideoRequest, TrimVideoResponse,
 )
 from app.videos import service
 from app.videos.service import (
@@ -5461,3 +5471,258 @@ async def delete_ad_creator_project(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"プロジェクトの削除に失敗しました: {str(e)}"
         )
+
+
+# ===== Stitch Videos エンドポイント =====
+
+@router.post("/stitch", response_model=StitchVideosResponse, status_code=202)
+async def stitch_videos(
+    request: StitchVideosRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+) -> StitchVideosResponse:
+    """
+    2〜5本の動画URLを受け取り、非同期で連結する
+
+    - 既存 video_concatenations テーブルにレコードを挿入
+    - バックグラウンドで video_concat_processor を使用して処理
+    - HTTP 202 Accepted でジョブIDを返す
+    """
+    supabase = get_supabase()
+    user_id = current_user["user_id"]
+    concat_id = str(uuid.uuid4())
+
+    concat_data = {
+        "id": concat_id,
+        "user_id": user_id,
+        "source_video_ids": [],
+        "status": "pending",
+        "progress": 0,
+        "transition": request.transition,
+        "transition_duration": 0.0,
+    }
+
+    supabase.table("video_concatenations").insert(concat_data).execute()
+
+    logger.info(
+        f"Created stitch job: {concat_id}, videos: {len(request.video_urls)}, transition: {request.transition}"
+    )
+
+    background_tasks.add_task(
+        start_concat_processing, concat_id, request.video_urls
+    )
+
+    return StitchVideosResponse(id=concat_id, status="pending")
+
+
+@router.get("/stitch/{stitch_id}", response_model=StitchStatusResponse)
+async def get_stitch_status(
+    stitch_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> StitchStatusResponse:
+    """
+    スティッチジョブのステータスを取得（ポーリング用）
+
+    - user_id が一致しない場合は 404 を返す
+    """
+    supabase = get_supabase()
+    user_id = current_user["user_id"]
+
+    response = (
+        supabase.table("video_concatenations")
+        .select("id, status, progress, final_video_url, error_message")
+        .eq("id", stitch_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Stitch job not found")
+
+    data = response.data
+    return StitchStatusResponse(
+        id=data["id"],
+        status=data["status"],
+        progress=data.get("progress", 0),
+        output_video_url=data.get("final_video_url"),
+        error_message=data.get("error_message"),
+    )
+
+
+# ===== Trim Video エンドポイント =====
+
+@router.post("/trim", response_model=TrimVideoResponse)
+async def trim_video_endpoint(
+    request: TrimVideoRequest,
+    current_user=Depends(get_current_user),
+) -> TrimVideoResponse:
+    """
+    動画をトリムして新しい動画を返す（同期処理）
+
+    指定した start_seconds から end_seconds までの範囲を切り出し、R2 にアップロードして
+    トリム済み動画の URL を返す。end_seconds が None の場合は動画の最後まで切り出す。
+    """
+    input_path: str | None = None
+    output_path: str | None = None
+
+    try:
+        # 1. 動画をダウンロードして一時ファイルに保存
+        video_content = await download_file(request.video_url)
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(video_content)
+            input_path = f.name
+
+        output_suffix = f"trimmed_{uuid.uuid4().hex[:8]}.mp4"
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            output_path = f.name
+
+        # 2. FFmpeg でトリム
+        ffmpeg = get_ffmpeg_service()
+        try:
+            await ffmpeg.trim_video(
+                input_path=input_path,
+                output_path=output_path,
+                start_time=request.start_seconds,
+                end_time=request.end_seconds,
+            )
+        except Exception as e:
+            logger.error(f"FFmpeg trim failed: {e}")
+            raise HTTPException(status_code=500, detail="動画のトリムに失敗しました")
+
+        # 3. R2 にアップロード
+        with open(output_path, "rb") as f:
+            trimmed_content = f.read()
+
+        output_video_url = await upload_video(trimmed_content, output_suffix)
+
+        # 5. duration_seconds を計算
+        if request.end_seconds is not None:
+            duration_seconds = request.end_seconds - request.start_seconds
+        else:
+            # end_seconds が None の場合は ffprobe で実際の長さを取得
+            try:
+                import subprocess as _subprocess
+                import json as _json
+                _probe = _subprocess.run(
+                    [
+                        "ffprobe", "-v", "quiet", "-print_format", "json",
+                        "-show_format", output_path,
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                duration_seconds = float(
+                    _json.loads(_probe.stdout)["format"]["duration"]
+                )
+            except Exception as exc:
+                logger.warning(f"ffprobe failed to get duration: {exc}")
+                duration_seconds = 0.0
+
+        return TrimVideoResponse(output_video_url=output_video_url, duration_seconds=duration_seconds)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Trim video failed: {e}")
+        raise HTTPException(status_code=500, detail="動画のダウンロードに失敗しました")
+    finally:
+        for path in (input_path, output_path):
+            if path and os.path.exists(path):
+                try:
+                    os.unlink(path)
+                except Exception:
+                    pass
+
+
+# ===== フレーム抽出エンドポイント =====
+
+@router.post("/extract-frame", response_model=ExtractFrameResponse)
+async def extract_frame(
+    request: ExtractFrameRequest,
+    current_user: dict = Depends(get_current_user),
+) -> ExtractFrameResponse:
+    """
+    動画 URL からフレームを抽出して画像 URL を返す同期エンドポイント。
+
+    - direction='first': 最初のフレームを抽出
+    - direction='last':  最後のフレームを抽出
+    """
+    import httpx
+    import tempfile
+    import os as _os
+
+    ffmpeg = get_ffmpeg_service()
+
+    tmp_video_path: str | None = None
+    tmp_frame_path: str | None = None
+
+    try:
+        # 1. 動画をダウンロード
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                dl_response = await client.get(request.video_url)
+                dl_response.raise_for_status()
+                video_content = dl_response.content
+        except Exception as exc:
+            logger.error(f"Failed to download video from {request.video_url}: {exc}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="動画の取得に失敗しました",
+            )
+
+        # 2. tmpfile に書き込んでフレーム抽出
+        tmp_dir = tempfile.mkdtemp()
+        tmp_video_path = _os.path.join(tmp_dir, "video.mp4")
+        tmp_frame_path = _os.path.join(tmp_dir, "frame.jpg")
+
+        try:
+            with open(tmp_video_path, "wb") as f:
+                f.write(video_content)
+
+            if request.direction == "first":
+                await ffmpeg.extract_first_frame(tmp_video_path, tmp_frame_path)
+            else:
+                await ffmpeg.extract_last_frame(tmp_video_path, tmp_frame_path)
+
+            with open(tmp_frame_path, "rb") as f:
+                frame_content = f.read()
+        except Exception as exc:
+            logger.error(f"FFmpeg frame extraction failed: {exc}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="フレームの抽出に失敗しました",
+            )
+
+        # 3. R2 にアップロード
+        timestamp_val = int(time.time())
+        user_id = current_user["user_id"]
+        filename = f"extract_frame/{user_id}_{timestamp_val}_{request.direction}.jpg"
+        image_url = await upload_image(frame_content, filename)
+
+        # 4. 画像サイズを取得
+        try:
+            from PIL import Image as _PIL_Image
+            import io as _io
+            with _PIL_Image.open(_io.BytesIO(frame_content)) as _img:
+                img_width, img_height = _img.size
+        except Exception as exc:
+            logger.error(f"Failed to read image size: {exc}")
+            img_width, img_height = 0, 0
+
+        return ExtractFrameResponse(image_url=image_url, width=img_width, height=img_height)
+
+    finally:
+        # 4. tmpfile を確実に削除
+        if tmp_video_path and _os.path.exists(tmp_video_path):
+            _os.remove(tmp_video_path)
+        if tmp_frame_path and _os.path.exists(tmp_frame_path):
+            _os.remove(tmp_frame_path)
+        if tmp_video_path:
+            tmp_dir_path = _os.path.dirname(tmp_video_path)
+            if _os.path.isdir(tmp_dir_path):
+                try:
+                    _os.rmdir(tmp_dir_path)
+                except OSError:
+                    pass

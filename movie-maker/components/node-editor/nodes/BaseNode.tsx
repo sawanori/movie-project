@@ -53,6 +53,57 @@ export const inputHandleClassName =
 export const outputHandleClassName =
   '!w-4 !h-4 !bg-[#00bdb6] !border-2 !border-[#212121] hover:!bg-[#00e6dd] hover:!scale-125 !transition-transform';
 
+// ========== Krea 流ハンドル色規約ヘルパー ==========
+
+/**
+ * ハンドルのデータ型を表す型。
+ * 新規 Utility Nodes のカラーコーディングに使用する。
+ */
+export type HandleDataType = 'image' | 'video' | 'text' | 'audio' | 'default';
+
+// 入力ハンドルの共通スタイル (bg 以外)
+const inputHandleBase = '!w-3 !h-3 !border-2 !border-[#212121]';
+// 出力ハンドルの共通スタイル (bg 以外)
+const outputHandleBase = '!w-4 !h-4 !border-2 !border-[#212121] hover:!scale-125 !transition-transform';
+
+/**
+ * データ型に応じた入力ハンドルの Tailwind クラスを返す。
+ * Image=青, Video=緑, Text=紫, Audio=橙, default=既存ブランドカラー
+ */
+export function getInputHandleClass(dataType: HandleDataType): string {
+  switch (dataType) {
+    case 'image':
+      return `${inputHandleBase} !bg-blue-500`;
+    case 'video':
+      return `${inputHandleBase} !bg-green-500`;
+    case 'text':
+      return `${inputHandleBase} !bg-purple-500`;
+    case 'audio':
+      return `${inputHandleBase} !bg-orange-500`;
+    default:
+      return inputHandleClassName;
+  }
+}
+
+/**
+ * データ型に応じた出力ハンドルの Tailwind クラスを返す。
+ * Image=青, Video=緑, Text=紫, Audio=橙, default=既存ブランドカラー
+ */
+export function getOutputHandleClass(dataType: HandleDataType): string {
+  switch (dataType) {
+    case 'image':
+      return `${outputHandleBase} !bg-blue-400 hover:!bg-blue-300`;
+    case 'video':
+      return `${outputHandleBase} !bg-green-400 hover:!bg-green-300`;
+    case 'text':
+      return `${outputHandleBase} !bg-purple-400 hover:!bg-purple-300`;
+    case 'audio':
+      return `${outputHandleBase} !bg-orange-400 hover:!bg-orange-300`;
+    default:
+      return outputHandleClassName;
+  }
+}
+
 // ノード内入力フィールドスタイル
 export const nodeInputClassName =
   'w-full px-3 py-2 text-sm bg-[#1a1a1a] border border-[#404040] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[#fce300] transition-colors';

@@ -38,13 +38,20 @@ import type {
   ProviderNodeData,
   GenerateNodeData,
   DialogueNodeData,
+  GetVideoFrameNodeData,
+  TrimVideoNodeData,
+  StitchVideosNodeData,
 } from '@/lib/types/node-editor';
-import { createDefaultNodeData as createData, getNodeVideoOutput } from '@/lib/types/node-editor';
-import { videosApi, dialogueApi } from '@/lib/api/client';
+import { createDefaultNodeData as createData, getNodeVideoOutput, HANDLE_IDS } from '@/lib/types/node-editor';
+import { videosApi, dialogueApi, utilityApi } from '@/lib/api/client';
 
 // Dialogue ポーリング設定 (5 秒 × 180 回 = 最大 15 分)
 const DIALOGUE_MAX_POLLING_ATTEMPTS = 180;
 const DIALOGUE_POLLING_INTERVAL_MS = 5000;
+
+// Stitch ポーリング設定 (5 秒 × 120 回 = 最大 10 分)
+const STITCH_MAX_POLLING_ATTEMPTS = 120;
+const STITCH_POLLING_INTERVAL_MS = 5000;
 
 interface NodeEditorProps {
   onVideoGenerated?: (videoUrl: string) => void;
@@ -534,16 +541,232 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
       }
     };
 
+    // Get Video Frame ノード実行ハンドラ (B4: 既存 useEffect 内に追加して edges を stale にしない)
+    const handleStartGetVideoFrame = async (e: Event) => {
+      const { nodeId } = (e as CustomEvent<{ nodeId: string }>).detail;
+
+      const dispatchUpdate = (updates: Partial<GetVideoFrameNodeData>) => {
+        window.dispatchEvent(
+          new CustomEvent('nodeDataUpdate', {
+            detail: { nodeId, updates },
+          })
+        );
+      };
+
+      // 1. upstream edge を検索 (get_video_frame_video_input handle に繋がるエッジ)
+      const upstreamEdge = edges.find(
+        (edge) =>
+          edge.target === nodeId && edge.targetHandle === HANDLE_IDS.GET_VIDEO_FRAME_VIDEO_INPUT
+      );
+      if (!upstreamEdge) {
+        dispatchUpdate({ status: 'failed', errorMessage: '動画ノードを接続してください' });
+        return;
+      }
+
+      // 2. upstream ノードから getNodeVideoOutput で video URL を取得 (B2 パターン)
+      const upstreamNode = nodes.find((n) => n.id === upstreamEdge.source);
+      const videoUrl = getNodeVideoOutput(upstreamNode?.data);
+      if (!videoUrl) {
+        dispatchUpdate({ status: 'failed', errorMessage: '動画 URL が取得できませんでした' });
+        return;
+      }
+
+      // 3. status = processing
+      dispatchUpdate({ status: 'processing' });
+
+      // 4. API 呼び出し (同期)
+      try {
+        const selfNode = nodes.find((n) => n.id === nodeId);
+        const direction = (selfNode?.data as GetVideoFrameNodeData).direction;
+        const res = await utilityApi.extractFrame({ video_url: videoUrl, direction });
+        dispatchUpdate({ status: 'completed', outputImageUrl: res.image_url });
+      } catch (err) {
+        dispatchUpdate({
+          status: 'failed',
+          errorMessage: err instanceof Error ? err.message : 'フレームの抽出に失敗しました',
+        });
+      }
+    };
+
+    // Trim Video ノード実行ハンドラ (B4: 既存 useEffect 内に追加して edges を stale にしない)
+    const handleStartTrimVideo = async (e: Event) => {
+      const { nodeId } = (e as CustomEvent<{ nodeId: string }>).detail;
+
+      const dispatchUpdate = (updates: Partial<TrimVideoNodeData>) => {
+        window.dispatchEvent(
+          new CustomEvent('nodeDataUpdate', {
+            detail: { nodeId, updates },
+          })
+        );
+      };
+
+      // 1. upstream edge を検索 (trim_video_input handle に繋がるエッジ)
+      const upstreamEdge = edges.find(
+        (edge) =>
+          edge.target === nodeId && edge.targetHandle === HANDLE_IDS.TRIM_VIDEO_INPUT
+      );
+      if (!upstreamEdge) {
+        dispatchUpdate({ status: 'failed', errorMessage: '動画ノードを接続してください' });
+        return;
+      }
+
+      // 2. upstream ノードから getNodeVideoOutput で video URL を取得 (B2 パターン)
+      const upstreamNode = nodes.find((n) => n.id === upstreamEdge.source);
+      const videoUrl = getNodeVideoOutput(upstreamNode?.data);
+      if (!videoUrl) {
+        dispatchUpdate({ status: 'failed', errorMessage: '動画 URL が取得できませんでした' });
+        return;
+      }
+
+      // 3. 自ノードのパラメータを取得
+      const selfNode = nodes.find((n) => n.id === nodeId);
+      const data = selfNode?.data as TrimVideoNodeData;
+
+      // 4. status = processing
+      dispatchUpdate({ status: 'processing' });
+
+      // 5. API 呼び出し (同期)
+      try {
+        const res = await utilityApi.trimVideo({
+          video_url: videoUrl,
+          start_seconds: data.startSeconds,
+          end_seconds: data.endSeconds,
+        });
+        dispatchUpdate({ status: 'completed', outputVideoUrl: res.output_video_url });
+      } catch (err) {
+        dispatchUpdate({
+          status: 'failed',
+          errorMessage: err instanceof Error ? err.message : '動画のトリムに失敗しました',
+        });
+      }
+    };
+
+    // Stitch Videos ノード実行ハンドラ (B4: 既存 useEffect 内に追加して edges を stale にしない)
+    const STITCH_INPUT_HANDLE_IDS: readonly string[] = [
+      HANDLE_IDS.STITCH_VIDEO_1,
+      HANDLE_IDS.STITCH_VIDEO_2,
+      HANDLE_IDS.STITCH_VIDEO_3,
+      HANDLE_IDS.STITCH_VIDEO_4,
+      HANDLE_IDS.STITCH_VIDEO_5,
+    ];
+
+    const handleStartStitchVideos = async (e: Event) => {
+      const { nodeId } = (e as CustomEvent<{ nodeId: string }>).detail;
+
+      const dispatchUpdate = (updates: Partial<StitchVideosNodeData>) => {
+        window.dispatchEvent(
+          new CustomEvent('nodeDataUpdate', {
+            detail: { nodeId, updates },
+          })
+        );
+      };
+
+      // 1. このノードへの incoming edges から video URL を収集 (handleID でソート)
+      const incomingEdges = edges
+        .filter(
+          (edge) =>
+            edge.target === nodeId &&
+            STITCH_INPUT_HANDLE_IDS.includes(edge.targetHandle ?? '')
+        )
+        .sort((a, b) => {
+          const idxA = STITCH_INPUT_HANDLE_IDS.indexOf(a.targetHandle ?? '');
+          const idxB = STITCH_INPUT_HANDLE_IDS.indexOf(b.targetHandle ?? '');
+          return idxA - idxB;
+        });
+
+      if (incomingEdges.length < 2) {
+        dispatchUpdate({ status: 'failed', errorMessage: '2本以上の動画を接続してください' });
+        return;
+      }
+
+      // 2. 各 upstream ノードから videoUrl を取得 (B2 パターン)
+      const videoUrls: string[] = [];
+      for (const [i, edge] of incomingEdges.entries()) {
+        const upstreamNode = nodes.find((n) => n.id === edge.source);
+        const url = getNodeVideoOutput(upstreamNode?.data);
+        if (!url) {
+          dispatchUpdate({
+            status: 'failed',
+            errorMessage: `動画${i + 1}の生成が完了していません`,
+          });
+          return;
+        }
+        videoUrls.push(url);
+      }
+
+      // 3. POST /stitch (非同期 202)
+      dispatchUpdate({ status: 'pending', progress: 0 });
+      let stitchId: string;
+      try {
+        const res = await utilityApi.stitchVideos({
+          video_urls: videoUrls,
+          transition: 'none',
+        });
+        stitchId = res.id;
+        dispatchUpdate({ stitchId, status: 'processing' });
+      } catch (err) {
+        dispatchUpdate({
+          status: 'failed',
+          errorMessage: err instanceof Error ? err.message : 'スティッチの開始に失敗しました',
+        });
+        return;
+      }
+
+      // 4. ポーリングループ (5 秒 × STITCH_MAX_POLLING_ATTEMPTS 回)
+      for (let attempt = 0; attempt < STITCH_MAX_POLLING_ATTEMPTS; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, STITCH_POLLING_INTERVAL_MS));
+
+        try {
+          const status = await utilityApi.getStitchStatus(stitchId);
+
+          if (status.status === 'completed' && status.output_video_url) {
+            dispatchUpdate({
+              status: 'completed',
+              progress: 100,
+              outputVideoUrl: status.output_video_url,
+            });
+            return;
+          }
+
+          if (status.status === 'failed') {
+            dispatchUpdate({
+              status: 'failed',
+              errorMessage: status.error_message ?? 'スティッチに失敗しました',
+            });
+            return;
+          }
+
+          // pending or processing
+          dispatchUpdate({ status: 'processing', progress: status.progress });
+        } catch (err) {
+          // ポーリング 1 回失敗は許容、次の試行へ (DialogueNode と同じパターン)
+          console.warn('[stitch] polling error:', err);
+        }
+      }
+
+      // 5. タイムアウト
+      dispatchUpdate({
+        status: 'failed',
+        errorMessage: 'タイムアウトしました (10分)。再試行してください',
+      });
+    };
+
     window.addEventListener('nodeDataUpdate', handleNodeDataUpdate);
     window.addEventListener('providerChange', handleProviderChange);
     window.addEventListener('startGeneration', handleStartGeneration);
     window.addEventListener('startDialogue', handleStartDialogue);
+    window.addEventListener('startGetVideoFrame', handleStartGetVideoFrame);
+    window.addEventListener('startTrimVideo', handleStartTrimVideo);
+    window.addEventListener('startStitchVideos', handleStartStitchVideos);
 
     return () => {
       window.removeEventListener('nodeDataUpdate', handleNodeDataUpdate);
       window.removeEventListener('providerChange', handleProviderChange);
       window.removeEventListener('startGeneration', handleStartGeneration);
       window.removeEventListener('startDialogue', handleStartDialogue);
+      window.removeEventListener('startGetVideoFrame', handleStartGetVideoFrame);
+      window.removeEventListener('startTrimVideo', handleStartTrimVideo);
+      window.removeEventListener('startStitchVideos', handleStartStitchVideos);
     };
   }, [nodes, edges, setNodes, onVideoGenerated]);
 

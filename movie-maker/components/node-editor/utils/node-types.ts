@@ -19,6 +19,11 @@ import { LUTNode } from '../nodes/LUTNode';
 import { OverlayNode } from '../nodes/OverlayNode';
 // Phase 4
 import { DialogueNode } from '../nodes/DialogueNode';
+// Phase 5: Utility ノード
+import { GetVideoFrameNode } from '../nodes/GetVideoFrameNode';
+import { TrimVideoNode } from '../nodes/TrimVideoNode';
+import { StitchVideosNode } from '../nodes/StitchVideosNode';
+import { StickyNoteNode } from '../nodes/StickyNoteNode';
 
 /**
  * ノードタイプ登録
@@ -45,6 +50,11 @@ export const nodeTypes: NodeTypes = {
   overlay: OverlayNode,
   // Phase 4: Dialogue ノード
   dialogue: DialogueNode,
+  // Phase 5: Utility ノード
+  getVideoFrame: GetVideoFrameNode,
+  trimVideo: TrimVideoNode,
+  stitchVideos: StitchVideosNode,
+  stickyNote: StickyNoteNode,
 };
 
 /**

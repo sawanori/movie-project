@@ -27,7 +27,13 @@ export type NodeType =
   | 'filmGrain'
   | 'lut'
   | 'overlay'
-  | 'dialogue';
+  // Phase 4: Dialogue ノード (Pipeline 型: 動画 + TTS ミックス)
+  | 'dialogue'
+  // Phase 5: Utility Nodes
+  | 'getVideoFrame'
+  | 'trimVideo'
+  | 'stitchVideos'
+  | 'stickyNote';
 
 // ========== サブジェクトタイプ ==========
 
@@ -178,6 +184,54 @@ export interface DialogueNodeData extends BaseNodeData {
   generationId: string | null;
   // 出力
   outputVideoUrl: string | null;
+  // errorMessage は BaseNodeData から継承 (string | undefined)
+}
+
+// ========== Phase 5: Utility Nodes ==========
+
+export interface GetVideoFrameNodeData extends BaseNodeData {
+  type: 'getVideoFrame';
+  // 入力 (接続から受け取る)
+  inputVideoUrl: string | null;
+  // パラメータ
+  direction: 'first' | 'last';
+  // 実行状態
+  status: 'idle' | 'processing' | 'completed' | 'failed';
+  // 出力
+  outputImageUrl: string | null;
+  // errorMessage は BaseNodeData から継承
+}
+
+export interface TrimVideoNodeData extends BaseNodeData {
+  type: 'trimVideo';
+  // 入力 (接続から受け取る)
+  inputVideoUrl: string | null;
+  // パラメータ
+  startSeconds: number;       // デフォルト 0
+  endSeconds: number | null;  // null = 最後まで
+  // 実行状態
+  status: 'idle' | 'processing' | 'completed' | 'failed';
+  // 出力
+  outputVideoUrl: string | null;
+}
+
+export interface StitchVideosNodeData extends BaseNodeData {
+  type: 'stitchVideos';
+  // パラメータ
+  transition: 'none' | 'crossfade'; // Phase 1 は 'none' のみ
+  // 実行状態
+  status: 'idle' | 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;        // 0-100
+  stitchId: string | null; // バックエンドの結合ジョブID
+  // 出力
+  outputVideoUrl: string | null;
+}
+
+export interface StickyNoteNodeData extends BaseNodeData {
+  type: 'stickyNote';
+  text: string;
+  color: 'yellow' | 'pink' | 'blue';
+  // isValid は常に true (バリデーション不要)
 }
 
 // ========== B2 解決: 動画出力共通インターフェース ==========
@@ -185,6 +239,7 @@ export interface DialogueNodeData extends BaseNodeData {
 /**
  * 動画出力を持つノードの共通インターフェース。
  * GenerateNodeData (videoUrl) と DialogueNodeData (outputVideoUrl) の両方に対応する。
+ * upstream ノードから動画 URL を取得する際に使用する。
  */
 export interface HasVideoOutput {
   videoUrl?: string | null;
@@ -193,10 +248,31 @@ export interface HasVideoOutput {
 
 /**
  * ノードデータから動画 URL を取得するヘルパー関数。
+ * GenerateNodeData.videoUrl と DialogueNodeData.outputVideoUrl の両方を解決する。
  */
 export function getNodeVideoOutput(data: unknown): string | null {
   const d = data as HasVideoOutput;
   return d?.outputVideoUrl ?? d?.videoUrl ?? null;
+}
+
+// ========== B3 解決: 画像出力共通インターフェース ==========
+
+/**
+ * 画像出力を持つノードの共通インターフェース。
+ * ImageInputNodeData (imageUrl) と GetVideoFrameNodeData (outputImageUrl) の両方に対応する。
+ */
+export interface HasImageOutput {
+  imageUrl?: string | null;
+  outputImageUrl?: string | null;
+}
+
+/**
+ * ノードデータから画像 URL を取得するヘルパー関数。
+ * ImageInputNodeData.imageUrl と GetVideoFrameNodeData.outputImageUrl の両方を解決する。
+ */
+export function getNodeImageOutput(data: unknown): string | null {
+  const d = data as HasImageOutput;
+  return d?.outputImageUrl ?? d?.imageUrl ?? null;
 }
 
 // ========== Union Type ==========
@@ -218,7 +294,12 @@ export type WorkflowNodeData =
   | FilmGrainNodeData
   | LUTNodeData
   | OverlayNodeData
-  | DialogueNodeData;
+  | DialogueNodeData
+  // Phase 5: Utility Nodes
+  | GetVideoFrameNodeData
+  | TrimVideoNodeData
+  | StitchVideosNodeData
+  | StickyNoteNodeData;
 
 // ========== ワークフローノード・エッジ型 ==========
 
@@ -250,7 +331,7 @@ export interface NodePaletteItem {
   label: string;
   description: string;
   icon: string;
-  category: 'input' | 'config' | 'provider-specific' | 'post-processing' | 'output';
+  category: 'input' | 'config' | 'provider-specific' | 'post-processing' | 'output' | 'utility';
   availableFor?: VideoProvider[]; // 特定プロバイダー専用の場合
 }
 
@@ -394,6 +475,42 @@ export function createDefaultNodeData(type: NodeType): WorkflowNodeData {
         generationId: null,
         outputVideoUrl: null,
       };
+    case 'getVideoFrame':
+      return {
+        type: 'getVideoFrame',
+        isValid: true,
+        inputVideoUrl: null,
+        direction: 'first',
+        status: 'idle',
+        outputImageUrl: null,
+      };
+    case 'trimVideo':
+      return {
+        type: 'trimVideo',
+        isValid: false,
+        inputVideoUrl: null,
+        startSeconds: 0,
+        endSeconds: null,
+        status: 'idle',
+        outputVideoUrl: null,
+      };
+    case 'stitchVideos':
+      return {
+        type: 'stitchVideos',
+        isValid: false,
+        transition: 'none',
+        status: 'idle',
+        progress: 0,
+        stitchId: null,
+        outputVideoUrl: null,
+      };
+    case 'stickyNote':
+      return {
+        type: 'stickyNote',
+        isValid: true,
+        text: '',
+        color: 'yellow',
+      };
     default:
       throw new Error(`Unknown node type: ${type}`);
   }
@@ -438,6 +555,17 @@ export const HANDLE_IDS = {
   // Phase 4: Dialogue (Pipeline 型)
   DIALOGUE_VIDEO_INPUT: 'dialogue_video_input',
   DIALOGUE_VIDEO_OUTPUT: 'dialogue_video_output',
+  // Phase 5: Utility Nodes
+  GET_VIDEO_FRAME_VIDEO_INPUT: 'get_video_frame_video_input',
+  GET_VIDEO_FRAME_IMAGE_OUTPUT: 'get_video_frame_image_output',
+  TRIM_VIDEO_INPUT: 'trim_video_input',
+  TRIM_VIDEO_OUTPUT: 'trim_video_output',
+  STITCH_VIDEO_1: 'video_1',
+  STITCH_VIDEO_2: 'video_2',
+  STITCH_VIDEO_3: 'video_3',
+  STITCH_VIDEO_4: 'video_4',
+  STITCH_VIDEO_5: 'video_5',
+  STITCH_VIDEO_OUTPUT: 'stitch_video_output',
 } as const;
 
 // ========== ノードカテゴリ定義 ==========
@@ -467,6 +595,11 @@ export const NODE_CATEGORIES = {
     label: '出力',
     description: '動画生成',
     nodes: ['generate'] as NodeType[],
+  },
+  utility: {
+    label: 'ユーティリティ',
+    description: '動画編集・注釈',
+    nodes: ['getVideoFrame', 'trimVideo', 'stitchVideos', 'stickyNote'] as NodeType[],
   },
 } as const;
 

@@ -1969,3 +1969,68 @@ class T2VVideoResponse(BaseModel):
     video_url: Optional[str] = Field(None, description="完成した動画のURL")
     created_at: str = Field(..., description="作成日時")
     duration: Optional[float] = Field(None, description="動画の長さ（秒）")
+
+
+# ===== Stitch Videos スキーマ =====
+
+class StitchVideosRequest(BaseModel):
+    """スティッチ動画リクエスト"""
+    video_urls: list[str] = Field(
+        ...,
+        min_length=2,
+        max_length=5,
+        description="結合する動画URL（2〜5本）",
+    )
+    transition: Literal["none"] = "none"  # Phase 1 は none のみ
+
+class StitchVideosResponse(BaseModel):
+    """スティッチ動画作成レスポンス"""
+    id: str
+    status: Literal["pending"] = "pending"
+
+
+class StitchStatusResponse(BaseModel):
+    """スティッチ動画ステータスレスポンス"""
+    id: str
+    status: Literal["pending", "processing", "completed", "failed"]
+    progress: int  # 0-100
+    output_video_url: str | None = None
+    error_message: str | None = None
+
+
+# ===== フレーム抽出スキーマ =====
+
+class ExtractFrameRequest(BaseModel):
+    """フレーム抽出リクエスト"""
+    video_url: str = Field(..., min_length=1, description="動画のURL")
+    direction: Literal["first", "last"] = Field("first", description="抽出するフレームの位置")
+
+
+class ExtractFrameResponse(BaseModel):
+    """フレーム抽出レスポンス"""
+    image_url: str = Field(..., description="抽出されたフレームの画像URL")
+    width: int = Field(..., description="抽出された画像の幅（ピクセル）")
+    height: int = Field(..., description="抽出された画像の高さ（ピクセル）")
+
+
+# ===== Trim Video スキーマ =====
+
+class TrimVideoRequest(BaseModel):
+    """動画トリムリクエスト"""
+    video_url: str = Field(..., min_length=1, description="入力動画のURL")
+    start_seconds: float = Field(ge=0.0, description="開始位置（秒）")
+    end_seconds: float | None = Field(None, ge=0.0, description="終了位置（秒）、Noneで最後まで")
+
+    @model_validator(mode='after')
+    def validate_range(self) -> Self:
+        if self.end_seconds is not None and self.end_seconds <= self.start_seconds:
+            raise ValueError('end_seconds は start_seconds より大きい必要があります')
+        if self.end_seconds is not None and (self.end_seconds - self.start_seconds) < 0.5:
+            raise ValueError('トリム範囲は 0.5 秒以上必要です')
+        return self
+
+
+class TrimVideoResponse(BaseModel):
+    """動画トリムレスポンス"""
+    output_video_url: str = Field(..., description="トリム済み動画のURL")
+    duration_seconds: float = Field(..., description="トリム済み動画の長さ（秒）")

@@ -14,6 +14,9 @@ import {
   Palette,
   Layers,
   Mic,
+  Scissors,
+  Link,
+  StickyNote,
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
@@ -163,6 +166,35 @@ const NODE_ITEMS: NodePaletteItem[] = [
     icon: 'video',
     category: 'output',
   },
+  // ユーティリティ
+  {
+    type: 'getVideoFrame',
+    label: 'フレーム抽出',
+    description: '動画→最初/最後フレーム画像',
+    icon: 'camera',
+    category: 'utility',
+  },
+  {
+    type: 'trimVideo',
+    label: 'トリム',
+    description: '動画の開始/終了位置を指定',
+    icon: 'scissors',
+    category: 'utility',
+  },
+  {
+    type: 'stitchVideos',
+    label: 'スティッチ',
+    description: '複数動画を連結',
+    icon: 'link',
+    category: 'utility',
+  },
+  {
+    type: 'stickyNote',
+    label: '付箋',
+    description: 'ワークフローへの注釈',
+    icon: 'sticky-note',
+    category: 'utility',
+  },
 ];
 
 // カテゴリ定義
@@ -180,6 +212,7 @@ const CATEGORIES: {
   },
   { id: 'post-processing', label: '後処理', description: 'BGM・フィルター' },
   { id: 'output', label: '出力', description: '動画生成' },
+  { id: 'utility', label: 'ユーティリティ', description: '動画編集・注釈' },
 ];
 
 // アイコンマッピング
@@ -210,6 +243,12 @@ function getIcon(iconName: string, className?: string) {
       return <Layers className={iconClass} />;
     case 'mic':
       return <Mic className={iconClass} />;
+    case 'scissors':
+      return <Scissors className={iconClass} />;
+    case 'link':
+      return <Link className={iconClass} />;
+    case 'sticky-note':
+      return <StickyNote className={iconClass} />;
     default:
       return <Settings className={iconClass} />;
   }

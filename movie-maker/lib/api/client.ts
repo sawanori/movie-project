@@ -1970,3 +1970,58 @@ export const dialogueApi = {
     fetchWithAuth(`/api/v1/dialogue/${generationId}/status`),
 };
 
+// ===== Utility API (Phase 5: Utility Nodes) =====
+
+export interface ExtractFrameRequest {
+  video_url: string;
+  direction: 'first' | 'last';
+}
+
+export interface ExtractFrameResponse {
+  image_url: string;
+  width?: number;
+  height?: number;
+}
+
+export interface TrimVideoRequest {
+  video_url: string;
+  start_seconds: number;
+  end_seconds: number | null;
+}
+
+export interface TrimVideoResponse {
+  output_video_url: string;
+}
+
+export interface StitchVideosRequest {
+  video_urls: string[];
+  transition?: 'none';
+}
+
+export interface StitchVideosResponse {
+  id: string;
+  status: 'pending';
+}
+
+export interface StitchStatusResponse {
+  id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  output_video_url: string | null;
+  error_message: string | null;
+}
+
+export const utilityApi = {
+  extractFrame: (req: ExtractFrameRequest): Promise<ExtractFrameResponse> =>
+    fetchWithAuth('/api/v1/videos/extract-frame', { method: 'POST', body: JSON.stringify(req) }),
+
+  trimVideo: (req: TrimVideoRequest): Promise<TrimVideoResponse> =>
+    fetchWithAuth('/api/v1/videos/trim', { method: 'POST', body: JSON.stringify(req) }),
+
+  stitchVideos: (req: StitchVideosRequest): Promise<StitchVideosResponse> =>
+    fetchWithAuth('/api/v1/videos/stitch', { method: 'POST', body: JSON.stringify(req) }),
+
+  getStitchStatus: (stitchId: string): Promise<StitchStatusResponse> =>
+    fetchWithAuth(`/api/v1/videos/stitch/${stitchId}`),
+};
+
