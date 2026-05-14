@@ -311,6 +311,10 @@ class StoryVideoCreate(BaseModel):
         default=None,
         description="Kling AI動画のduration（秒）。5または10"
     )
+    seedance_duration: Literal[5, 10, 15] | None = Field(
+        default=None,
+        description="Seedance 2.0 動画のduration（秒）。5/10/15 (VIP tier のみ 10/15)"
+    )
     # V2V用フィールド
     video_mode: Optional[str] = Field("i2v", description="動画生成モード: 'i2v' or 'v2v'")
     source_video_url: Optional[str] = Field(None, description="V2V参照動画URL")

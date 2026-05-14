@@ -83,6 +83,7 @@ function createProviderNode(
       isValid: true,
       provider,
       aspectRatio,
+      duration: null,
     } satisfies ProviderNodeData,
   }
 }

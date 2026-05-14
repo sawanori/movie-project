@@ -244,6 +244,8 @@ export const videosApi = {
     kling_mode?: 'std' | 'pro';
     end_frame_image_url?: string;  // 終了フレーム画像URL（Kling専用）
     element_images?: { image_url: string }[];  // 一貫性向上用の追加画像（Kling専用、最大3枚）
+    kling_duration?: 5 | 10;  // Kling AI動画のduration（秒）
+    seedance_duration?: 5 | 10 | 15;  // Seedance 2.0 動画のduration（秒）
   }) => fetchWithAuth("/api/v1/videos/story", { method: "POST", body: JSON.stringify(data) }),
 
   // BGM音源をアップロード

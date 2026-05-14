@@ -213,6 +213,16 @@ export function graphToStoryVideoCreate(
     };
   }
 
+  // 動画時間 (ProviderNode の duration を該当プロバイダーのフィールドにマップ)
+  if (provider?.duration != null) {
+    if (provider.provider === 'piapi_kling' && (provider.duration === 5 || provider.duration === 10)) {
+      request.kling_duration = provider.duration;
+    } else if (provider.provider === 'seedance' && (provider.duration === 5 || provider.duration === 10 || provider.duration === 15)) {
+      request.seedance_duration = provider.duration;
+    }
+    // 他プロバイダー (runway/veo/domoai/hailuo) は duration 固定のため無視
+  }
+
   // Kling専用パラメータ（プロバイダーがKlingの場合のみ）
   if (provider?.provider === 'piapi_kling') {
     if (klingMode) {

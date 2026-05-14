@@ -78,6 +78,9 @@ export interface ProviderNodeData extends BaseNodeData {
   type: 'provider';
   provider: VideoProvider;
   aspectRatio: '9:16' | '16:9';
+  // 動画時間 (秒)。null = プロバイダーのデフォルト/固定値を使う。
+  // Kling は 5/10、Seedance は 5/10/15、他プロバイダーは固定 (null のみ)。
+  duration: number | null;
 }
 
 export interface CameraWorkNodeData extends BaseNodeData {
@@ -370,6 +373,7 @@ export function createDefaultNodeData(type: NodeType): WorkflowNodeData {
         isValid: true,
         provider: 'runway',
         aspectRatio: '9:16',
+        duration: null,
       };
     case 'cameraWork':
       return {
@@ -680,4 +684,7 @@ export interface StoryVideoCreateRequest {
     roll: number;
     zoom: number;
   };
+  // 動画時間
+  kling_duration?: 5 | 10;
+  seedance_duration?: 5 | 10 | 15;
 }

@@ -3691,6 +3691,7 @@ async def create_story_video(
         # ★追加: Kling カメラコントロール（6軸スライダー）
         "kling_camera_control": request.kling_camera_control.model_dump() if request.kling_camera_control else None,
         "kling_duration": request.kling_duration,
+        "seedance_duration": request.seedance_duration,
     }
 
     # Kling Elements用の画像URLリストを取得

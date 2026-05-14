@@ -31,6 +31,16 @@ const ASPECT_RATIOS: { value: '9:16' | '16:9'; label: string }[] = [
   { value: '16:9', label: '横型 (16:9)' },
 ];
 
+// プロバイダー別の動画時間選択肢。空配列 = duration 設定 UI を表示しない (固定/自動)。
+const DURATION_OPTIONS: Record<VideoProvider, number[]> = {
+  runway: [],          // 5秒固定
+  veo: [],             // プロバイダーが自動決定 (6〜10秒)
+  domoai: [],          // 固定
+  hailuo: [],          // 6秒固定
+  piapi_kling: [5, 10],
+  seedance: [5, 10, 15],
+};
+
 export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
   const updateNodeData = useCallback(
     (updates: Partial<ProviderNodeData>) => {
@@ -44,7 +54,12 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
 
   const handleProviderChange = useCallback(
     (provider: VideoProvider) => {
-      updateNodeData({ provider });
+      // プロバイダー切替時に duration をデフォルト値にリセット
+      // (前プロバイダーの選択肢が新プロバイダーに無効な値だと UI が崩れるため)
+      const newDuration = DURATION_OPTIONS[provider].length > 0
+        ? DURATION_OPTIONS[provider][0]
+        : null;
+      updateNodeData({ provider, duration: newDuration });
 
       // プロバイダー変更をグローバルに通知
       const providerEvent = new CustomEvent('providerChange', {
@@ -104,7 +119,7 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
       </div>
 
       {/* アスペクト比 */}
-      <div>
+      <div className="mb-3">
         <label className={nodeLabelClassName}>アスペクト比</label>
         <select
           value={data.aspectRatio}
@@ -118,6 +133,24 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
           ))}
         </select>
       </div>
+
+      {/* 動画時間 (対応プロバイダーのみ表示) */}
+      {DURATION_OPTIONS[data.provider].length > 0 && (
+        <div>
+          <label className={nodeLabelClassName}>動画時間</label>
+          <select
+            value={data.duration ?? DURATION_OPTIONS[data.provider][0]}
+            onChange={(e) => updateNodeData({ duration: Number(e.target.value) })}
+            className={nodeSelectClassName}
+          >
+            {DURATION_OPTIONS[data.provider].map((sec) => (
+              <option key={sec} value={sec}>
+                {sec} 秒
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* 出力ハンドル */}
       <Handle
