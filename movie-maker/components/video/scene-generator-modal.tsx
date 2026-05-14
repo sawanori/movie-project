@@ -798,6 +798,19 @@ export function SceneGeneratorModal({
                       <span className="text-sm text-zinc-300">Hailuo</span>
                       <span className="text-xs text-zinc-500">高速生成</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setVideoProvider("seedance")}
+                      className={cn(
+                        "flex flex-col items-center gap-1 rounded-lg border-2 p-3 transition-colors min-w-[90px]",
+                        videoProvider === "seedance"
+                          ? "border-blue-500 bg-blue-500/10"
+                          : "border-zinc-700 hover:border-zinc-600"
+                      )}
+                    >
+                      <span className="text-sm text-zinc-300">Seedance 2.0</span>
+                      <span className="text-xs text-zinc-500">ByteDance</span>
+                    </button>
                   </div>
 
                   {/* Klingモード選択 */}
@@ -994,6 +1007,7 @@ export function SceneGeneratorModal({
                           { id: "veo" as VideoProvider, label: "VEO" },
                           { id: "domoai" as VideoProvider, label: "DomoAI" },
                           { id: "hailuo" as VideoProvider, label: "Hailuo" },
+                          { id: "seedance" as VideoProvider, label: "Seedance" },
                         ].map((p) => (
                           <button
                             key={p.id}

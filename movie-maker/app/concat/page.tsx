@@ -1840,6 +1840,7 @@ function ConcatPageContent() {
                       { id: "veo" as VideoProvider, label: "VEO", icon: "🌟" },
                       { id: "domoai" as VideoProvider, label: "DomoAI", icon: "🎨" },
                       { id: "hailuo" as VideoProvider, label: "Hailuo", icon: "🌊" },
+                      { id: "seedance" as VideoProvider, label: "Seedance", icon: "💃" },
                     ].map((provider) => (
                       <button
                         key={provider.id}

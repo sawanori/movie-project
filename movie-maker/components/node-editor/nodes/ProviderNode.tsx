@@ -23,6 +23,7 @@ const PROVIDERS: { value: VideoProvider; label: string; description: string }[] 
   { value: 'veo', label: 'Veo', description: 'Google AI' },
   { value: 'domoai', label: 'DomoAI', description: 'アニメーション特化' },
   { value: 'hailuo', label: 'Hailuo', description: 'カメラワーク対応' },
+  { value: 'seedance', label: 'Seedance 2.0', description: 'ByteDance製・高品質I2V/T2V' },
 ];
 
 const ASPECT_RATIOS: { value: '9:16' | '16:9'; label: string }[] = [
