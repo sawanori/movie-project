@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
-import { Settings } from 'lucide-react';
+import { Settings, Info } from 'lucide-react';
 import {
   BaseNode,
   inputHandleClassName,
@@ -164,6 +164,14 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
           </select>
         </div>
       )}
+
+      {/* 凡例: 左ハンドル接続説明 */}
+      <div className="mt-3 flex gap-1.5 rounded-md border border-[#2a2a2a] bg-[#111] p-2">
+        <Info className="mt-0.5 h-3 w-3 shrink-0 text-gray-500" />
+        <p className="text-[10px] leading-relaxed text-gray-500">
+          左ハンドルに繋いだ設定のみが反映されます。未接続の場合はグラフ全体から自動採用されますが、明示的な接続を推奨します。
+        </p>
+      </div>
 
       {/* 入力ハンドル (Kling/Runway/Hailuo 設定ノード接続) */}
       {[
