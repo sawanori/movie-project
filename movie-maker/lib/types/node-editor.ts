@@ -240,6 +240,32 @@ export interface StickyNoteNodeData extends BaseNodeData {
   // isValid は常に true (バリデーション不要)
 }
 
+// ========== Union Type ==========
+
+export type WorkflowNodeData =
+  | ImageInputNodeData
+  | VideoInputNodeData
+  | PromptNodeData
+  | ProviderNodeData
+  | CameraWorkNodeData
+  | GenerateNodeData
+  | KlingModeNodeData
+  | KlingElementsNodeData
+  | KlingEndFrameNodeData
+  | KlingCameraControlNodeData
+  | ActTwoNodeData
+  | HailuoEndFrameNodeData
+  | BGMNodeData
+  | FilmGrainNodeData
+  | LUTNodeData
+  | OverlayNodeData
+  | DialogueNodeData
+  // Phase 5: Utility Nodes
+  | GetVideoFrameNodeData
+  | TrimVideoNodeData
+  | StitchVideosNodeData
+  | StickyNoteNodeData;
+
 // ========== B2 解決: 動画出力共通インターフェース ==========
 
 /**
@@ -281,32 +307,6 @@ export function getNodeImageOutput(data: unknown): string | null {
   return d?.outputImageUrl ?? d?.imageUrl ?? null;
 }
 
-// ========== Union Type ==========
-
-export type WorkflowNodeData =
-  | ImageInputNodeData
-  | VideoInputNodeData
-  | PromptNodeData
-  | ProviderNodeData
-  | CameraWorkNodeData
-  | GenerateNodeData
-  | KlingModeNodeData
-  | KlingElementsNodeData
-  | KlingEndFrameNodeData
-  | KlingCameraControlNodeData
-  | ActTwoNodeData
-  | HailuoEndFrameNodeData
-  | BGMNodeData
-  | FilmGrainNodeData
-  | LUTNodeData
-  | OverlayNodeData
-  | DialogueNodeData
-  // Phase 5: Utility Nodes
-  | GetVideoFrameNodeData
-  | TrimVideoNodeData
-  | StitchVideosNodeData
-  | StickyNoteNodeData;
-
 // ========== ワークフローノード・エッジ型 ==========
 
 export type WorkflowNode = Node<WorkflowNodeData>;
@@ -325,7 +325,14 @@ export interface Workflow {
 // ========== バリデーションエラー型 ==========
 
 export interface ValidationError {
-  type: 'missing_node' | 'disconnected' | 'invalid_value' | 'provider_mismatch';
+  type:
+    | 'missing_node'
+    | 'disconnected'
+    | 'invalid_value'
+    | 'provider_mismatch'
+    | 'disconnected_optional'   // 設定ノードが ProviderNode に未接続 (新 Phase 1: warning)
+    | 'ambiguous_provider'      // 複数 ProviderNode + CONFIG_INPUT 未接続 GenerateNode
+    | 'multiple_provider_connection'; // CONFIG_INPUT に複数 Provider 接続
   nodeId?: string;
   message: string;
 }
@@ -573,6 +580,13 @@ export const HANDLE_IDS = {
   STITCH_VIDEO_4: 'video_4',
   STITCH_VIDEO_5: 'video_5',
   STITCH_VIDEO_OUTPUT: 'stitch_video_output',
+  // ProviderNode 入力 (Kling/Runway/Hailuo 設定エッジスコープ)
+  KLING_MODE_INPUT: 'kling_mode_input',
+  KLING_ELEMENTS_INPUT: 'kling_elements_input',
+  KLING_END_FRAME_INPUT: 'kling_end_frame_input',
+  KLING_CAMERA_CONTROL_INPUT: 'kling_camera_control_input',
+  ACT_TWO_INPUT: 'act_two_input',
+  HAILUO_END_FRAME_INPUT: 'hailuo_end_frame_input',
 } as const;
 
 // ========== ノードカテゴリ定義 ==========

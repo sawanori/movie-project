@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import type { Edge } from '@xyflow/react'
 import {
   graphToStoryVideoCreate,
@@ -11,7 +11,9 @@ import type {
   PromptNodeData,
   ProviderNodeData,
   GenerateNodeData,
+  KlingElementsNodeData,
 } from '@/lib/types/node-editor'
+import { HANDLE_IDS } from '@/lib/types/node-editor'
 
 // ========== Test Helpers ==========
 
@@ -29,6 +31,116 @@ function createImageInputNode(
       imagePreview: imageUrl,
     } satisfies ImageInputNodeData,
   }
+}
+
+// ========== 新規 edge-scoping テスト用ヘルパー ==========
+// ID を指定可能なバリアント (既存ヘルパーを壊さず追加)
+
+function createImageInputNodeWithId(opts: {
+  id?: string;
+  imageUrl?: string | null;
+}): WorkflowNode {
+  const imageUrl = opts.imageUrl ?? 'https://example.com/image.jpg';
+  return {
+    id: opts.id ?? 'imageInput-1',
+    type: 'imageInput',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'imageInput',
+      isValid: !!imageUrl,
+      imageUrl,
+      imagePreview: imageUrl,
+    } satisfies ImageInputNodeData,
+  };
+}
+
+function createPromptNodeWithId(opts: {
+  id?: string;
+  englishPrompt?: string;
+}): WorkflowNode {
+  const englishPrompt = opts.englishPrompt ?? 'A person walking';
+  return {
+    id: opts.id ?? 'prompt-1',
+    type: 'prompt',
+    position: { x: 100, y: 0 },
+    data: {
+      type: 'prompt',
+      isValid: !!englishPrompt,
+      japanesePrompt: '',
+      englishPrompt,
+      isTranslating: false,
+      subjectType: 'person',
+    } satisfies PromptNodeData,
+  };
+}
+
+function createProviderNodeWithId(opts: {
+  id?: string;
+  provider?: ProviderNodeData['provider'];
+  aspectRatio?: '9:16' | '16:9';
+}): WorkflowNode {
+  return {
+    id: opts.id ?? 'provider-1',
+    type: 'provider',
+    position: { x: 200, y: 0 },
+    data: {
+      type: 'provider',
+      isValid: true,
+      provider: opts.provider ?? 'runway',
+      aspectRatio: opts.aspectRatio ?? '9:16',
+      duration: null,
+    } satisfies ProviderNodeData,
+  };
+}
+
+function createKlingElementsNode(opts: {
+  id?: string;
+  elementImages?: string[];
+}): WorkflowNode {
+  return {
+    id: opts.id ?? 'klingElements-1',
+    type: 'klingElements',
+    position: { x: 0, y: 100 },
+    data: {
+      type: 'klingElements',
+      isValid: true,
+      elementImages: opts.elementImages ?? [],
+    } satisfies KlingElementsNodeData,
+  };
+}
+
+function createGenerateNodeWithId(opts: {
+  id?: string;
+  videoUrl?: string | null;
+}): WorkflowNode {
+  return {
+    id: opts.id ?? 'generate-1',
+    type: 'generate',
+    position: { x: 300, y: 0 },
+    data: {
+      type: 'generate',
+      isValid: true,
+      isGenerating: false,
+      progress: 0,
+      videoUrl: opts.videoUrl ?? null,
+      error: null,
+    } satisfies GenerateNodeData,
+  };
+}
+
+function createEdgeWithHandles(opts: {
+  source: string;
+  target: string;
+  targetHandle?: string;
+  sourceHandle?: string;
+}): Edge {
+  return {
+    id: `edge-${opts.source}-${opts.target}-${opts.targetHandle ?? 'default'}`,
+    source: opts.source,
+    target: opts.target,
+    targetHandle: opts.targetHandle,
+    sourceHandle: opts.sourceHandle,
+  };
 }
 
 function createVideoInputNode(
@@ -600,3 +712,120 @@ describe('validateGraphForGeneration', () => {
     })
   })
 })
+
+// ========== Edge-Scoping: エッジトレース + フォールバック ==========
+
+describe('graphToStoryVideoCreate - edge scoping (新規)', () => {
+  it('エッジ接続済: KlingElementsNode が ProviderNode に接続されている場合、element_images が正しく設定される', () => {
+    const klingElementsNodeId = crypto.randomUUID();
+    const providerNodeId = crypto.randomUUID();
+    const generateNodeId = crypto.randomUUID();
+
+    const nodes: WorkflowNode[] = [
+      createImageInputNodeWithId({ imageUrl: 'https://example.com/img.jpg' }),
+      createPromptNodeWithId({ englishPrompt: 'test prompt' }),
+      createProviderNodeWithId({ id: providerNodeId, provider: 'piapi_kling' }),
+      createKlingElementsNode({ id: klingElementsNodeId, elementImages: ['https://example.com/e1.jpg'] }),
+      createGenerateNodeWithId({ id: generateNodeId }),
+    ];
+    const edges: Edge[] = [
+      createEdgeWithHandles({ source: providerNodeId, target: generateNodeId, targetHandle: HANDLE_IDS.CONFIG_INPUT }),
+      createEdgeWithHandles({ source: klingElementsNodeId, target: providerNodeId, targetHandle: HANDLE_IDS.KLING_ELEMENTS_INPUT }),
+    ];
+
+    const request = graphToStoryVideoCreate(nodes, edges, generateNodeId);
+    expect(request.element_images).toEqual([{ image_url: 'https://example.com/e1.jpg' }]);
+  });
+
+  it('複数 GenerateNode で generateNodeId ごとに独立した element_images が解決される', () => {
+    const provA = crypto.randomUUID();
+    const provB = crypto.randomUUID();
+    const elemA = crypto.randomUUID();
+    const elemB = crypto.randomUUID();
+    const genA = crypto.randomUUID();
+    const genB = crypto.randomUUID();
+
+    const nodes: WorkflowNode[] = [
+      createImageInputNodeWithId({ imageUrl: 'https://example.com/img.jpg' }),
+      createPromptNodeWithId({ englishPrompt: 'test' }),
+      createProviderNodeWithId({ id: provA, provider: 'piapi_kling' }),
+      createProviderNodeWithId({ id: provB, provider: 'piapi_kling' }),
+      createKlingElementsNode({ id: elemA, elementImages: ['https://example.com/a1.jpg'] }),
+      createKlingElementsNode({ id: elemB, elementImages: ['https://example.com/b1.jpg'] }),
+      createGenerateNodeWithId({ id: genA }),
+      createGenerateNodeWithId({ id: genB }),
+    ];
+    const edges: Edge[] = [
+      createEdgeWithHandles({ source: provA, target: genA, targetHandle: HANDLE_IDS.CONFIG_INPUT }),
+      createEdgeWithHandles({ source: elemA, target: provA, targetHandle: HANDLE_IDS.KLING_ELEMENTS_INPUT }),
+      createEdgeWithHandles({ source: provB, target: genB, targetHandle: HANDLE_IDS.CONFIG_INPUT }),
+      createEdgeWithHandles({ source: elemB, target: provB, targetHandle: HANDLE_IDS.KLING_ELEMENTS_INPUT }),
+    ];
+
+    const requestA = graphToStoryVideoCreate(nodes, edges, genA);
+    const requestB = graphToStoryVideoCreate(nodes, edges, genB);
+
+    expect(requestA.element_images).toEqual([{ image_url: 'https://example.com/a1.jpg' }]);
+    expect(requestB.element_images).toEqual([{ image_url: 'https://example.com/b1.jpg' }]);
+  });
+
+  it('KlingElementsNode が未接続の場合、フォールバック発火 + console.warn + window.va が呼ばれる', () => {
+    const providerNodeId = crypto.randomUUID();
+    const generateNodeId = crypto.randomUUID();
+    const elemId = crypto.randomUUID();
+
+    // NODE_ENV を development に設定して console.warn が発火するようにする
+    vi.stubEnv('NODE_ENV', 'development');
+
+    // window.va をモック
+    const vaSpy = vi.fn();
+    Object.defineProperty(window, 'va', { value: vaSpy, writable: true, configurable: true });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const nodes: WorkflowNode[] = [
+        createImageInputNodeWithId({ imageUrl: 'https://example.com/img.jpg' }),
+        createPromptNodeWithId({ englishPrompt: 'test' }),
+        createProviderNodeWithId({ id: providerNodeId, provider: 'piapi_kling' }),
+        createKlingElementsNode({ id: elemId, elementImages: ['https://example.com/e1.jpg'] }),
+        createGenerateNodeWithId({ id: generateNodeId }),
+      ];
+      // ProviderNode は GenerateNode に接続されているが、KlingElementsNode は ProviderNode に未接続
+      const edges: Edge[] = [
+        createEdgeWithHandles({ source: providerNodeId, target: generateNodeId, targetHandle: HANDLE_IDS.CONFIG_INPUT }),
+      ];
+
+      const request = graphToStoryVideoCreate(nodes, edges, generateNodeId);
+      // フォールバックで element_images は設定される
+      expect(request.element_images).toEqual([{ image_url: 'https://example.com/e1.jpg' }]);
+      // 警告ログが出る (development 環境での providerNode 存在時)
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('klingElements'));
+      // Telemetry event が送信される
+      expect(vaSpy).toHaveBeenCalledWith('event', expect.objectContaining({
+        name: 'kling_edge_scoping_fallback',
+      }));
+    } finally {
+      warnSpy.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('generateNodeId が undefined の場合、findNode フォールバックのみ実行 (警告なし)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const nodes: WorkflowNode[] = [
+      createImageInputNodeWithId({ imageUrl: 'https://example.com/img.jpg' }),
+      createPromptNodeWithId({ englishPrompt: 'test' }),
+      createProviderNodeWithId({ provider: 'piapi_kling' }),
+      createKlingElementsNode({ elementImages: ['https://example.com/e1.jpg'] }),
+      createGenerateNodeWithId({}),
+    ];
+
+    // generateNodeId なしで呼び出し (storyboard / library 経路)
+    const request = graphToStoryVideoCreate(nodes, [], undefined);
+    expect(request.element_images).toEqual([{ image_url: 'https://example.com/e1.jpg' }]);
+    // providerNode が undefined なので console.warn は呼ばれない
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+});

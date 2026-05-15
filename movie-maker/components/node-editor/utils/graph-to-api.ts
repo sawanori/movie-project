@@ -44,24 +44,139 @@ export function graphToStoryVideoCreate(
     return node?.data as T | undefined;
   };
 
+  /**
+   * GenerateNode の CONFIG_INPUT に接続されている ProviderNode を解決する。
+   * エッジがなければ undefined を返す。
+   */
+  function findProviderForGenerate(
+    genNodeId: string,
+    allNodes: WorkflowNode[],
+    allEdges: Edge[]
+  ): WorkflowNode | undefined {
+    const edge = allEdges.find(
+      (e) => e.target === genNodeId && e.targetHandle === HANDLE_IDS.CONFIG_INPUT
+    );
+    if (!edge) return undefined;
+    const sourceNode = allNodes.find((n) => n.id === edge.source);
+    return sourceNode?.data && (sourceNode.data as WorkflowNodeData).type === 'provider'
+      ? sourceNode
+      : undefined;
+  }
+
+  /**
+   * 指定 ProviderNode の特定 target Handle に接続された設定ノードのデータを返す (純粋関数)。
+   */
+  function findKlingNodeFor<T extends WorkflowNodeData>(
+    providerNode: WorkflowNode | undefined,
+    targetHandle: string,
+    expectedType: T['type'],
+    allNodes: WorkflowNode[],
+    allEdges: Edge[]
+  ): T | undefined {
+    if (!providerNode) return undefined;
+    const data = getConnectedNodeData<WorkflowNodeData>(
+      providerNode.id,
+      targetHandle,
+      allNodes,
+      allEdges
+    );
+    if (!data) return undefined;
+    return data.type === expectedType ? (data as T) : undefined;
+  }
+
+  /**
+   * エッジトレース解決 + フォールバック + 警告ログを統合したラッパー。
+   * 新 Phase 1: Kling 系 6 ノードすべてこのラッパー経由で解決する。
+   */
+  function findKlingNodeWithFallbackWarning<T extends WorkflowNodeData>(
+    providerNode: WorkflowNode | undefined,
+    targetHandle: string,
+    expectedType: T['type'],
+    allNodes: WorkflowNode[],
+    allEdges: Edge[],
+    findNodeFn: <U extends WorkflowNodeData>(type: U['type']) => U | undefined
+  ): T | undefined {
+    // 優先: エッジトレース解決
+    const edgeResult = findKlingNodeFor<T>(
+      providerNode,
+      targetHandle,
+      expectedType,
+      allNodes,
+      allEdges
+    );
+    if (edgeResult) return edgeResult;
+
+    // TODO(Phase 2): フォールバック削除予定 (3-6 ヶ月後、telemetry データで判断)
+    const fallbackResult = findNodeFn<T>(expectedType);
+
+    // フォールバック発火時の警告 + Telemetry
+    if (fallbackResult) {
+      if (process.env.NODE_ENV === 'development' && providerNode) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[graph-to-api] '${expectedType}' を ProviderNode に未接続。` +
+          `グラフ全体から最初の 1 個を採用 (将来廃止予定)。` +
+          `targetHandle=${targetHandle}, providerNodeId=${providerNode.id}`
+        );
+      }
+      // Telemetry: フォールバック発火を Vercel Analytics に送信
+      if (typeof window !== 'undefined' && (window as Window & { va?: (event: string, data: unknown) => void }).va) {
+        (window as Window & { va?: (event: string, data: unknown) => void }).va!('event', {
+          name: 'kling_edge_scoping_fallback',
+          data: { expectedType, targetHandle }
+        });
+      }
+    }
+
+    return fallbackResult;
+  }
+
   // 基本ノードを取得
   const imageInput = findNode<ImageInputNodeData>('imageInput');
   const videoInput = findNode<VideoInputNodeData>('videoInput');
   const prompt = findNode<PromptNodeData>('prompt');
-  const provider = findNode<ProviderNodeData>('provider');
   const cameraWork = findNode<CameraWorkNodeData>('cameraWork');
 
-  // Kling専用ノード
-  const klingMode = findNode<KlingModeNodeData>('klingMode');
-  const klingElements = findNode<KlingElementsNodeData>('klingElements');
-  const klingEndFrame = findNode<KlingEndFrameNodeData>('klingEndFrame');
-  const klingCameraControl = findNode<KlingCameraControlNodeData>('klingCameraControl');
+  // ========== 統合リリース (新 Phase 1): エッジトレース解決 + フォールバック + 警告 ==========
+  // [B-1 反映] generateNodeId が undefined (storyboard / library 経路) は従来通り findNode フォールバック
+  const providerNode = generateNodeId
+    ? findProviderForGenerate(generateNodeId, nodes, edges)
+    : undefined;
 
-  // Act-Two
-  const actTwo = findNode<ActTwoNodeData>('actTwo');
+  // provider 自体もエッジトレース優先 + フォールバック
+  const provider = (providerNode?.data as ProviderNodeData | undefined)
+    ?? findNode<ProviderNodeData>('provider');
 
-  // Hailuo専用
-  const hailuoEndFrame = findNode<HailuoEndFrameNodeData>('hailuoEndFrame');
+  // Kling 系 4 つ + ActTwo + HailuoEndFrame の計 6 つ、すべてラッパー経由
+  // TODO(Phase 2): フォールバック削除予定 (3-6 ヶ月後、telemetry データで判断)
+  const klingMode = findKlingNodeWithFallbackWarning<KlingModeNodeData>(
+    providerNode, HANDLE_IDS.KLING_MODE_INPUT, 'klingMode', nodes, edges, findNode
+  );
+
+  // TODO(Phase 2): フォールバック削除予定 (3-6 ヶ月後、telemetry データで判断)
+  const klingElements = findKlingNodeWithFallbackWarning<KlingElementsNodeData>(
+    providerNode, HANDLE_IDS.KLING_ELEMENTS_INPUT, 'klingElements', nodes, edges, findNode
+  );
+
+  // TODO(Phase 2): フォールバック削除予定 (3-6 ヶ月後、telemetry データで判断)
+  const klingEndFrame = findKlingNodeWithFallbackWarning<KlingEndFrameNodeData>(
+    providerNode, HANDLE_IDS.KLING_END_FRAME_INPUT, 'klingEndFrame', nodes, edges, findNode
+  );
+
+  // TODO(Phase 2): フォールバック削除予定 (3-6 ヶ月後、telemetry データで判断)
+  const klingCameraControl = findKlingNodeWithFallbackWarning<KlingCameraControlNodeData>(
+    providerNode, HANDLE_IDS.KLING_CAMERA_CONTROL_INPUT, 'klingCameraControl', nodes, edges, findNode
+  );
+
+  // TODO(Phase 2): フォールバック削除予定 (3-6 ヶ月後、telemetry データで判断)
+  const actTwo = findKlingNodeWithFallbackWarning<ActTwoNodeData>(
+    providerNode, HANDLE_IDS.ACT_TWO_INPUT, 'actTwo', nodes, edges, findNode
+  );
+
+  // TODO(Phase 2): フォールバック削除予定 (3-6 ヶ月後、telemetry データで判断)
+  const hailuoEndFrame = findKlingNodeWithFallbackWarning<HailuoEndFrameNodeData>(
+    providerNode, HANDLE_IDS.HAILUO_END_FRAME_INPUT, 'hailuoEndFrame', nodes, edges, findNode
+  );
 
   // 後処理ノード
   const bgm = findNode<BGMNodeData>('bgm');

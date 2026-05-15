@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode } from 'react';
+import { type CSSProperties, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 interface BaseNodeProps {
@@ -11,6 +11,7 @@ interface BaseNodeProps {
   errorMessage?: string;
   children: ReactNode;
   className?: string;
+  style?: CSSProperties;
 }
 
 export function BaseNode({
@@ -21,6 +22,7 @@ export function BaseNode({
   errorMessage,
   children,
   className,
+  style,
 }: BaseNodeProps) {
   return (
     <div
@@ -32,6 +34,7 @@ export function BaseNode({
         !isValid && 'border-red-500',
         className
       )}
+      style={style}
     >
       <div className="flex items-center gap-2 mb-3 text-white font-medium">
         {icon}

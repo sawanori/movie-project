@@ -3,7 +3,7 @@
 import { memo, useCallback } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Video, RotateCcw } from "lucide-react";
-import { BaseNode, inputHandleClassName, outputHandleClassName } from "./BaseNode";
+import { BaseNode, outputHandleClassName } from "./BaseNode";
 import type { KlingCameraControlNodeData } from "@/lib/types/node-editor";
 
 // 軸の定義
@@ -69,14 +69,6 @@ export const KlingCameraControlNode = memo(function KlingCameraControlNode({
       isValid={data.isValid}
       errorMessage={data.errorMessage}
     >
-      {/* Provider入力ハンドル */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        id="provider"
-        className={inputHandleClassName}
-      />
-
       <div className="space-y-3 min-w-[280px]">
         {/* Kling専用表示 */}
         <div className="flex items-center justify-between">

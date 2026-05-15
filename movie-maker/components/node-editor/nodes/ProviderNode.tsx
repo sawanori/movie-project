@@ -5,11 +5,13 @@ import { Handle, Position, NodeProps } from '@xyflow/react';
 import { Settings } from 'lucide-react';
 import {
   BaseNode,
+  inputHandleClassName,
   outputHandleClassName,
   nodeSelectClassName,
   nodeLabelClassName,
 } from './BaseNode';
 import { cn } from '@/lib/utils';
+import { HANDLE_IDS } from '@/lib/types/node-editor';
 import type { ProviderNodeData, VideoProvider } from '@/lib/types/node-editor';
 
 interface ProviderNodeProps extends NodeProps {
@@ -30,6 +32,16 @@ const ASPECT_RATIOS: { value: '9:16' | '16:9'; label: string }[] = [
   { value: '9:16', label: '縦型 (9:16)' },
   { value: '16:9', label: '横型 (16:9)' },
 ];
+
+// Handle ごとに対応するプロバイダーを定義
+const HANDLE_PROVIDER_COMPAT: Record<string, VideoProvider[]> = {
+  [HANDLE_IDS.KLING_MODE_INPUT]: ['piapi_kling'],
+  [HANDLE_IDS.KLING_ELEMENTS_INPUT]: ['piapi_kling'],
+  [HANDLE_IDS.KLING_END_FRAME_INPUT]: ['piapi_kling'],
+  [HANDLE_IDS.KLING_CAMERA_CONTROL_INPUT]: ['piapi_kling'],
+  [HANDLE_IDS.ACT_TWO_INPUT]: ['runway'],
+  [HANDLE_IDS.HAILUO_END_FRAME_INPUT]: ['hailuo'],
+};
 
 // プロバイダー別の動画時間選択肢。空配列 = duration 設定 UI を表示しない (固定/自動)。
 const DURATION_OPTIONS: Record<VideoProvider, number[]> = {
@@ -86,6 +98,7 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
       isSelected={selected}
       isValid={data.isValid}
       errorMessage={data.errorMessage}
+      style={{ minHeight: '240px' }}
     >
       {/* プロバイダー選択 */}
       <div className="mb-3">
@@ -151,6 +164,36 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
           </select>
         </div>
       )}
+
+      {/* 入力ハンドル (Kling/Runway/Hailuo 設定ノード接続) */}
+      {[
+        { id: HANDLE_IDS.KLING_MODE_INPUT, label: 'Kling Mode', top: '10%' },
+        { id: HANDLE_IDS.KLING_ELEMENTS_INPUT, label: 'Elements', top: '25%' },
+        { id: HANDLE_IDS.KLING_END_FRAME_INPUT, label: 'End Frame', top: '40%' },
+        { id: HANDLE_IDS.KLING_CAMERA_CONTROL_INPUT, label: 'Camera', top: '55%' },
+        { id: HANDLE_IDS.ACT_TWO_INPUT, label: 'Act-Two', top: '70%' },
+        { id: HANDLE_IDS.HAILUO_END_FRAME_INPUT, label: 'Hailuo EF', top: '85%' },
+      ].map(({ id, label, top }) => {
+        const isCompat = HANDLE_PROVIDER_COMPAT[id]?.includes(data.provider) ?? true;
+        return (
+          <Handle
+            key={id}
+            type="target"
+            position={Position.Left}
+            id={id}
+            className={cn(
+              inputHandleClassName,
+              !isCompat && 'opacity-30 cursor-not-allowed'
+            )}
+            style={{ top }}
+            title={
+              !isCompat
+                ? `このプロバイダーでは使用されません (${label})`
+                : label
+            }
+          />
+        );
+      })}
 
       {/* 出力ハンドル */}
       <Handle

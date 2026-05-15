@@ -45,6 +45,13 @@ import type {
 import { createDefaultNodeData as createData, getNodeVideoOutput, HANDLE_IDS } from '@/lib/types/node-editor';
 import { videosApi, dialogueApi, utilityApi } from '@/lib/api/client';
 
+interface NodeEditorProps {
+  onVideoGenerated?: (videoUrl: string) => void;
+}
+
+// クリップボード用のグローバル変数（コンポーネント外）
+let clipboard: { nodes: WorkflowNode[]; edges: Edge[] } | null = null;
+
 // Dialogue ポーリング設定 (5 秒 × 180 回 = 最大 15 分)
 const DIALOGUE_MAX_POLLING_ATTEMPTS = 180;
 const DIALOGUE_POLLING_INTERVAL_MS = 5000;
@@ -52,13 +59,6 @@ const DIALOGUE_POLLING_INTERVAL_MS = 5000;
 // Stitch ポーリング設定 (5 秒 × 120 回 = 最大 10 分)
 const STITCH_MAX_POLLING_ATTEMPTS = 120;
 const STITCH_POLLING_INTERVAL_MS = 5000;
-
-interface NodeEditorProps {
-  onVideoGenerated?: (videoUrl: string) => void;
-}
-
-// クリップボード用のグローバル変数（コンポーネント外）
-let clipboard: { nodes: WorkflowNode[]; edges: Edge[] } | null = null;
 
 function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -129,10 +129,9 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
     setEdges((eds) => [...eds, ...newEdges]);
   }, [setNodes, setEdges]);
 
-  // 一発複製機能 (Cmd+D / Ctrl+D)
-  // clipboard を経由せず、選択中ノード + 内部エッジを即オフセット複製する。
+  // 一発複製（clipboard を汚染しない）
   const handleDuplicate = useCallback(() => {
-    const selectedNodes = getNodes().filter((n) => n.selected) as WorkflowNode[];
+    const selectedNodes = getNodes().filter((n) => n.selected);
     if (selectedNodes.length === 0) return;
 
     const selectedNodeIds = new Set(selectedNodes.map((n) => n.id));
@@ -142,7 +141,7 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
 
     const now = Date.now();
     const idMap = new Map<string, string>();
-    const newNodes = selectedNodes.map((node, index) => {
+    const newNodes: WorkflowNode[] = selectedNodes.map((node, index) => {
       const newId = `${node.type}-${now}-${index}`;
       idMap.set(node.id, newId);
       return {
@@ -150,14 +149,14 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
         id: newId,
         position: { x: node.position.x + 50, y: node.position.y + 50 },
         selected: true,
-        data: { ...node.data },
+        data: { ...node.data } as WorkflowNodeData,
       };
     });
     const newEdges = selectedEdges.map((edge, index) => ({
       ...edge,
       id: `e-${now}-${index}`,
-      source: idMap.get(edge.source) || edge.source,
-      target: idMap.get(edge.target) || edge.target,
+      source: idMap.get(edge.source) ?? edge.source,
+      target: idMap.get(edge.target) ?? edge.target,
       selected: true,
     }));
 
@@ -187,13 +186,6 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
         e.preventDefault();
         handlePaste();
       }
-      // Ctrl+D / Cmd+D で複製 (1ステップ)
-      if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
-        const activeElement = document.activeElement;
-        if (activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA') return;
-        e.preventDefault();  // ブラウザのブックマーク登録を抑止
-        handleDuplicate();
-      }
       // Ctrl+X / Cmd+X で選択中のノード・エッジを削除
       if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
         const activeElement = document.activeElement;
@@ -205,6 +197,13 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
           setNodes((nds) => nds.filter((n) => !selectedNodeIds.has(n.id)));
           setEdges((eds) => eds.filter((e) => !selectedEdgeIds.has(e.id) && !selectedNodeIds.has(e.source) && !selectedNodeIds.has(e.target)));
         }
+      }
+      // Ctrl+D / Cmd+D で一発複製
+      if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+        const activeElement = document.activeElement;
+        if (activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA') return;
+        e.preventDefault();
+        handleDuplicate();
       }
     };
 
@@ -238,7 +237,33 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
   } = useWorkflowManager(nodes, edges, setNodes, setEdges, { isLoggedIn });
 
   // バリデーション
-  const { errors } = useWorkflowValidation(nodes, edges);
+  const { errors, warnings } = useWorkflowValidation(nodes, edges);
+
+  /**
+   * ProviderNode の各 target Handle に対し、互換性のある source ノードタイプのみ接続を許可する。
+   * それ以外の既存 Handle (CONFIG_INPUT 等) はこのガードの対象外。
+   */
+  const isValidConnection = useCallback(
+    (connection: Edge | Connection): boolean => {
+      const HANDLE_TO_NODE_TYPE: Partial<Record<string, WorkflowNodeData['type']>> = {
+        [HANDLE_IDS.KLING_MODE_INPUT]: 'klingMode',
+        [HANDLE_IDS.KLING_ELEMENTS_INPUT]: 'klingElements',
+        [HANDLE_IDS.KLING_END_FRAME_INPUT]: 'klingEndFrame',
+        [HANDLE_IDS.KLING_CAMERA_CONTROL_INPUT]: 'klingCameraControl',
+        [HANDLE_IDS.ACT_TWO_INPUT]: 'actTwo',
+        [HANDLE_IDS.HAILUO_END_FRAME_INPUT]: 'hailuoEndFrame',
+      };
+
+      const expectedType = HANDLE_TO_NODE_TYPE[connection.targetHandle ?? ''];
+      // 対象外の Handle (CONFIG_INPUT 等) は常に true
+      if (!expectedType) return true;
+
+      const sourceNode = nodes.find((n) => n.id === connection.source);
+      if (!sourceNode) return false;
+      return (sourceNode.data as WorkflowNodeData).type === expectedType;
+    },
+    [nodes]
+  );
 
   // ノード変更時に未保存フラグを立てる
   const onNodesChange = useCallback(
@@ -543,7 +568,7 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
 
         dispatchUpdate({ generationId, status: 'processing' });
 
-        // 6. ポーリング
+        // 6. ポーリング (最大 DIALOGUE_MAX_POLLING_ATTEMPTS 回)
         for (
           let attempt = 0;
           attempt < DIALOGUE_MAX_POLLING_ATTEMPTS;
@@ -955,12 +980,12 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
         isUnsaved={isUnsaved}
         isCloudSynced={isCloudSynced}
         saveError={saveError}
+        selectedNodeCount={nodes.filter((n) => n.selected).length}
         onSave={handleSave}
         onSaveAs={handleSaveAs}
         onOpen={() => setIsOpenModalOpen(true)}
         onNew={handleReset}
         onClearError={clearSaveError}
-        selectedNodeCount={nodes.filter((n) => n.selected).length}
         onDuplicate={handleDuplicate}
       />
 
@@ -984,10 +1009,9 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
           nodeTypes={nodeTypes}
           defaultEdgeOptions={defaultEdgeOptions}
           connectionLineStyle={connectionLineStyle}
+          isValidConnection={isValidConnection}
           fitView
           fitViewOptions={fitViewOptions}
-          minZoom={0.1}
-          maxZoom={2}
           className="bg-[#212121]"
           selectionOnDrag
           selectNodesOnDrag
@@ -1023,6 +1047,16 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
               </div>
             )}
 
+            {/* バリデーション警告 */}
+            {warnings.length > 0 && (
+              <div className="flex items-center gap-1 px-2 py-1 bg-yellow-900/30 border border-yellow-600/40 rounded-lg">
+                <AlertCircle className="w-3 h-3 text-yellow-400" />
+                <span className="text-xs text-yellow-400">
+                  {warnings.length}件の警告
+                </span>
+              </div>
+            )}
+
             {/* リセットボタン */}
             <button
               onClick={handleReset}
@@ -1036,7 +1070,7 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
           {/* ボトムパネル - ヘルプ */}
           <Panel position="bottom-left">
             <div className="px-3 py-2 bg-[#2a2a2a]/80 rounded-lg text-xs text-gray-400">
-              <p>ドラッグ: 範囲選択 • Ctrl+C/V: コピペ • Ctrl+X: 削除</p>
+              <p>ドラッグ: 範囲選択 • Ctrl+C/V: コピペ • Ctrl+D: 複製 • Ctrl+X: 削除</p>
             </div>
           </Panel>
         </ReactFlow>
