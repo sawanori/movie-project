@@ -537,6 +537,7 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
           text: dialogueData.text,
           voice_id: dialogueData.voiceId,
           speed: dialogueData.speed,
+          use_lip_sync: dialogueData.useLipSync,
         });
         const generationId = result.id;
 

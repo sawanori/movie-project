@@ -1954,6 +1954,7 @@ type DialogueCreatePayload = {
   text: string;
   voice_id: string;
   speed?: number;
+  use_lip_sync?: boolean;
 };
 
 type DialogueCreateResult = {

@@ -20,6 +20,7 @@ async def create_dialogue_generation(
     voice_id: str,
     language: str = "ja",
     speed: float = 1.0,
+    use_lip_sync: bool = False,
 ) -> dict:
     """
     dialogue_generations テーブルにレコードを作成して返す
@@ -31,6 +32,7 @@ async def create_dialogue_generation(
         voice_id: TTS 音声 ID
         language: 言語コード (デフォルト: ja)
         speed: 読み上げ速度
+        use_lip_sync: True の場合 Hedra でリップシンクを行う (デフォルト: False)
 
     Returns:
         dict: 作成された生成レコード
@@ -44,6 +46,7 @@ async def create_dialogue_generation(
         "voice_id": voice_id,
         "language": language,
         "speed": speed,
+        "use_lip_sync": use_lip_sync,
         "status": "pending",
         # provider には DB DEFAULT がないため service 層で必ず明示的に設定する (N3 解決)
         "provider": settings.TTS_PROVIDER,
@@ -94,6 +97,7 @@ async def update_dialogue_status(
     output_video_url: Optional[str] = None,
     error_message: Optional[str] = None,
     tts_generation_id: Optional[str] = None,
+    lip_sync_generation_id: Optional[str] = None,
 ) -> None:
     """
     ステータスを更新する (バックグラウンドタスクから呼ぶ)
@@ -104,6 +108,7 @@ async def update_dialogue_status(
         output_video_url: 出力動画 URL (完了時)
         error_message: エラーメッセージ (失敗時)
         tts_generation_id: TTS 生成 ID (デバッグ/リトライ用)
+        lip_sync_generation_id: LipSync 生成 ID (use_lip_sync=True 時のデバッグ/リトライ用)
     """
     supabase = get_supabase()
 
@@ -114,5 +119,7 @@ async def update_dialogue_status(
         update_data["error_message"] = error_message
     if tts_generation_id is not None:
         update_data["tts_generation_id"] = tts_generation_id
+    if lip_sync_generation_id is not None:
+        update_data["lip_sync_generation_id"] = lip_sync_generation_id
 
     supabase.table("dialogue_generations").update(update_data).eq("id", generation_id).execute()

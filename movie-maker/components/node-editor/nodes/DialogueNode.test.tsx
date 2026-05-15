@@ -53,6 +53,7 @@ describe('DialogueNode', () => {
     voiceId: null,
     language: 'ja',
     speed: 1.0,
+    useLipSync: false,
     status: 'idle',
     progress: 0,
     generationId: null,
@@ -194,29 +195,127 @@ describe('DialogueNode', () => {
     });
   });
 
-  describe('always shows lip sync notice', () => {
-    it('should always display the lip sync notice text', async () => {
-      mockTtsApi.listVoices.mockResolvedValue([]);
-      render(<DialogueNode {...defaultProps} />);
+  // ====================================================================
+  // useLipSync (Hedra リップシンク) 関連テスト
+  // T2-5: 4 ケースで useLipSync の表示・操作・状態を検証する
+  // ====================================================================
 
+  describe('useLipSync=false (initial / TTS-only)', () => {
+    it('shows TTS notice, hides Hedra notice, button label is "合成する"', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const data: DialogueNodeData = { ...defaultData, useLipSync: false };
+
+      render(<DialogueNode {...defaultProps} data={data} />);
+
+      // TTS の注意書きが表示される
       await waitFor(() => {
-        expect(screen.getByText(/口の動きは合成しません/)).toBeDefined();
+        expect(
+          screen.getByText('※ 口の動きは合成しません (TTS のみ)')
+        ).toBeDefined();
       });
-    });
 
-    it('should show notice even in completed state', async () => {
+      // Hedra の注意書きは表示されない
+      expect(screen.queryByText(/キャラの顔がはっきり映る動画/)).toBeNull();
+
+      // ボタンラベルは「合成する」(リップシンク合成する ではない)
+      const button = screen.getByRole('button');
+      expect(button.textContent).toContain('合成する');
+      expect(button.textContent).not.toContain('リップシンク合成する');
+    });
+  });
+
+  describe('useLipSync checkbox toggle', () => {
+    it('dispatches nodeDataUpdate with { useLipSync: true } when checked', async () => {
       mockTtsApi.listVoices.mockResolvedValue([]);
-      const completedData: DialogueNodeData = {
+      const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
+
+      render(
+        <DialogueNode
+          {...defaultProps}
+          data={{ ...defaultData, useLipSync: false }}
+        />
+      );
+
+      // チェックボックスを探す (id="use-lip-sync-<nodeId>")
+      const checkbox = await waitFor(() =>
+        screen.getByRole('checkbox', { name: /口を動かす/ })
+      );
+      expect((checkbox as HTMLInputElement).checked).toBe(false);
+
+      // クリックして ON にする
+      fireEvent.click(checkbox);
+
+      // nodeDataUpdate イベントが { useLipSync: true } を含めて dispatch される
+      const dispatched = dispatchEventSpy.mock.calls.map(
+        (call) => call[0] as CustomEvent
+      );
+      const updateEvent = dispatched.find(
+        (e) =>
+          e.type === 'nodeDataUpdate' &&
+          (e.detail as { updates?: { useLipSync?: boolean } })?.updates
+            ?.useLipSync === true
+      );
+      expect(updateEvent).toBeDefined();
+      expect(
+        (updateEvent?.detail as { updates: { useLipSync: boolean } }).updates
+      ).toEqual({ useLipSync: true });
+
+      dispatchEventSpy.mockRestore();
+    });
+  });
+
+  describe('useLipSync=true (Hedra path)', () => {
+    it('hides TTS notice, shows Hedra notice, button label is "リップシンク合成する"', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const data: DialogueNodeData = { ...defaultData, useLipSync: true };
+
+      render(<DialogueNode {...defaultProps} data={data} />);
+
+      // TTS の注意書きは非表示
+      await waitFor(() => {
+        expect(
+          screen.queryByText('※ 口の動きは合成しません (TTS のみ)')
+        ).toBeNull();
+      });
+
+      // Hedra の注意書きが表示される
+      expect(
+        screen.getByText(/キャラの顔がはっきり映る動画を入力してください/)
+      ).toBeDefined();
+
+      // ボタンラベルは「リップシンク合成する」
+      const button = screen.getByRole('button');
+      expect(button.textContent).toContain('リップシンク合成する');
+    });
+  });
+
+  describe('useLipSync=true & processing state', () => {
+    it('shows "(1-3 分かかります)" hint when processing with useLipSync=true', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const processingData: DialogueNodeData = {
         ...defaultData,
-        status: 'completed',
-        outputVideoUrl: 'https://example.com/output.mp4',
+        useLipSync: true,
+        text: 'テスト',
+        voiceId: 'v1',
+        status: 'processing',
+        progress: 30,
       };
 
-      render(<DialogueNode {...defaultProps} data={completedData} />);
+      render(<DialogueNode {...defaultProps} data={processingData} />);
 
+      // "処理中" 表示が出る
       await waitFor(() => {
-        expect(screen.getByText(/口の動きは合成しません/)).toBeDefined();
+        expect(screen.getByText(/処理中/)).toBeDefined();
       });
+
+      // useLipSync=true 時、processing 状態で処理時間目安が併記される
+      // (checkbox の説明文と processing 表示の両方に "1-3 分かかります" が現れるため、
+      //  両方の出現を確認する)
+      const hints = screen.getAllByText(/1-3 分かかります/);
+      expect(hints.length).toBeGreaterThanOrEqual(2);
+
+      // processing 状態の指標文 ("(1-3 分かかります)") は括弧で囲まれている
+      expect(screen.getByText(/\(1-3 分かかります\)/)).toBeDefined();
     });
   });
 

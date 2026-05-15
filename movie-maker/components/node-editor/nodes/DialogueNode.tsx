@@ -73,7 +73,12 @@ export function DialogueNode({ data, selected, id }: DialogueNodeProps) {
       return (
         <div className="flex items-center gap-2 p-2 bg-[#1a1a1a] rounded-lg">
           <Loader2 className="w-4 h-4 text-[#fce300] animate-spin" />
-          <span className="text-xs text-gray-300">処理中... {data.progress}%</span>
+          <span className="text-xs text-gray-300">
+            処理中... {data.progress}%
+            {data.useLipSync && (
+              <span className="text-gray-500 ml-1">(1-3 分かかります)</span>
+            )}
+          </span>
         </div>
       );
     }
@@ -177,12 +182,41 @@ export function DialogueNode({ data, selected, id }: DialogueNodeProps) {
         />
       </div>
 
-      {/* 注意書き */}
-      <div className="p-2 rounded bg-[#2a2a2a] border border-yellow-600/30">
-        <p className="text-[10px] text-yellow-500">
-          ※ 口の動きは合成しません (TTS のみ)
-        </p>
+      {/* リップシンクトグル */}
+      <div className="flex items-start gap-2 p-2 rounded bg-[#1a1a1a]">
+        <input
+          type="checkbox"
+          id={`use-lip-sync-${id}`}
+          checked={data.useLipSync}
+          onChange={(e) => updateNodeData({ useLipSync: e.target.checked })}
+          disabled={isProcessing}
+          className="mt-0.5 accent-[#fce300]"
+        />
+        <label htmlFor={`use-lip-sync-${id}`} className="cursor-pointer">
+          <div className="text-xs text-gray-200">口を動かす (リップシンク)</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">
+            Hedra で口パク合成 ($0.10/分)、処理に 1-3 分かかります
+          </div>
+        </label>
       </div>
+
+      {/* 注意書き (条件付き) */}
+      {!data.useLipSync && (
+        <div className="p-2 rounded bg-[#2a2a2a] border border-yellow-600/30">
+          <p className="text-[10px] text-yellow-500">
+            ※ 口の動きは合成しません (TTS のみ)
+          </p>
+        </div>
+      )}
+
+      {data.useLipSync && (
+        <div className="p-2 rounded bg-[#2a2a2a] border border-blue-600/30">
+          <p className="text-[10px] text-blue-400 leading-relaxed">
+            キャラの顔がはっきり映る動画を入力してください。<br />
+            Hedra が顔を検出できない場合は失敗します。
+          </p>
+        </div>
+      )}
 
       {/* ステータス表示 */}
       {renderStatusArea()}
@@ -199,7 +233,7 @@ export function DialogueNode({ data, selected, id }: DialogueNodeProps) {
         )}
       >
         <Mic className="w-4 h-4" />
-        合成する
+        {data.useLipSync ? 'リップシンク合成する' : '合成する'}
       </button>
 
       {/* 出力動画 Handle */}

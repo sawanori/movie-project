@@ -181,13 +181,15 @@ export interface DialogueNodeData extends BaseNodeData {
   voiceId: string | null;
   language: 'ja';      // 固定
   speed: number;       // デフォルト 1.0
+  // リップシンク (1 フィールドのみ)
+  useLipSync: boolean; // default false。true で Hedra リップシンク経路
   // 実行状態
   status: 'idle' | 'pending' | 'processing' | 'completed' | 'failed';
   progress: number;    // 0-100 (UI 表示用、ポーリング回数ベース)
   generationId: string | null;
   // 出力
   outputVideoUrl: string | null;
-  // errorMessage は BaseNodeData から継承 (string | undefined)
+  // errorMessage は BaseNodeData から継承 (string | undefined) — 再宣言禁止
 }
 
 // ========== Phase 5: Utility Nodes ==========
@@ -469,11 +471,11 @@ export function createDefaultNodeData(type: NodeType): WorkflowNodeData {
       return {
         type: 'dialogue',
         isValid: false,
-        errorMessage: undefined,
         text: '',
         voiceId: null,
         language: 'ja',
         speed: 1.0,
+        useLipSync: false,
         status: 'idle',
         progress: 0,
         generationId: null,

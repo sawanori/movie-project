@@ -18,6 +18,10 @@ class DialogueCreateRequest(BaseModel):
     # language は "ja" 固定。UI には表示しないが API レベルでは保持
     language: str = Field(default="ja", description="言語コード (固定: ja)")
     speed: float = Field(default=1.0, ge=0.25, le=4.0, description="読み上げ速度")
+    use_lip_sync: bool = Field(
+        default=False,
+        description="True の場合 Hedra でリップシンクを行う。False は ffmpeg 単純ミックス",
+    )
 
 
 class DialogueCreateResponse(BaseModel):
