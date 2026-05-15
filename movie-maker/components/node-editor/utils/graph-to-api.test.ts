@@ -800,9 +800,10 @@ describe('graphToStoryVideoCreate - edge scoping (新規)', () => {
       expect(request.element_images).toEqual([{ image_url: 'https://example.com/e1.jpg' }]);
       // 警告ログが出る (development 環境での providerNode 存在時)
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('klingElements'));
-      // Telemetry event が送信される
+      // Telemetry event が送信される (generate 経路なので is_storyboard_path: false)
       expect(vaSpy).toHaveBeenCalledWith('event', expect.objectContaining({
         name: 'kling_edge_scoping_fallback',
+        data: expect.objectContaining({ is_storyboard_path: false }),
       }));
     } finally {
       warnSpy.mockRestore();
@@ -827,5 +828,28 @@ describe('graphToStoryVideoCreate - edge scoping (新規)', () => {
     // providerNode が undefined なので console.warn は呼ばれない
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
+  });
+
+  it('storyboard 経路フォールバック時、window.va に is_storyboard_path: true が送信される', () => {
+    // window.va をモック
+    const vaSpy = vi.fn();
+    Object.defineProperty(window, 'va', { value: vaSpy, writable: true, configurable: true });
+
+    const nodes: WorkflowNode[] = [
+      createImageInputNodeWithId({ imageUrl: 'https://example.com/img.jpg' }),
+      createPromptNodeWithId({ englishPrompt: 'test' }),
+      createProviderNodeWithId({ provider: 'piapi_kling' }),
+      createKlingElementsNode({ elementImages: ['https://example.com/e1.jpg'] }),
+      createGenerateNodeWithId({}),
+    ];
+
+    // generateNodeId なしで呼び出し (storyboard / library 経路: providerNode === undefined)
+    graphToStoryVideoCreate(nodes, [], undefined);
+
+    // is_storyboard_path: true で Telemetry が送信される
+    expect(vaSpy).toHaveBeenCalledWith('event', expect.objectContaining({
+      name: 'kling_edge_scoping_fallback',
+      data: expect.objectContaining({ is_storyboard_path: true }),
+    }));
   });
 });

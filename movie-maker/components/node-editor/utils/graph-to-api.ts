@@ -120,10 +120,11 @@ export function graphToStoryVideoCreate(
         );
       }
       // Telemetry: フォールバック発火を Vercel Analytics に送信
+      // is_storyboard_path: storyboard/library 経路 (providerNode === undefined) か否かを区別する
       if (typeof window !== 'undefined' && (window as Window & { va?: (event: string, data: unknown) => void }).va) {
         (window as Window & { va?: (event: string, data: unknown) => void }).va!('event', {
           name: 'kling_edge_scoping_fallback',
-          data: { expectedType, targetHandle }
+          data: { expectedType, targetHandle, is_storyboard_path: !providerNode }
         });
       }
     }
