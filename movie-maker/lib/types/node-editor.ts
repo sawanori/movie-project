@@ -106,7 +106,8 @@ export interface KlingModeNodeData extends BaseNodeData {
 
 export interface KlingElementsNodeData extends BaseNodeData {
   type: 'klingElements';
-  elementImages: string[]; // 最大3枚
+  /** Kling 3.0 Omni Elements 用の参照画像 URL 配列。最大 4 枚。 */
+  elementImages: string[]; // 最大4枚
 }
 
 export interface KlingEndFrameNodeData extends BaseNodeData {

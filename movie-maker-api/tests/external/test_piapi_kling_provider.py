@@ -527,3 +527,163 @@ class TestVideoProviderFactory:
 
             assert provider.provider_name == "piapi_kling"
             assert isinstance(provider, PiAPIKlingProvider)
+
+
+# ============================================================================
+# Kling 3.0 Omni Elements 対応テスト (Design Doc §10-1)
+# ============================================================================
+
+from app.external.piapi_kling_provider import _inject_image_references_into_prompt
+
+
+class TestInjectImageReferencesIntoPrompt:
+    """Design Doc §10-1-1: 7 ケース (B3 全エッジケース)"""
+
+    def test_num_images_zero_returns_prompt_unchanged(self):
+        """ケース 1: 画像 0 枚 → no-op"""
+        assert _inject_image_references_into_prompt("A cat", 0) == "A cat"
+
+    def test_one_image_appends_image_1(self):
+        """ケース 2: 画像 1 枚 → @image_1 を付加"""
+        assert _inject_image_references_into_prompt("A cat", 1) == "A cat @image_1"
+
+    def test_four_images_appends_all_tags(self):
+        """ケース 3: 画像 4 枚 (上限) → @image_1〜@image_4 を付加"""
+        result = _inject_image_references_into_prompt("A cat", 4)
+        assert result == "A cat @image_1 @image_2 @image_3 @image_4"
+
+    def test_existing_image_ref_not_duplicated(self):
+        """ケース 4 (B3): prompt に既に @image_1 があれば付加しない"""
+        result = _inject_image_references_into_prompt("@image_1 walks", 2)
+        assert result == "@image_1 walks"
+
+    def test_trailing_whitespace_stripped_before_append(self):
+        """ケース 5 (B3): 末尾余分な空白は rstrip してから付加"""
+        result = _inject_image_references_into_prompt("A cat   ", 2)
+        assert result == "A cat @image_1 @image_2"
+
+    def test_empty_prompt_returns_tags_only(self):
+        """B3 エッジケース: 空 prompt → 頭空白なしで tags のみ"""
+        result = _inject_image_references_into_prompt("", 3)
+        assert result == "@image_1 @image_2 @image_3"
+
+    def test_image_ref_exceeds_num_images_emits_warning(self, caplog):
+        """B3 エッジケース: @image_K > num_images → prompt そのまま + WARNING ログ"""
+        import logging
+        with caplog.at_level(logging.WARNING, logger="app.external.piapi_kling_provider"):
+            result = _inject_image_references_into_prompt("@image_5 walks", 3)
+        assert result == "@image_5 walks"
+        assert any("PiAPI validation" in r.message for r in caplog.records), \
+            "WARNING ログが出力されていない"
+
+
+class TestKlingOmniElementsRequestBody:
+    """Design Doc §10-1-2, §10-1-3: 3.0 Omni request body 検証"""
+
+    @pytest.fixture
+    def omni_provider(self):
+        """3.0 バージョンを設定した provider"""
+        with patch('app.external.piapi_kling_provider.settings') as mock_settings:
+            mock_settings.PIAPI_API_KEY = "test_key"
+            mock_settings.PIAPI_KLING_VERSION = "3.0"
+            mock_settings.PIAPI_KLING_MODE = "std"
+            mock_settings.PIAPI_KLING_RESOLUTION = "720p"
+            mock_settings.PIAPI_KLING_ENABLE_AUDIO = False
+            yield PiAPIKlingProvider()
+
+    @pytest.mark.asyncio
+    async def test_generate_video_omni_with_elements(self, omni_provider):
+        """Design Doc §10-1-2: 3.0 Omni I2V — Elements 送信時の検証
+
+        - config.service_mode: "public" が付与される
+        - input.images に element_images が格納される
+        - input.prompt に @image_1 @image_2 @image_3 が自動付加される
+        """
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"data": {"task_id": "T-123"}}
+
+        with patch('httpx.AsyncClient') as mock_client_cls:
+            mock_async_client = AsyncMock()
+            mock_async_client.__aenter__ = AsyncMock(return_value=mock_async_client)
+            mock_async_client.__aexit__ = AsyncMock(return_value=None)
+            mock_async_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_async_client
+
+            task_id = await omni_provider.generate_video(
+                image_url="https://example.com/ignored.jpg",
+                prompt="走る犬",
+                element_images=["u1", "u2", "u3"],
+                duration=5,
+                aspect_ratio="9:16",
+            )
+
+        assert task_id == "T-123"
+
+        # captured request body
+        call_args = mock_async_client.post.call_args
+        captured_body = call_args.kwargs["json"]
+
+        assert captured_body["task_type"] == "omni_video_generation"
+        assert captured_body["input"]["prompt"] == "走る犬 @image_1 @image_2 @image_3"
+        assert captured_body["input"]["images"] == ["u1", "u2", "u3"]
+        assert captured_body["config"]["service_mode"] == "public"
+
+    @pytest.mark.asyncio
+    async def test_generate_video_omni_without_elements_uses_image_url(self, omni_provider):
+        """element_images なし時は images=[image_url] が組み立てられ、@image_1 が 1 件付加される"""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"data": {"task_id": "T-200"}}
+
+        with patch('httpx.AsyncClient') as mock_client_cls:
+            mock_async_client = AsyncMock()
+            mock_async_client.__aenter__ = AsyncMock(return_value=mock_async_client)
+            mock_async_client.__aexit__ = AsyncMock(return_value=None)
+            mock_async_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_async_client
+
+            await omni_provider.generate_video(
+                image_url="https://example.com/single.jpg",
+                prompt="A cat",
+                element_images=None,
+                duration=5,
+                aspect_ratio="9:16",
+            )
+
+        call_args = mock_async_client.post.call_args
+        captured_body = call_args.kwargs["json"]
+
+        assert captured_body["input"]["images"] == ["https://example.com/single.jpg"]
+        assert captured_body["input"]["prompt"] == "A cat @image_1"
+        assert captured_body["config"]["service_mode"] == "public"
+
+    @pytest.mark.asyncio
+    async def test_generate_video_from_text_omni_includes_service_mode(self, omni_provider):
+        """Design Doc §10-1-3: T2V 3.0 Omni — service_mode 付与 + images 不在"""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"data": {"task_id": "T-456"}}
+
+        with patch('httpx.AsyncClient') as mock_client_cls:
+            mock_async_client = AsyncMock()
+            mock_async_client.__aenter__ = AsyncMock(return_value=mock_async_client)
+            mock_async_client.__aexit__ = AsyncMock(return_value=None)
+            mock_async_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_async_client
+
+            task_id = await omni_provider.generate_video_from_text(
+                prompt="走る犬",
+                duration=5,
+                aspect_ratio="9:16",
+            )
+
+        assert task_id == "T-456"
+
+        call_args = mock_async_client.post.call_args
+        captured_body = call_args.kwargs["json"]
+
+        assert captured_body["task_type"] == "omni_video_generation"
+        assert captured_body["config"]["service_mode"] == "public"
+        assert "images" not in captured_body["input"], \
+            "T2V 経路には images キーが存在してはならない"

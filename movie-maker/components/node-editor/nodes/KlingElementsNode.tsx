@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useState } from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
+import { useCallback, useMemo, useState } from 'react';
+import { Handle, Position, NodeProps, useNodes } from '@xyflow/react';
 import { Layers, Plus, X, Loader2 } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import {
@@ -9,7 +9,11 @@ import {
   outputHandleClassName,
 } from './BaseNode';
 import { cn } from '@/lib/utils';
-import type { KlingElementsNodeData } from '@/lib/types/node-editor';
+import type {
+  KlingElementsNodeData,
+  ProviderNodeData,
+  WorkflowNode,
+} from '@/lib/types/node-editor';
 import { videosApi } from '@/lib/api/client';
 
 interface KlingElementsNodeProps extends NodeProps {
@@ -17,7 +21,7 @@ interface KlingElementsNodeProps extends NodeProps {
   selected: boolean;
 }
 
-const MAX_ELEMENTS = 3;
+const MAX_ELEMENTS = 4;
 
 export function KlingElementsNode({ data, selected, id }: KlingElementsNodeProps) {
   const [isUploading, setIsUploading] = useState(false);
@@ -89,6 +93,17 @@ export function KlingElementsNode({ data, selected, id }: KlingElementsNodeProps
     disabled: isUploading || data.elementImages.length >= MAX_ELEMENTS,
   });
 
+  // B2 解決: グラフ内の全 ProviderNode を useNodes() で走査
+  // 1-hop search ではなく全ノードスキャンで ProviderNode を探す (Design Doc §7-1 B2 解決)
+  const nodes = useNodes<WorkflowNode>();
+  const isKlingProvider = useMemo(() => {
+    const providerNodes = nodes.filter((n) => n.data.type === 'provider');
+    if (providerNodes.length === 0) return null; // Provider 未配置 → 警告非表示
+    return providerNodes.some(
+      (n) => (n.data as ProviderNodeData).provider === 'piapi_kling'
+    );
+  }, [nodes]);
+
   return (
     <BaseNode
       title="Kling 要素画像"
@@ -96,10 +111,19 @@ export function KlingElementsNode({ data, selected, id }: KlingElementsNodeProps
       isSelected={selected}
       isValid={data.isValid}
       errorMessage={data.errorMessage}
-      className="min-w-[240px]"
+      className="min-w-[280px]"
     >
+      {/* Provider 警告 (B2 解決: useNodes 全ノードスキャン) */}
+      {isKlingProvider === false && (
+        <div className="mb-2 p-2 rounded bg-[#2a2a2a] border border-yellow-600/40">
+          <p className="text-[10px] text-yellow-400">
+            ⚠ Kling 専用ノードです。他プロバイダー時は無視されます
+          </p>
+        </div>
+      )}
+
       {/* アップロード済み画像 */}
-      <div className="grid grid-cols-3 gap-2 mb-3">
+      <div className="grid grid-cols-4 gap-2 mb-3">
         {data.elementImages.map((url, index) => (
           <div key={index} className="relative aspect-square">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -141,6 +165,9 @@ export function KlingElementsNode({ data, selected, id }: KlingElementsNodeProps
 
       <p className="text-[10px] text-gray-500">
         {data.elementImages.length}/{MAX_ELEMENTS} 枚（一貫性向上用）
+      </p>
+      <p className="mt-1 text-[10px] text-gray-400">
+        プロンプトに <span className="text-[#fce300]">@image_1</span> を入れると参照位置を明示できます
       </p>
 
       <Handle

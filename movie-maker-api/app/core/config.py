@@ -39,8 +39,13 @@ class Settings(BaseSettings):
 
     # PiAPI (Kling AI via PiAPI gateway)
     PIAPI_API_KEY: str = ""
-    PIAPI_KLING_VERSION: str = "2.6"
-    PIAPI_KLING_MODE: str = "std"  # "std" or "pro"
+    # バージョンポリシー: 3.0 以上必須、それ未満は非推奨。2.x / 1.6 は production で使用禁止。
+    # Elements / 音声生成 / reference_video は 3.0 Omni 経路のみ動作する。
+    # 3.x 新版リリース時はここを更新すること (FU-8)。
+    PIAPI_KLING_VERSION: str = "3.0"
+    PIAPI_KLING_MODE: str = "std"  # "std" or "pro" (used for 2.6 rollback)
+    PIAPI_KLING_RESOLUTION: str = "720p"  # "720p" or "1080p" (3.0 only)
+    PIAPI_KLING_ENABLE_AUDIO: bool = False  # Enable audio generation (3.0 only)
 
     # PiAPI Seedance Settings
     PIAPI_SEEDANCE_TASK_TYPE: str = "seedance-2-preview-vip"  # or "seedance-2-preview"

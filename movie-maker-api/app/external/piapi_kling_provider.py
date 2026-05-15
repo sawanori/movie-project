@@ -9,6 +9,7 @@ API Documentation: https://piapi.ai/docs/kling-api/create-task
 import httpx
 import json
 import logging
+import re
 from typing import Optional
 
 from app.core.config import settings
@@ -210,16 +211,74 @@ def _get_camera_control(camera_work: Optional[str]) -> Optional[dict]:
     return CAMERA_CONTROL_MAPPING.get(camera_work)
 
 
+# プロンプト内に既に @image_i が明示されているかを検出する正規表現。
+# - @image_\d+ 形式を検出 (大文字小文字を問わない)
+_IMAGE_REF_PATTERN = re.compile(r"@image_\d+", re.IGNORECASE)
+
+
+def _inject_image_references_into_prompt(prompt: str, num_images: int) -> str:
+    """
+    Kling 3.0 Omni 向けに、プロンプト末尾へ @image_1, ..., @image_N を自動付加する。
+
+    Behavior (B3 全エッジケース対応):
+      - num_images <= 0           → prompt をそのまま返す (Elements 未使用)
+      - prompt.strip() == ""      → "@image_1 @image_2 ..." だけを返す (頭空白なし)
+      - prompt に既に @image_N (N が num_images 以下) が含まれる → そのまま返す
+        (ユーザー記述尊重)
+      - prompt に @image_K (K > num_images) が含まれる
+        → そのまま返すが logger.warning で警告ログを出す
+      - 上記以外 → prompt.rstrip() + " " + "@image_1 @image_2 ... @image_N"
+
+    Args:
+        prompt: 元プロンプト
+        num_images: input.images 配列の枚数 (1〜4 を想定)
+
+    Returns:
+        str: @image_i が末尾に付加されたプロンプト
+    """
+    if num_images <= 0:
+        return prompt
+
+    stripped = prompt.strip()
+    existing = _IMAGE_REF_PATTERN.findall(stripped)
+
+    if existing:
+        max_existing = max(int(m.split('_')[1]) for m in existing)
+        if max_existing > num_images:
+            logger.warning(
+                f"プロンプトに @image_{max_existing} がありますが num_images={num_images} です。"
+                "PiAPI validation が失敗する可能性があります。"
+            )
+        return prompt  # ユーザー記述尊重
+
+    tags = " ".join(f"@image_{i}" for i in range(1, num_images + 1))
+
+    if not stripped:
+        return tags  # 空 prompt → 頭空白なしで tags のみ
+
+    return f"{stripped} {tags}"
+
+
 class PiAPIKlingProvider(VideoProviderInterface):
     """PiAPI Kling 動画生成プロバイダー"""
 
     def __init__(self):
         self.api_key = getattr(settings, 'PIAPI_API_KEY', None)
-        self.version = getattr(settings, 'PIAPI_KLING_VERSION', '2.6')
+        self.version = getattr(settings, 'PIAPI_KLING_VERSION', '3.0')
         self.mode = getattr(settings, 'PIAPI_KLING_MODE', 'std')
+        self.resolution = getattr(settings, 'PIAPI_KLING_RESOLUTION', '720p')
+        self.enable_audio = getattr(settings, 'PIAPI_KLING_ENABLE_AUDIO', False)
 
         if not self.api_key:
             raise ValueError("PIAPI_API_KEY must be configured")
+
+        # バージョンポリシー検証 (Design Doc §8-2)
+        if not self.version.startswith("3"):
+            logger.warning(
+                f"PIAPI_KLING_VERSION={self.version!r} は推奨外です。"
+                f"Elements / 音声生成 / reference video 機能が利用できません。"
+                f"3.0 以上への昇格を推奨します。"
+            )
 
     @property
     def provider_name(self) -> str:
@@ -230,12 +289,112 @@ class PiAPIKlingProvider(VideoProviderInterface):
         """PiAPI Kling は extend_video をサポート"""
         return True
 
+    @property
+    def supports_t2v(self) -> bool:
+        """PiAPI Kling は Text-to-Video をサポート"""
+        return True
+
     def _get_headers(self) -> dict:
         """API認証ヘッダーを取得"""
         return {
             "x-api-key": self.api_key,
             "Content-Type": "application/json",
         }
+
+    async def generate_video_from_text(
+        self,
+        prompt: str,
+        duration: int = 5,
+        aspect_ratio: str = "9:16",
+    ) -> str:
+        """
+        PiAPI Kling API でテキストから動画を生成（画像なし）
+
+        Args:
+            prompt: 動画生成プロンプト（最大2500文字）
+            duration: 動画長さ（5 or 10秒）
+            aspect_ratio: アスペクト比 ("9:16", "16:9", "1:1")
+
+        Returns:
+            str: タスクID
+
+        Raises:
+            VideoProviderError: 生成開始に失敗した場合
+        """
+        try:
+            if len(prompt) > 2500:
+                prompt = prompt[:2497] + "..."
+                logger.warning("T2V: Prompt truncated to 2500 chars")
+
+            if self.version.startswith("3"):
+                request_body = {
+                    "model": "kling",
+                    "task_type": "omni_video_generation",
+                    "input": {
+                        "prompt": prompt,
+                        "duration": duration,
+                        "aspect_ratio": aspect_ratio,
+                        "version": "3.0",
+                        "resolution": self.resolution,
+                        "enable_audio": self.enable_audio,
+                    },
+                    # 公式サンプルに合わせ service_mode を明示 (Design Doc §6-2)
+                    "config": {
+                        "service_mode": "public",
+                    },
+                }
+            else:
+                request_body = {
+                    "model": "kling",
+                    "task_type": "video_generation",
+                    "input": {
+                        "prompt": prompt,
+                        "duration": duration,
+                        "aspect_ratio": aspect_ratio,
+                        "mode": self.mode,
+                        "version": self.version,
+                    }
+                }
+
+            logger.info(f"T2V: PiAPI Kling request: version={self.version}, duration={duration}, aspect_ratio={aspect_ratio}")
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{PIAPI_BASE_URL}/task",
+                    headers=self._get_headers(),
+                    json=request_body,
+                    timeout=60.0,
+                )
+                response.raise_for_status()
+                result = response.json()
+
+                task_id = result.get("data", {}).get("task_id")
+                if task_id:
+                    logger.info(f"T2V: PiAPI Kling task created: {task_id}")
+                    return task_id
+
+                logger.error(f"T2V: PiAPI response missing task_id: {result}")
+                raise VideoProviderError("T2V: PiAPI Kling APIからタスクIDが返されませんでした")
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"T2V: PiAPI HTTP error: {e.response.status_code} - {e.response.text}")
+            try:
+                error_data = e.response.json()
+                error_msg = error_data.get("message", "")
+                if "credit" in error_msg.lower():
+                    raise VideoProviderError("PiAPIのクレジットが不足しています。")
+                if "rate" in error_msg.lower() or "limit" in error_msg.lower():
+                    raise VideoProviderError("PiAPIのレート制限に達しました。しばらく待ってから再試行してください。")
+                raise VideoProviderError(f"T2V: PiAPI Kling API エラー: {error_msg}")
+            except VideoProviderError:
+                raise
+            except Exception:
+                raise VideoProviderError(f"T2V: PiAPI Kling API エラー: {e.response.status_code}")
+        except VideoProviderError:
+            raise
+        except Exception as e:
+            logger.exception(f"T2V: PiAPI Kling generation failed: {e}")
+            raise VideoProviderError(f"T2V動画生成に失敗しました: {str(e)}")
 
     async def generate_video(
         self,
@@ -275,65 +434,109 @@ class PiAPIKlingProvider(VideoProviderInterface):
                 prompt = prompt[:2497] + "..."
                 logger.warning("Prompt truncated to 2500 chars")
 
-            # モードの決定（引数指定 > 設定値）
-            effective_mode = mode if mode else self.mode
+            if self.version.startswith("3"):
+                # === 3.0 Omni ===
+                # images 配列に変換 (element_images 優先、未指定なら image_url 単体)
+                if element_images and len(element_images) > 0:
+                    images_for_request = element_images[:4]
+                else:
+                    images_for_request = [image_url]
 
-            # リクエストボディを構築
-            request_body = {
-                "model": "kling",
-                "task_type": "video_generation",
-                "input": {
-                    "prompt": prompt,
-                    "duration": duration,
-                    "aspect_ratio": aspect_ratio,
-                    "mode": effective_mode,
-                    "version": self.version,
+                # プロンプトに @image_i を自動付加 (既存記載がある場合はスキップ)
+                effective_prompt = _inject_image_references_into_prompt(
+                    prompt,
+                    len(images_for_request),
+                )
+
+                request_body = {
+                    "model": "kling",
+                    "task_type": "omni_video_generation",
+                    "input": {
+                        "prompt": effective_prompt,
+                        "duration": duration,
+                        "aspect_ratio": aspect_ratio,
+                        "version": "3.0",
+                        "resolution": self.resolution,
+                        "enable_audio": self.enable_audio,
+                        "images": images_for_request,
+                    },
+                    # 公式サンプルに合わせ service_mode を明示 (Design Doc §6-2)
+                    "config": {
+                        "service_mode": "public",
+                    },
                 }
-            }
 
-            # Elements対応: element_imagesがある場合は elements パラメータを使用
-            # TODO: PiAPI Elements API のバリデーションエラーを調査中のため一時的に無効化
-            using_elements = False
-            if element_images and len(element_images) > 0:
-                # 一時的に無効化: Elements使用時でもimage_urlを使用（先頭画像のみ）
-                logger.warning(f"Elements機能は調査中のため無効化されています。先頭画像のみ使用: {element_images[0]}")
-                request_body["input"]["image_url"] = element_images[0]
-                # 本来のElements実装（調査後に有効化）
-                # request_body["input"]["elements"] = [
-                #     {"image_url": url} for url in element_images
-                # ]
-                # using_elements = True
-                # logger.info(f"Using Kling Elements with {len(element_images)} images: {element_images}")
+                # 3.0非対応パラメータのログ警告
+                if camera_work or camera_control:
+                    logger.warning("Kling 3.0 does not support camera_control. Ignoring.")
+                if image_tail_url:
+                    logger.warning("Kling 3.0 does not support image_tail_url. Ignoring.")
+                if mode:
+                    logger.warning("Kling 3.0 does not support mode (std/pro). Ignoring.")
+
+                # デバッグ用: リクエストボディをログ出力
+                logger.info(f"PiAPI Kling request body: {json.dumps(request_body, indent=2)}")
+                logger.info(
+                    f"PiAPI Kling request: version={self.version}, "
+                    f"resolution={self.resolution}, enable_audio={self.enable_audio}, "
+                    f"aspect_ratio={aspect_ratio}, num_images={len(images_for_request)}"
+                )
+
             else:
-                # 従来通り単一画像
-                request_body["input"]["image_url"] = image_url
+                # === 2.6 以前（既存ロジックそのまま） ===
+                # モードの決定（引数指定 > 設定値）
+                effective_mode = mode if mode else self.mode
 
-            # 終了フレーム画像を追加（指定時のみ）
-            # 注意: Elementsとimage_tail_urlは併用できない可能性があるため、Elements使用時はスキップ
-            if image_tail_url and not using_elements:
-                request_body["input"]["image_tail_url"] = image_tail_url
-                logger.info(f"Using dual image mode: start -> end frame transition")
-            elif image_tail_url and using_elements:
-                logger.warning("Elements使用時はimage_tail_url（終了フレーム）は無効化されます")
-
-            # カメラ制御を追加
-            # 新: camera_control dict が渡された場合は直接使用
-            if camera_control:
-                request_body["input"]["camera_control"] = {
-                    "type": "simple",
-                    "config": camera_control,
+                # リクエストボディを構築
+                request_body = {
+                    "model": "kling",
+                    "task_type": "video_generation",
+                    "input": {
+                        "prompt": prompt,
+                        "duration": duration,
+                        "aspect_ratio": aspect_ratio,
+                        "mode": effective_mode,
+                        "version": self.version,
+                    }
                 }
-                logger.info(f"Using custom camera_control: {camera_control}")
-            # 旧: camera_work 名からマッピング
-            elif camera_work:
-                mapped_control = _get_camera_control(camera_work)
-                if mapped_control:
-                    request_body["input"]["camera_control"] = mapped_control
-                    logger.info(f"Using mapped camera_control for {camera_work}")
 
-            # デバッグ用: リクエストボディをログ出力
-            logger.info(f"PiAPI Kling request body: {json.dumps(request_body, indent=2)}")
-            logger.info(f"PiAPI Kling request: version={self.version}, mode={effective_mode}, aspect_ratio={aspect_ratio}")
+                # Elements対応: element_imagesがある場合は elements パラメータを使用
+                # TODO: PiAPI Elements API のバリデーションエラーを調査中のため一時的に無効化
+                using_elements = False
+                if element_images and len(element_images) > 0:
+                    # 一時的に無効化: Elements使用時でもimage_urlを使用（先頭画像のみ）
+                    logger.warning(f"Elements機能は調査中のため無効化されています。先頭画像のみ使用: {element_images[0]}")
+                    request_body["input"]["image_url"] = element_images[0]
+                else:
+                    # 従来通り単一画像
+                    request_body["input"]["image_url"] = image_url
+
+                # 終了フレーム画像を追加（指定時のみ）
+                # 注意: Elementsとimage_tail_urlは併用できない可能性があるため、Elements使用時はスキップ
+                if image_tail_url and not using_elements:
+                    request_body["input"]["image_tail_url"] = image_tail_url
+                    logger.info(f"Using dual image mode: start -> end frame transition")
+                elif image_tail_url and using_elements:
+                    logger.warning("Elements使用時はimage_tail_url（終了フレーム）は無効化されます")
+
+                # カメラ制御を追加
+                # 新: camera_control dict が渡された場合は直接使用
+                if camera_control:
+                    request_body["input"]["camera_control"] = {
+                        "type": "simple",
+                        "config": camera_control,
+                    }
+                    logger.info(f"Using custom camera_control: {camera_control}")
+                # 旧: camera_work 名からマッピング
+                elif camera_work:
+                    mapped_control = _get_camera_control(camera_work)
+                    if mapped_control:
+                        request_body["input"]["camera_control"] = mapped_control
+                        logger.info(f"Using mapped camera_control for {camera_work}")
+
+                # デバッグ用: リクエストボディをログ出力
+                logger.info(f"PiAPI Kling request body: {json.dumps(request_body, indent=2)}")
+                logger.info(f"PiAPI Kling request: version={self.version}, mode={effective_mode}, aspect_ratio={aspect_ratio}")
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(

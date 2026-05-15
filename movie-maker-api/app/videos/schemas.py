@@ -300,8 +300,8 @@ class StoryVideoCreate(BaseModel):
     end_frame_image_url: str | None = Field(default=None, description="終了フレーム画像URL（Kling専用、2枚目の画像で遷移動画を生成）")
     element_images: list[ElementImage] | None = Field(
         default=None,
-        max_length=3,
-        description="一貫性向上用の追加画像（最大3枚）。Kling専用機能"
+        max_length=4,
+        description="Kling 3.0 Omni Elements 用の参照画像（最大 4 枚）。Kling専用機能"
     )
     kling_camera_control: KlingCameraControl | None = Field(
         default=None,
@@ -797,8 +797,8 @@ class StoryboardCreateRequest(BaseModel):
     aspect_ratio: AspectRatio = Field(AspectRatio.PORTRAIT, description="アスペクト比（9:16=縦長, 16:9=横長）")
     element_images: list[ElementImage] | None = Field(
         default=None,
-        max_length=3,
-        description="一貫性向上用の追加画像（最大3枚、ベース画像と合わせて最大4枚）。Kling専用機能"
+        max_length=4,
+        description="Kling 3.0 Omni Elements 用の参照画像（最大 4 枚）。Kling専用機能"
     )
 
 
@@ -814,8 +814,8 @@ class StoryboardGenerateRequest(BaseModel):
     scene_end_frame_images: dict[int, str] | None = Field(None, description="シーンごとの終了フレーム画像URL {scene_number: url}。Kling専用オプション")
     element_images: list[ElementImage] | None = Field(
         default=None,
-        max_length=3,
-        description="一貫性向上用の追加画像（ストーリーボード保存値を上書き）。Kling専用機能"
+        max_length=4,
+        description="Kling 3.0 Omni Elements 用の参照画像（最大 4 枚、ストーリーボード保存値を上書き）。Kling専用機能"
     )
     kling_duration: Literal[5, 10] | None = Field(
         default=None,
