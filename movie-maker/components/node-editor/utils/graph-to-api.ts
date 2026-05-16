@@ -447,9 +447,16 @@ export function validateGraphForGeneration(
     (n) => (n.data as WorkflowNodeData).type === 'generate'
   );
 
-  // 画像または動画の入力ノードが必要
-  if (!hasImageInput && !hasVideoInput) {
-    errors.push('画像入力または動画入力ノードが必要です');
+  // KlingElementsNode に画像が 1 枚以上ある場合、ImageInput は不要
+  const hasKlingElementsWithImages = nodes.some((n) => {
+    const d = n.data as WorkflowNodeData;
+    return d.type === 'klingElements' &&
+      (d as KlingElementsNodeData).elementImages.length > 0;
+  });
+
+  // 画像または動画の入力ノードが必要（KlingElements 画像がある場合は免除）
+  if (!hasImageInput && !hasVideoInput && !hasKlingElementsWithImages) {
+    errors.push('画像入力、動画入力、または Kling 要素画像が必要です');
   }
   if (!hasPrompt) {
     errors.push('プロンプトノードが必要です');

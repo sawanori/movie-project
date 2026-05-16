@@ -555,8 +555,27 @@ describe('validateGraphForGeneration', () => {
 
       expect(result.isValid).toBe(false)
       expect(result.errors).toContain(
-        '画像入力または動画入力ノードが必要です'
+        '画像入力、動画入力、または Kling 要素画像が必要です'
       )
+    })
+
+    it('KlingElementsNode (画像 1 枚以上) のみで ImageInput/VideoInput なし → エラーなし (バリデーション緩和)', () => {
+      const nodes: WorkflowNode[] = [
+        createPromptNode(),
+        createProviderNode('piapi_kling'),
+        createGenerateNode(),
+        createKlingElementsNode({ elementImages: ['https://example.com/e1.jpg'] }),
+      ]
+      const edges: Edge[] = [
+        { id: 'e1', source: 'prompt-1', target: 'generate-1' },
+        { id: 'e2', source: 'provider-1', target: 'generate-1' },
+        { id: 'e3', source: 'klingElements-1', target: 'generate-1' },
+      ]
+
+      const result = validateGraphForGeneration(nodes, edges)
+
+      expect(result.errors).not.toContain('画像入力、動画入力、または Kling 要素画像が必要です')
+      expect(result.errors).not.toContain('画像入力または動画入力ノードが必要です')
     })
   })
 

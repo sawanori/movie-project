@@ -332,7 +332,8 @@ export interface ValidationError {
     | 'provider_mismatch'
     | 'disconnected_optional'   // 設定ノードが ProviderNode に未接続 (新 Phase 1: warning)
     | 'ambiguous_provider'      // 複数 ProviderNode + CONFIG_INPUT 未接続 GenerateNode
-    | 'multiple_provider_connection'; // CONFIG_INPUT に複数 Provider 接続
+    | 'multiple_provider_connection' // CONFIG_INPUT に複数 Provider 接続
+    | 'unused_image_input'; // KlingElements 使用中のため ImageInput が無視される (warning)
   nodeId?: string;
   message: string;
 }

@@ -223,4 +223,62 @@ describe('useWorkflowValidation', () => {
     const { result } = renderHook(() => useWorkflowValidation(nodes, edges));
     expect(result.current.errors.some(e => e.type === 'multiple_provider_connection')).toBe(true);
   });
+
+  // ========== unused_image_input warning テスト ==========
+
+  it('ケース1: KlingElements (画像あり) + ImageInput (画像あり) + piapi_kling → unused_image_input warning 発生', () => {
+    const nodes: WorkflowNode[] = [
+      createProviderNode({ provider: 'piapi_kling' }),
+      createKlingElementsNode({ elementImages: ['https://example.com/e1.jpg'] }),
+      createGenerateNode(),
+      createImageInputNode({ imageUrl: 'https://example.com/img.jpg' }),
+      createPromptNode({ englishPrompt: 'test' }),
+    ];
+
+    const { result } = renderHook(() => useWorkflowValidation(nodes, []));
+    expect(result.current.warnings.some(w => w.type === 'unused_image_input')).toBe(true);
+    const warning = result.current.warnings.find(w => w.type === 'unused_image_input');
+    expect(warning?.nodeId).toBe('imageInput-1');
+  });
+
+  it('ケース2: KlingElements (画像なし) + ImageInput (画像あり) → unused_image_input warning なし', () => {
+    const nodes: WorkflowNode[] = [
+      createProviderNode({ provider: 'piapi_kling' }),
+      createKlingElementsNode({ elementImages: [] }),
+      createGenerateNode(),
+      createImageInputNode({ imageUrl: 'https://example.com/img.jpg' }),
+      createPromptNode({ englishPrompt: 'test' }),
+    ];
+
+    const { result } = renderHook(() => useWorkflowValidation(nodes, []));
+    expect(result.current.warnings.some(w => w.type === 'unused_image_input')).toBe(false);
+  });
+
+  it('ケース3: KlingElements (画像あり) only で ImageInput/VideoInput なし → warning なし、エラーもなし (バリデーション緩和)', () => {
+    // useWorkflowValidation は ImageInput 必須チェックを持つが、
+    // graph-to-api の validateGraphForGeneration 側でバリデーション緩和済み
+    // このフックでは ImageInput なしでも unused_image_input warning は発生しない
+    const nodes: WorkflowNode[] = [
+      createProviderNode({ provider: 'piapi_kling' }),
+      createKlingElementsNode({ elementImages: ['https://example.com/e1.jpg'] }),
+      createGenerateNode(),
+      createPromptNode({ englishPrompt: 'test' }),
+    ];
+
+    const { result } = renderHook(() => useWorkflowValidation(nodes, []));
+    expect(result.current.warnings.some(w => w.type === 'unused_image_input')).toBe(false);
+  });
+
+  it('ケース4: KlingElements (画像あり) + ImageInput (画像あり) + Runway Provider → unused_image_input warning なし', () => {
+    const nodes: WorkflowNode[] = [
+      createProviderNode({ provider: 'runway' }),
+      createKlingElementsNode({ elementImages: ['https://example.com/e1.jpg'] }),
+      createGenerateNode(),
+      createImageInputNode({ imageUrl: 'https://example.com/img.jpg' }),
+      createPromptNode({ englishPrompt: 'test' }),
+    ];
+
+    const { result } = renderHook(() => useWorkflowValidation(nodes, []));
+    expect(result.current.warnings.some(w => w.type === 'unused_image_input')).toBe(false);
+  });
 });

@@ -253,6 +253,23 @@ export function useWorkflowValidation(
       }
     }
 
+    // 9. unused_image_input warning:
+    //    KlingElements (画像あり) + ImageInput (画像あり) + piapi_kling Provider
+    //    → ImageInput は Backend で無視される (Kling 3.0 Omni は element_images 優先)
+    if (
+      klingElementsResult &&
+      klingElementsResult.data.elementImages.length > 0 &&
+      selectedProvider === 'piapi_kling'
+    ) {
+      if (imageInputResult && imageInputResult.data.imageUrl) {
+        warnings.push({
+          type: 'unused_image_input',
+          nodeId: imageInputResult.node.id,
+          message: 'KlingElements 使用中のため ImageInput の画像は無視されます。ImageInput ノードの削除を推奨します。',
+        });
+      }
+    }
+
     // 生成可能かどうかの判定（致命的なエラーがないか）
     const canGenerate =
       !!imageInputResult?.data.imageUrl &&
