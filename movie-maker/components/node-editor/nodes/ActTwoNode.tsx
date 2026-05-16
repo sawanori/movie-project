@@ -142,7 +142,7 @@ export function ActTwoNode({ data, selected, id }: ActTwoNodeProps) {
               type="range"
               min={1}
               max={5}
-              value={data.expressionIntensity}
+              value={data.expressionIntensity ?? 3}
               onChange={(e) =>
                 updateNodeData({ expressionIntensity: Number(e.target.value) })
               }

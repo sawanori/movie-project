@@ -91,8 +91,8 @@ export const KlingCameraControlNode = memo(function KlingCameraControlNode({
                 <span className="text-gray-500 ml-1">({labelEn})</span>
               </label>
               <span className="text-xs font-mono text-white w-8 text-right">
-                {data.config[key as keyof typeof data.config] > 0 ? '+' : ''}
-                {data.config[key as keyof typeof data.config]}
+                {(data.config[key as keyof typeof data.config] ?? 0) > 0 ? '+' : ''}
+                {data.config[key as keyof typeof data.config] ?? 0}
               </span>
             </div>
             <input
@@ -100,7 +100,7 @@ export const KlingCameraControlNode = memo(function KlingCameraControlNode({
               min={-10}
               max={10}
               step={1}
-              value={data.config[key as keyof typeof data.config]}
+              value={data.config[key as keyof typeof data.config] ?? 0}
               onChange={(e) =>
                 handleAxisChange(
                   key as keyof typeof data.config,

@@ -135,7 +135,7 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
       <div className="mb-3">
         <label className={nodeLabelClassName}>アスペクト比</label>
         <select
-          value={data.aspectRatio}
+          value={data.aspectRatio ?? '9:16'}
           onChange={handleAspectRatioChange}
           className={nodeSelectClassName}
         >

@@ -66,7 +66,7 @@ export function OverlayNode({ data, selected, id }: OverlayNodeProps) {
           <label className={nodeLabelClassName}>テキスト</label>
           <input
             type="text"
-            value={data.text}
+            value={data.text ?? ''}
             onChange={(e) => updateNodeData({ text: e.target.value })}
             placeholder="オーバーレイテキスト"
             maxLength={100}
@@ -78,7 +78,7 @@ export function OverlayNode({ data, selected, id }: OverlayNodeProps) {
         <div>
           <label className={nodeLabelClassName}>位置</label>
           <select
-            value={data.position}
+            value={data.position ?? 'bottom'}
             onChange={(e) =>
               updateNodeData({ position: e.target.value as OverlayPosition })
             }
@@ -96,7 +96,7 @@ export function OverlayNode({ data, selected, id }: OverlayNodeProps) {
         <div>
           <label className={nodeLabelClassName}>フォント</label>
           <select
-            value={data.font}
+            value={data.font ?? 'sans-serif'}
             onChange={(e) => updateNodeData({ font: e.target.value })}
             className={nodeSelectClassName}
           >

@@ -25,7 +25,7 @@ const SUBJECT_TYPES: { value: SubjectType; label: string }[] = [
 ];
 
 export function PromptNode({ data, selected, id }: PromptNodeProps) {
-  const [localPrompt, setLocalPrompt] = useState(data.japanesePrompt);
+  const [localPrompt, setLocalPrompt] = useState(data.japanesePrompt ?? '');
 
   const updateNodeData = useCallback(
     (updates: Partial<PromptNodeData>) => {
@@ -98,7 +98,7 @@ export function PromptNode({ data, selected, id }: PromptNodeProps) {
       <div className="mb-3">
         <label className={nodeLabelClassName}>被写体タイプ</label>
         <select
-          value={data.subjectType}
+          value={data.subjectType ?? 'person'}
           onChange={handleSubjectTypeChange}
           className={nodeSelectClassName}
         >
@@ -115,7 +115,7 @@ export function PromptNode({ data, selected, id }: PromptNodeProps) {
         <label className={nodeLabelClassName}>プロンプト（日本語）</label>
         <textarea
           placeholder="動画の内容を日本語で入力"
-          value={localPrompt}
+          value={localPrompt ?? ''}
           onChange={(e) => setLocalPrompt(e.target.value)}
           className={`${nodeInputClassName} min-h-[80px] resize-none`}
         />
