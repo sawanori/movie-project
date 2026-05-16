@@ -293,8 +293,10 @@ export function graphToStoryVideoCreate(
 
   // ========== I2V モード（既存ロジック）==========
   // 必須パラメータのバリデーション
-  if (!imageInput?.imageUrl) {
-    throw new Error('画像が選択されていません');
+  // KlingElements に画像があれば ImageInput は不要 (backend で element_images 優先)
+  const effectiveImageUrl = imageInput?.imageUrl ?? klingElements?.elementImages?.[0];
+  if (!effectiveImageUrl) {
+    throw new Error('画像が選択されていません (ImageInput または KlingElements が必要)');
   }
   if (!prompt?.englishPrompt) {
     throw new Error('プロンプトが入力されていません');
@@ -303,7 +305,7 @@ export function graphToStoryVideoCreate(
   // リクエストオブジェクトを構築
   const request: StoryVideoCreateRequest = {
     // 必須
-    image_url: imageInput.imageUrl,
+    image_url: effectiveImageUrl,
     story_text: prompt.englishPrompt,
     // 基本設定
     aspect_ratio: provider?.aspectRatio ?? '9:16',
@@ -473,7 +475,10 @@ export function validateGraphForGeneration(
     if (data.type === 'imageInput' && !hasVideoInput) {
       const d = data as ImageInputNodeData;
       if (!d.imageUrl) {
-        errors.push('画像が選択されていません');
+        // KlingElements に画像があれば ImageInput 不要 (backend で element_images 優先)
+        if (!hasKlingElementsWithImages) {
+          errors.push('画像が選択されていません');
+        }
       }
     }
 

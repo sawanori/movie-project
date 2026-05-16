@@ -872,3 +872,80 @@ describe('graphToStoryVideoCreate - edge scoping (新規)', () => {
     }));
   });
 });
+
+// ========== KlingElements image_url フォールバック ==========
+
+describe('graphToStoryVideoCreate - KlingElements image_url fallback', () => {
+  // X1: ImageInput なし + KlingElements (画像 2 枚) + Prompt + Generate + Provider(piapi_kling)
+  it('X1: ImageInput なしで KlingElements に画像があれば throw せず、image_url に先頭画像が入る', () => {
+    const providerNodeId = 'provider-x1';
+    const generateNodeId = 'generate-x1';
+    const klingElementsNodeId = 'klingElements-x1';
+
+    const nodes: WorkflowNode[] = [
+      createPromptNodeWithId({ englishPrompt: 'A cinematic shot' }),
+      createProviderNodeWithId({ id: providerNodeId, provider: 'piapi_kling' }),
+      createKlingElementsNode({
+        id: klingElementsNodeId,
+        elementImages: [
+          'https://example.com/elem1.jpg',
+          'https://example.com/elem2.jpg',
+        ],
+      }),
+      createGenerateNodeWithId({ id: generateNodeId }),
+    ];
+    const edges: Edge[] = [
+      createEdgeWithHandles({ source: providerNodeId, target: generateNodeId, targetHandle: HANDLE_IDS.CONFIG_INPUT }),
+      createEdgeWithHandles({ source: klingElementsNodeId, target: providerNodeId, targetHandle: HANDLE_IDS.KLING_ELEMENTS_INPUT }),
+    ];
+
+    // throw しないこと
+    const request = graphToStoryVideoCreate(nodes, edges, generateNodeId);
+
+    // image_url に KlingElements の先頭画像が設定されること
+    expect(request.image_url).toBe('https://example.com/elem1.jpg');
+    // element_images に KlingElements の画像配列が設定されること
+    expect(request.element_images).toEqual([
+      { image_url: 'https://example.com/elem1.jpg' },
+      { image_url: 'https://example.com/elem2.jpg' },
+    ]);
+  });
+
+  // X2: ImageInput (imageUrl 空) + KlingElements (画像あり) → バリデーション errors なし
+  it('X2: ImageInput が存在しても imageUrl が空で KlingElements に画像があれば validateGraph でエラーなし', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNodeWithId({ imageUrl: null }),
+      createPromptNodeWithId({ englishPrompt: 'test prompt' }),
+      createProviderNodeWithId({ provider: 'piapi_kling' }),
+      createKlingElementsNode({ elementImages: ['https://example.com/elem.jpg'] }),
+      createGenerateNodeWithId({}),
+    ];
+    const edges: Edge[] = [
+      { id: 'e1', source: 'imageInput-1', target: 'generate-1' },
+      { id: 'e2', source: 'prompt-1', target: 'generate-1' },
+      { id: 'e3', source: 'provider-1', target: 'generate-1' },
+      { id: 'e4', source: 'klingElements-1', target: 'generate-1' },
+    ];
+
+    const result = validateGraphForGeneration(nodes, edges);
+
+    expect(result.errors).not.toContain('画像が選択されていません');
+  });
+
+  // X3: ImageInput なし + KlingElements (画像 0 枚) → throw '画像が選択されていません'
+  it('X3: ImageInput なし + KlingElements 画像 0 枚 → throw 画像が選択されていません', () => {
+    const nodes: WorkflowNode[] = [
+      createPromptNodeWithId({ englishPrompt: 'test prompt' }),
+      createProviderNodeWithId({ provider: 'piapi_kling' }),
+      createKlingElementsNode({ elementImages: [] }),
+      createGenerateNodeWithId({}),
+    ];
+    const edges: Edge[] = [
+      { id: 'e1', source: 'prompt-1', target: 'generate-1' },
+      { id: 'e2', source: 'provider-1', target: 'generate-1' },
+      { id: 'e3', source: 'klingElements-1', target: 'generate-1' },
+    ];
+
+    expect(() => graphToStoryVideoCreate(nodes, edges)).toThrow('画像が選択されていません');
+  });
+});
