@@ -23,8 +23,8 @@ type VideoInputMode = 'upload' | 'history' | 'url';
 
 const ERROR_MESSAGES = {
   INVALID_FORMAT: 'Unsupported format (MP4/WebM/MOV only)',
-  FILE_TOO_LARGE: 'File size too large (50MB max)',
-  DURATION_TOO_LONG: 'Video too long (10 seconds max)',
+  FILE_TOO_LARGE: 'File size too large (500MB max)',
+  DURATION_TOO_LONG: 'Video too long (300 seconds max)',
   UPLOAD_FAILED: 'Upload failed. Please try again.',
   NETWORK_ERROR: 'Network error occurred',
   CORS_RESTRICTED: 'Unable to generate thumbnail due to security restrictions',
@@ -36,8 +36,8 @@ const ACCEPTED_VIDEO_TYPES = {
   'video/quicktime': ['.mov'],
 };
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-const MAX_DURATION = 10; // 10 seconds
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
+const MAX_DURATION = 300; // 300 seconds (5 minutes)
 
 // ===== Types =====
 
@@ -520,7 +520,7 @@ export function VideoInputNode({ data, selected, id }: VideoInputNodeProps) {
                 {isDragActive ? 'Drop video here' : 'Drop video or click'}
               </p>
               <p className="text-xs text-gray-600 mt-1">
-                MP4/WebM/MOV (50MB max, 10s max)
+                MP4/WebM/MOV (500MB max, 300s max)
               </p>
             </>
           )}

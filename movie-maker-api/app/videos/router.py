@@ -2851,9 +2851,9 @@ async def upload_user_video_endpoint(
 
     制限:
     - ファイル形式: MP4, MOV
-    - 最大サイズ: 50MB
+    - 最大サイズ: 500MB
     - 最大解像度: 4K (3840x2160)
-    - 最大尺: 10秒
+    - 最大尺: 300秒 (5分)
     """
     # Content-Type チェック
     if file.content_type not in USER_VIDEO_ALLOWED_TYPES:
@@ -3449,8 +3449,8 @@ async def upload_video_raw_endpoint(
     動画ファイルをR2にアップロード
 
     - MIMEタイプ: video/mp4, video/webm, video/quicktime
-    - サイズ: 50MB以下
-    - 動画長: 10秒以下
+    - サイズ: 500MB以下
+    - 動画長: 300秒 (5分) 以下
     - サムネイル自動生成（最初のフレーム）
     """
     # MIMEタイプチェック
@@ -3461,9 +3461,9 @@ async def upload_video_raw_endpoint(
             detail=f"対応していないファイル形式です。対応形式: {', '.join(allowed_types)}"
         )
 
-    # ファイルサイズチェック（50MB上限）
+    # ファイルサイズチェック（500MB上限）
     contents = await file.read()
-    max_size_mb = 50
+    max_size_mb = 500
     if len(contents) > max_size_mb * 1024 * 1024:
         raise HTTPException(
             status_code=400,
@@ -3495,8 +3495,8 @@ async def upload_video_raw_endpoint(
                 detail="動画の長さを取得できませんでした。破損したファイルの可能性があります"
             )
 
-        # 動画長制限チェック（10秒以下）
-        max_duration = 10.0
+        # 動画長制限チェック（300秒以下）
+        max_duration = 300.0
         if duration > max_duration:
             raise HTTPException(
                 status_code=400,

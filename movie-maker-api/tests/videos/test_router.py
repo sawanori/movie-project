@@ -288,15 +288,15 @@ class TestUploadVideo:
         assert "対応していないファイル形式" in response.json()["detail"]
 
     def test_upload_video_file_too_large(self, auth_client):
-        """50MBを超えるファイルは400エラー"""
-        # 51MBのダミーデータ
-        large_content = b"x" * (51 * 1024 * 1024)
+        """500MBを超えるファイルは400エラー"""
+        # 501MBのダミーデータ
+        large_content = b"x" * (501 * 1024 * 1024)
         response = auth_client.post(
             "/api/v1/videos/upload-video-raw",
             files={"file": ("large.mp4", large_content, "video/mp4")},
         )
         assert response.status_code == 400
-        assert "50MB" in response.json()["detail"]
+        assert "500MB" in response.json()["detail"]
 
     def test_upload_video_success(self, auth_client):
         """動画アップロードが成功する"""
@@ -334,13 +334,13 @@ class TestUploadVideo:
             assert data["duration"] == 5.0
 
     def test_upload_video_duration_too_long(self, auth_client):
-        """10秒を超える動画は400エラー"""
+        """300秒を超える動画は400エラー"""
         video_content = b"\x00" * 1000
 
         with patch("app.videos.router.get_ffmpeg_service") as mock_ffmpeg:
             mock_service = MagicMock()
             mock_ffmpeg.return_value = mock_service
-            mock_service._get_video_duration = AsyncMock(return_value=15.0)
+            mock_service._get_video_duration = AsyncMock(return_value=350.0)
 
             response = auth_client.post(
                 "/api/v1/videos/upload-video-raw",
@@ -348,7 +348,7 @@ class TestUploadVideo:
             )
 
             assert response.status_code == 400
-            # The actual message format is: "動画の長さが10.0秒を超えています（現在: 15.0秒）"
+            # The actual message format is: "動画の長さが300.0秒を超えています（現在: 350.0秒）"
             assert "超えています" in response.json()["detail"]
 
     def test_upload_video_webm_format(self, auth_client):

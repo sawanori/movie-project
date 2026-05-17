@@ -1271,7 +1271,7 @@ export interface UserVideoUpscaleStatusResponse {
 export const userVideosApi = {
   /**
    * ユーザー動画をアップロード
-   * 制限: MP4/MOV, 最大50MB, 最大10秒, 最大4K解像度
+   * 制限: MP4/MOV, 最大500MB, 最大300秒 (5分), 最大4K解像度
    */
   upload: async (file: File, title?: string): Promise<UserVideo> => {
     const token = await getAuthToken();

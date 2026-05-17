@@ -316,8 +316,8 @@ def _format_concat_response(data: dict) -> dict:
 # ===== ユーザーアップロード動画サービス =====
 
 # アップロード制限
-USER_VIDEO_MAX_SIZE_MB = 50
-USER_VIDEO_MAX_DURATION_SEC = 10
+USER_VIDEO_MAX_SIZE_MB = 500  # 500MB (5分動画用)
+USER_VIDEO_MAX_DURATION_SEC = 300  # 5分 (結合・BGM・セリフ追加用途)
 USER_VIDEO_MAX_WIDTH = 3840
 USER_VIDEO_MAX_HEIGHT = 2160
 USER_VIDEO_ALLOWED_TYPES = {"video/mp4", "video/quicktime"}

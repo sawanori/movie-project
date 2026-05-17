@@ -51,9 +51,9 @@ class TestUploadUserVideo:
             assert data["video_url"] == "https://example.com/user_videos/test.mp4"
 
     def test_upload_video_file_too_large(self, auth_client):
-        """50MBを超えるファイルはエラー（routerでチェック）"""
-        # 51MB相当のファイルを作成（実際にはヘッダー情報のみ送信）
-        file_content = b"x" * (51 * 1024 * 1024)
+        """500MBを超えるファイルはエラー（routerでチェック）"""
+        # 501MB相当のファイルを作成（実際にはヘッダー情報のみ送信）
+        file_content = b"x" * (501 * 1024 * 1024)
         files = {
             "file": ("large_video.mp4", BytesIO(file_content), "video/mp4")
         }
@@ -67,10 +67,10 @@ class TestUploadUserVideo:
         assert "ファイルサイズが大きすぎます" in response.json()["detail"]
 
     def test_upload_video_too_long(self, auth_client):
-        """10秒を超える動画はエラー"""
+        """300秒を超える動画はエラー"""
         with patch("app.videos.router.service_upload_user_video", new_callable=AsyncMock) as mock_upload:
             mock_upload.side_effect = ValueError(
-                "動画が長すぎます。最大10秒までアップロード可能です。（現在: 15.0秒）"
+                "動画が長すぎます。最大300秒までアップロード可能です。（現在: 350.0秒）"
             )
 
             file_content = b"fake mp4 content"
