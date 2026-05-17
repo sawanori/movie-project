@@ -17,7 +17,7 @@ interface NodesAvailabilityResult {
  */
 const PROVIDER_SPECIFIC_NODES: Record<VideoProvider, NodeType[]> = {
   runway: ['actTwo'],
-  piapi_kling: ['klingMode', 'klingElements', 'klingEndFrame'],
+  piapi_kling: ['klingMode', 'klingElements', 'klingEndFrame', 'klingCameraControl'],
   veo: [],
   domoai: [],
   hailuo: ['hailuoEndFrame'],
@@ -29,14 +29,20 @@ const PROVIDER_SPECIFIC_NODES: Record<VideoProvider, NodeType[]> = {
  */
 const ALWAYS_AVAILABLE_NODES: NodeType[] = [
   'imageInput',
+  'videoInput',
   'prompt',
   'provider',
   'cameraWork',
   'generate',
+  'dialogue',
   'bgm',
   'filmGrain',
   'lut',
   'overlay',
+  'getVideoFrame',
+  'trimVideo',
+  'stitchVideos',
+  'stickyNote',
 ];
 
 /**
@@ -84,6 +90,7 @@ export function useNodesAvailability({
       'klingMode',
       'klingElements',
       'klingEndFrame',
+      'klingCameraControl',
       'actTwo',
       'hailuoEndFrame',
     ];
