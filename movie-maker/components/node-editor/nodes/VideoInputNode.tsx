@@ -3,7 +3,7 @@
 import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Handle, Position, NodeProps } from '@xyflow/react';
-import { Video, Upload, Link, X, Loader2, History as HistoryIcon, Play, AlertTriangle } from 'lucide-react';
+import { Video, Upload, Link, X, Loader2, History as HistoryIcon, Play } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import {
   BaseNode,
@@ -395,12 +395,6 @@ export function VideoInputNode({ data, selected, id }: VideoInputNodeProps) {
       isValid={data.isValid}
       errorMessage={data.errorMessage}
     >
-      {/* Runway-only notice */}
-      <div className="flex items-center gap-1 mb-2 px-2 py-1 bg-amber-500/10 rounded text-xs text-amber-400">
-        <AlertTriangle className="w-3 h-3" />
-        <span>動画入力はRunwayのみ対応</span>
-      </div>
-
       {/* Mode tabs */}
       <div className="flex gap-1 mb-3">
         <button
