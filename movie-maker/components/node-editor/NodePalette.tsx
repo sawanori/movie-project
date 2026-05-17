@@ -56,7 +56,6 @@ const NODE_ITEMS: NodePaletteItem[] = [
     description: '動画をアップロード・URL・履歴から読み込み',
     icon: 'video',
     category: 'input',
-    availableFor: ['runway'],
   },
   // 設定
   {
