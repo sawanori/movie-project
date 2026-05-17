@@ -3,7 +3,7 @@
 import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Handle, Position, NodeProps } from '@xyflow/react';
-import { Video, Upload, Link, X, Loader2, History as HistoryIcon, Play } from 'lucide-react';
+import { Video, Upload, Link, X, Loader2, History as HistoryIcon, Play, Info } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import {
   BaseNode,
@@ -395,6 +395,16 @@ export function VideoInputNode({ data, selected, id }: VideoInputNodeProps) {
       isValid={data.isValid}
       errorMessage={data.errorMessage}
     >
+      {/* 利用シナリオの説明 */}
+      <div className="mb-2 flex gap-1.5 rounded-md border border-[#2a2a2a] bg-[#111] p-2">
+        <Info className="mt-0.5 h-3 w-3 shrink-0 text-gray-500" />
+        <p className="text-[10px] leading-relaxed text-gray-500">
+          <strong className="text-gray-400">V2V生成</strong>（動画→動画 AI 変換）は <strong className="text-amber-400">Runway</strong> 専用です。
+          <br />
+          <strong className="text-gray-400">編集</strong>（結合・BGM・セリフ追加など）は provider 不要、どのプロバイダーでも OK。
+        </p>
+      </div>
+
       {/* Mode tabs */}
       <div className="flex gap-1 mb-3">
         <button

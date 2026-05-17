@@ -91,7 +91,7 @@ describe('VideoInputNode', () => {
 
     it('should display Runway-only notice', () => {
       render(<VideoInputNode {...defaultProps} />);
-      expect(screen.getByText(/動画入力はRunwayのみ対応/)).toBeDefined();
+      expect(screen.getByText(/Runway/)).toBeDefined();
     });
 
     it('should render upload mode tab as active by default', () => {

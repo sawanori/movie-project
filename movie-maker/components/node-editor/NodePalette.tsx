@@ -53,7 +53,7 @@ const NODE_ITEMS: NodePaletteItem[] = [
   {
     type: 'videoInput',
     label: '動画入力',
-    description: '動画をアップロード・URL・履歴から読み込み',
+    description: '動画素材を読み込み（V2V生成はRunway必須、編集は任意）',
     icon: 'video',
     category: 'input',
   },
