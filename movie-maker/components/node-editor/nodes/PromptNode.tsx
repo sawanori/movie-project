@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useState, useEffect } from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
-import { Type, Loader2, Languages } from 'lucide-react';
+import { useCallback, useState, useEffect, useRef } from 'react';
+import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react';
+import { Type, Loader2, Languages, MessageSquare } from 'lucide-react';
 import {
   BaseNode,
   outputHandleClassName,
@@ -26,6 +26,16 @@ const SUBJECT_TYPES: { value: SubjectType; label: string }[] = [
 
 export function PromptNode({ data, selected, id }: PromptNodeProps) {
   const [localPrompt, setLocalPrompt] = useState(data.japanesePrompt ?? '');
+  // セリフ検出状態 (確認カード表示用)
+  const [pendingDialogue, setPendingDialogue] = useState<string | null>(null);
+  // N1 対応: dismissed ハッシュは useRef 管理 (依存配列に含めず useEffect 再走を防ぐ)
+  const dismissedDialogueHashRef = useRef<string | null>(null);
+
+  const { getNodes } = useReactFlow();
+
+  // N3 対応: セリフ正規化 (空白/改行を統一して同一性判定)
+  const normalizeDialogue = (raw: string): string =>
+    raw.trim().replace(/\s+/g, ' ');
 
   const updateNodeData = useCallback(
     (updates: Partial<PromptNodeData>) => {
@@ -37,7 +47,7 @@ export function PromptNode({ data, selected, id }: PromptNodeProps) {
     [id]
   );
 
-  // デバウンス翻訳
+  // デバウンス翻訳 (B2 対応: 全翻訳パラメータを渡す)
   useEffect(() => {
     if (!localPrompt.trim()) {
       updateNodeData({
@@ -52,13 +62,29 @@ export function PromptNode({ data, selected, id }: PromptNodeProps) {
       updateNodeData({ isTranslating: true, japanesePrompt: localPrompt });
 
       try {
-        const result = await videosApi.translateStoryPrompt({ description_ja: localPrompt });
+        // B2 対応: subject_type を含む全オプションを翻訳 API に渡す
+        const result = await videosApi.translateStoryPrompt({
+          description_ja: localPrompt,
+          subject_type: (data.subjectType ?? 'person') as 'person' | 'object' | 'animation',
+        });
+
         updateNodeData({
           englishPrompt: result.english_prompt,
           isTranslating: false,
           isValid: true,
           errorMessage: undefined,
         });
+
+        // セリフ検出時の表示制御
+        if (result.extracted_dialogue) {
+          const normalizedHash = normalizeDialogue(result.extracted_dialogue);
+          // N3 対応: dismiss 済みの正規化ハッシュと同一なら再表示しない
+          if (normalizedHash !== dismissedDialogueHashRef.current) {
+            setPendingDialogue(result.extracted_dialogue);
+          }
+        } else {
+          setPendingDialogue(null);
+        }
       } catch (error) {
         updateNodeData({
           isTranslating: false,
@@ -70,7 +96,43 @@ export function PromptNode({ data, selected, id }: PromptNodeProps) {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [localPrompt, updateNodeData]);
+    // B2 対応: 翻訳パラメータ変更時も再翻訳トリガ
+  }, [localPrompt, updateNodeData, data.subjectType]);
+
+  // N2 / N4 対応: createDialogueNodeFromPrompt CustomEvent を NodeEditor に伝達
+  const handleCreateDialogueNode = useCallback((dialogueText: string) => {
+    const event = new CustomEvent('createDialogueNodeFromPrompt', {
+      detail: {
+        sourcePromptNodeId: id,
+        initialText: dialogueText,
+      },
+    });
+    window.dispatchEvent(event);
+
+    dismissedDialogueHashRef.current = normalizeDialogue(dialogueText);
+    setPendingDialogue(null);
+  }, [id, normalizeDialogue]);
+
+  // 既存 nodeDataUpdate CustomEvent パターンを再利用して最初の DialogueNode に転記
+  const handleSendToExistingDialogue = useCallback((dialogueText: string) => {
+    const dialogueNodes = getNodes().filter((n) => n.type === 'dialogue');
+    if (dialogueNodes.length === 0) return;
+
+    if (dialogueNodes.length > 1) {
+      console.warn('複数の DialogueNode が見つかりました。最初の 1 個に転記します。');
+    }
+
+    const updateEvent = new CustomEvent('nodeDataUpdate', {
+      detail: { nodeId: dialogueNodes[0].id, updates: { text: dialogueText } },
+    });
+    window.dispatchEvent(updateEvent);
+
+    dismissedDialogueHashRef.current = normalizeDialogue(dialogueText);
+    setPendingDialogue(null);
+  }, [getNodes, normalizeDialogue]);
+
+  // 既存 DialogueNode の存在チェック (render 時評価)
+  const hasExistingDialogueNode = getNodes().some((n) => n.type === 'dialogue');
 
   const handleSubjectTypeChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -138,6 +200,42 @@ export function PromptNode({ data, selected, id }: PromptNodeProps) {
           </p>
         </div>
       ) : null}
+
+      {/* セリフ検出確認カード */}
+      {pendingDialogue && !data.isTranslating && (
+        <div className="mt-2 p-2 bg-amber-900/30 border border-amber-700/50 rounded-lg">
+          <div className="flex items-center gap-1 text-xs text-amber-300 mb-1">
+            <MessageSquare className="w-3 h-3" />
+            <span>セリフを検出しました</span>
+          </div>
+          <p className="text-xs text-gray-200 mb-2 italic">「{pendingDialogue}」</p>
+          <div className="flex gap-1 flex-wrap">
+            <button
+              onClick={() => handleCreateDialogueNode(pendingDialogue)}
+              className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded"
+            >
+              新規 DialogueNode を作成
+            </button>
+            <button
+              onClick={() => handleSendToExistingDialogue(pendingDialogue)}
+              disabled={!hasExistingDialogueNode}
+              className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white rounded"
+            >
+              既存ノードに転記
+            </button>
+            <button
+              onClick={() => {
+                // N3 対応: 正規化ハッシュで dismiss 記録
+                dismissedDialogueHashRef.current = normalizeDialogue(pendingDialogue);
+                setPendingDialogue(null);
+              }}
+              className="px-2 py-1 text-xs bg-transparent hover:bg-gray-700 text-gray-400 rounded"
+            >
+              無視
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 出力ハンドル */}
       <Handle

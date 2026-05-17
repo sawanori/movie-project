@@ -845,6 +845,35 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
     };
   }, [nodes, edges, setNodes, onVideoGenerated]);
 
+  // createDialogueNodeFromPrompt listener (N2 対応: setNodes 関数形式 setter で closure 問題回避)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const event = e as CustomEvent<{ sourcePromptNodeId: string; initialText: string }>;
+      setNodes((prevNodes) => {
+        const sourceNode = prevNodes.find((n) => n.id === event.detail.sourcePromptNodeId);
+        if (!sourceNode) return prevNodes;
+
+        const newNode: WorkflowNode = {
+          id: `dialogue-${Date.now()}`,
+          type: 'dialogue',
+          position: {
+            x: sourceNode.position.x + 320,
+            y: sourceNode.position.y + 200,
+          },
+          data: {
+            ...createData('dialogue'),
+            text: event.detail.initialText,
+          } as WorkflowNode['data'],
+        };
+        return [...prevNodes, newNode];
+      });
+    };
+
+    window.addEventListener('createDialogueNodeFromPrompt', handler);
+    return () => window.removeEventListener('createDialogueNodeFromPrompt', handler);
+    // N2 対応: 依存配列は setNodes のみ (関数形式 setter で nodes 依存を排除)
+  }, [setNodes]);
+
   // 接続処理
   const onConnect = useCallback(
     (params: Connection) => {

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
 import type { ReferenceImage, ReferenceImagePurpose } from "@/lib/constants/image-generation";
+import type { ProviderMetadata } from "@/lib/types/provider-metadata";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -32,16 +33,15 @@ interface FetchWithAuthOptions extends RequestInit {
   timeout?: number;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchWithAuth(
   endpoint: string,
   options: FetchWithAuthOptions = {},
   _isRetry: boolean = false,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> {
   const token = await getAuthToken();
   const { timeout = 120000, ...fetchOptions } = options;
 
-  // FormData の場合は Content-Type をブラウザに任せる (boundary 自動付与のため)
   const isFormData = fetchOptions.body instanceof FormData;
   const headers: HeadersInit = {
     ...(isFormData ? {} : { "Content-Type": "application/json" }),
@@ -144,6 +144,25 @@ export const authApi = {
   getUsage: () => fetchWithAuth("/api/v1/auth/usage"),
 };
 
+// B2 対応: TranslateStoryPromptRequest 型を明示 export (PromptNode から import 可能に)
+export interface TranslateStoryPromptRequest {
+  description_ja: string;
+  video_provider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance';
+  subject_type?: 'person' | 'object' | 'animation';
+  camera_work?: string;
+  animation_category?: '2d' | '3d' | null;
+  animation_template?: string | null;
+  use_act_two?: boolean;
+  motion_type?: string | null;
+  expression_intensity?: number;
+  body_control?: boolean;
+}
+
+export interface TranslateStoryPromptResponse {
+  english_prompt: string;
+  extracted_dialogue: string | null;
+}
+
 // Videos API
 export const videosApi = {
   create: (data: {
@@ -177,7 +196,7 @@ export const videosApi = {
     return fetchWithAuth("/api/v1/videos/upload-image", {
       method: "POST",
       body: formData,
-    }) as Promise<{ image_url: string }>;
+    });
   },
 
   uploadImages: async (files: File[]): Promise<{ image_urls: string[] }> => {
@@ -188,7 +207,7 @@ export const videosApi = {
     return fetchWithAuth("/api/v1/videos/upload-images", {
       method: "POST",
       body: formData,
-    }) as Promise<{ image_urls: string[] }>;
+    });
   },
 
   // ===== AI主導ストーリーテリング用API =====
@@ -200,19 +219,9 @@ export const videosApi = {
     }),
 
   // 日本語プロンプトを英語に翻訳（テンプレート適用）
-  translateStoryPrompt: (data: {
-    description_ja: string;
-    video_provider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance';
-    subject_type?: 'person' | 'object' | 'animation';  // 被写体タイプ（人物/物体/アニメーション）
-    camera_work?: string;  // カメラワーク（例: "slow zoom in", "pan left"）
-    animation_category?: '2d' | '3d' | null;  // アニメーションカテゴリ（animation選択時）
-    animation_template?: string | null;  // アニメーションテンプレートID（A-1〜B-4）
-    // Act-Two用パラメータ（animation被写体タイプ時のみ有効）
-    use_act_two?: boolean;  // Act-Twoモード有効化
-    motion_type?: string | null;  // モーションタイプ（smile_gentle, wave_hand等）
-    expression_intensity?: number;  // 表情強度（1-5、デフォルト3）
-    body_control?: boolean;  // 体の動き制御（デフォルトtrue）
-  }): Promise<{ english_prompt: string }> =>
+  translateStoryPrompt: (
+    data: TranslateStoryPromptRequest,
+  ): Promise<TranslateStoryPromptResponse> =>
     fetchWithAuth("/api/v1/videos/story/translate", {
       method: "POST",
       body: JSON.stringify(data),
@@ -455,7 +464,30 @@ export const videosApi = {
       body: JSON.stringify(data),
     }),
 
-  // ===== ProRes変換ダウンロード =====
+  // ===== ProRes非同期変換 =====
+
+  // ProRes変換ジョブを開始（非同期）
+  startProResConversion: (data: {
+    video_url: string;
+    source_type: 'storyboard' | 'concat';
+    source_id: string;
+    deband_strength?: number;
+    deband_radius?: number;
+    apply_flat_look?: boolean;
+    contrast?: number;
+    saturation?: number;
+    brightness?: number;
+  }) =>
+    fetchWithAuth("/api/v1/videos/prores/convert", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  // ProRes変換ステータスを取得
+  getProResConversionStatus: (conversionId: string) =>
+    fetchWithAuth(`/api/v1/videos/prores/${conversionId}/status`),
+
+  // ===== ProRes変換ダウンロード（レガシー・同期） =====
 
   // 動画をProRes形式でダウンロード（デバンド + 10bit変換）
   downloadAsProRes: async (
@@ -472,29 +504,43 @@ export const videosApi = {
     const token = await getAuthToken();
     if (!token) throw new Error("認証が必要です");
 
-    const response = await fetch(`${API_URL}/api/v1/videos/download/prores`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        video_url: videoUrl,
-        deband_strength: options?.debandStrength ?? 1.1,
-        deband_radius: options?.debandRadius ?? 20,
-        apply_flat_look: options?.applyFlatLook ?? true,
-        contrast: options?.contrast ?? 0.9,
-        saturation: options?.saturation ?? 0.85,
-        brightness: options?.brightness ?? 0.03,
-      }),
-    });
+    // ProRes変換は数分かかるため、10分(600秒)のタイムアウトを設定
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600000);
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: "変換に失敗しました" }));
-      throw new Error(error.detail || "ProRes変換に失敗しました");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/videos/download/prores`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          video_url: videoUrl,
+          deband_strength: options?.debandStrength ?? 1.1,
+          deband_radius: options?.debandRadius ?? 20,
+          apply_flat_look: options?.applyFlatLook ?? true,
+          contrast: options?.contrast ?? 0.9,
+          saturation: options?.saturation ?? 0.85,
+          brightness: options?.brightness ?? 0.03,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: "変換に失敗しました" }));
+        throw new Error(error.detail || "ProRes変換に失敗しました");
+      }
+
+      return response.blob();
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new Error("ProRes変換がタイムアウトしました（10分超過）。動画サイズが大きい可能性があります。");
+      }
+      throw err;
     }
-
-    return response.blob();
   },
 };
 
@@ -679,6 +725,7 @@ export const storyboardApi = {
     scene_video_modes?: Record<number, 'i2v' | 'v2v'>;  // シーンごとのI2V/V2V設定
     scene_end_frame_images?: Record<number, string>;  // シーンごとの終了フレーム画像URL（Kling専用）
     element_images?: { image_url: string }[];  // 一貫性向上用の追加画像（Kling専用、最大3枚）
+    kling_duration?: 5 | 10;  // Kling動画の長さ（秒）
   }): Promise<Storyboard> =>
     fetchWithAuth(`/api/v1/videos/storyboard/${storyboardId}/generate`, {
       method: "POST",
@@ -729,6 +776,7 @@ export const storyboardApi = {
     video_mode?: 'i2v' | 'v2v';  // i2v: 画像から動画を生成, v2v: 直前の動画から継続
     kling_mode?: 'std' | 'pro';  // Kling AIモード（std: 標準, pro: 高品質）
     image_tail_url?: string;  // 終了フレーム画像URL（Kling専用オプション）
+    kling_duration?: 5 | 10;  // Kling動画の長さ（秒）
   }): Promise<Storyboard> =>
     fetchWithAuth(`/api/v1/videos/storyboard/${storyboardId}/scenes/${sceneNumber}/regenerate-video`, {
       method: "POST",
@@ -1468,6 +1516,42 @@ export const libraryApi = {
     }),
 };
 
+// ===== T2V (Text-to-Video) API =====
+
+export interface T2VCreateRequest {
+  prompt: string;
+  duration?: number;
+  aspect_ratio?: string;
+  video_provider?: string;
+}
+
+export interface T2VCreateResponse {
+  id: string;
+  status: string;
+  progress: number;
+  video_url?: string;
+  created_at: string;
+}
+
+export interface T2VStatusResponse {
+  id: string;
+  status: string;
+  progress: number;
+  video_url?: string;
+  error_message?: string;
+}
+
+export const t2vApi = {
+  create: (data: T2VCreateRequest): Promise<T2VCreateResponse> =>
+    fetchWithAuth('/api/v1/videos/text-to-video', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getStatus: (id: string): Promise<T2VStatusResponse> =>
+    fetchWithAuth(`/api/v1/videos/text-to-video/${id}/status`),
+};
+
 // ===== Ad Creator ドラフト保存 API =====
 
 /** Ad Creator用 選択された動画情報 */
@@ -1536,6 +1620,7 @@ export interface AdCreatorDraftMetadata {
   transition_duration: number;
   last_saved_at: string | null;
   auto_saved: boolean;
+  image_look?: string;  // 画像生成のルック/テイスト（未設定=cinematic扱い）
 }
 
 /** Ad Creatorドラフト存在確認レスポンス（軽量） */
@@ -1576,6 +1661,7 @@ export interface GenerateSceneImageRequest {
   description_ja?: string;    // カットの脚本（日本語）
   aspect_ratio?: '9:16' | '16:9';  // アスペクト比（デフォルト: 9:16）
   image_provider?: 'nanobanana' | 'bfl_flux2_pro' | 'openai_gpt_image2';  // 画像生成プロバイダー
+  image_look?: string;        // 画像のルック/テイスト
   reference_images?: ReferenceImage[];  // 参照画像（BFL FLUX.2用、最大8枚）
   negative_prompt?: string;   // ネガティブプロンプト（BFL FLUX.2のみ対応）
 }
@@ -1798,21 +1884,36 @@ export const adCreatorApi = {
    */
   exportMaterials: async (cuts: MaterialExportCut[], aspectRatio: string = "16:9"): Promise<Blob> => {
     const token = await getAuthToken();
-    const response = await fetch(`${API_URL}/api/v1/videos/ad-creator/export-materials`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token && { "Authorization": `Bearer ${token}` }),
-      },
-      body: JSON.stringify({ cuts, aspect_ratio: aspectRatio }),
-    });
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: "素材エクスポートに失敗しました" }));
-      throw new Error(error.detail || "素材エクスポートに失敗しました");
+    // 複数カットのProRes変換+ZIP圧縮のため、10分のタイムアウト
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600000);
+
+    try {
+      const response = await fetch(`${API_URL}/api/v1/videos/ad-creator/export-materials`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { "Authorization": `Bearer ${token}` }),
+        },
+        body: JSON.stringify({ cuts, aspect_ratio: aspectRatio }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: "素材エクスポートに失敗しました" }));
+        throw new Error(error.detail || "素材エクスポートに失敗しました");
+      }
+
+      return response.blob();
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new Error("素材エクスポートがタイムアウトしました（10分超過）");
+      }
+      throw err;
     }
-
-    return response.blob();
   },
 };
 
@@ -1864,46 +1965,6 @@ export interface WorkflowUpdateRequest {
   edges?: object[];
   is_public?: boolean;
 }
-
-export const workflowsApi = {
-  // 自分のワークフロー一覧
-  list: (): Promise<CloudWorkflowListResponse> =>
-    fetchWithAuth('/api/v1/workflows'),
-
-  // 公開ワークフロー一覧
-  listPublic: (): Promise<CloudWorkflowListResponse> =>
-    fetchWithAuth('/api/v1/workflows/public'),
-
-  // ワークフロー取得
-  get: (id: string): Promise<CloudWorkflow> =>
-    fetchWithAuth(`/api/v1/workflows/${id}`),
-
-  // ワークフロー作成
-  create: (data: WorkflowCreateRequest): Promise<CloudWorkflow> =>
-    fetchWithAuth('/api/v1/workflows', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-
-  // ワークフロー更新
-  update: (id: string, data: WorkflowUpdateRequest): Promise<CloudWorkflow> =>
-    fetchWithAuth(`/api/v1/workflows/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }),
-
-  // ワークフロー削除
-  delete: (id: string): Promise<void> =>
-    fetchWithAuth(`/api/v1/workflows/${id}`, {
-      method: 'DELETE',
-    }),
-
-  // ワークフロー複製
-  duplicate: (id: string): Promise<CloudWorkflow> =>
-    fetchWithAuth(`/api/v1/workflows/${id}/duplicate`, {
-      method: 'POST',
-    }),
-};
 
 // ===== Text-to-Speech (TTS) API =====
 
@@ -1971,14 +2032,104 @@ type DialogueStatusResult = {
 };
 
 export const dialogueApi = {
+  /**
+   * Dialogue 生成を開始する
+   * タイムアウト: 900_000 ms (15 分)
+   */
   create: (payload: DialogueCreatePayload): Promise<DialogueCreateResult> =>
     fetchWithAuth('/api/v1/dialogue', {
       method: 'POST',
       body: JSON.stringify({ ...payload, language: 'ja' }),
+      timeout: 900_000,
     }),
 
+  /**
+   * Dialogue 生成ステータスをポーリング
+   */
   getStatus: (generationId: string): Promise<DialogueStatusResult> =>
     fetchWithAuth(`/api/v1/dialogue/${generationId}/status`),
+};
+
+// ===== LipSync API =====
+
+export interface LipSyncCreateRequest {
+  source_type: 'image' | 'video';
+  source_url: string;
+  audio_url: string;
+}
+
+export interface LipSyncResponse {
+  id: string;
+  status: string;
+  progress: number;
+  output_video_url?: string;
+  created_at: string;
+}
+
+export interface LipSyncStatusResponse {
+  id: string;
+  status: string;
+  progress: number;
+  output_video_url?: string;
+  error_message?: string;
+}
+
+export const lipSyncApi = {
+  create: (data: LipSyncCreateRequest): Promise<LipSyncResponse> =>
+    fetchWithAuth('/api/v1/lip-sync', { method: 'POST', body: JSON.stringify(data) }),
+
+  getStatus: (id: string): Promise<LipSyncStatusResponse> =>
+    fetchWithAuth(`/api/v1/lip-sync/${id}/status`),
+
+  list: (): Promise<LipSyncResponse[]> =>
+    fetchWithAuth('/api/v1/lip-sync'),
+
+  uploadAudio: (formData: FormData): Promise<{ audio_url: string; duration_seconds?: number }> =>
+    fetchWithAuth('/api/v1/lip-sync/upload-audio', {
+      method: 'POST',
+      body: formData,
+      headers: {},
+    }),
+};
+
+export const workflowsApi = {
+  // 自分のワークフロー一覧
+  list: (): Promise<CloudWorkflowListResponse> =>
+    fetchWithAuth('/api/v1/workflows'),
+
+  // 公開ワークフロー一覧
+  listPublic: (): Promise<CloudWorkflowListResponse> =>
+    fetchWithAuth('/api/v1/workflows/public'),
+
+  // ワークフロー取得
+  get: (id: string): Promise<CloudWorkflow> =>
+    fetchWithAuth(`/api/v1/workflows/${id}`),
+
+  // ワークフロー作成
+  create: (data: WorkflowCreateRequest): Promise<CloudWorkflow> =>
+    fetchWithAuth('/api/v1/workflows', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  // ワークフロー更新
+  update: (id: string, data: WorkflowUpdateRequest): Promise<CloudWorkflow> =>
+    fetchWithAuth(`/api/v1/workflows/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  // ワークフロー削除
+  delete: (id: string): Promise<void> =>
+    fetchWithAuth(`/api/v1/workflows/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // ワークフロー複製
+  duplicate: (id: string): Promise<CloudWorkflow> =>
+    fetchWithAuth(`/api/v1/workflows/${id}/duplicate`, {
+      method: 'POST',
+    }),
 };
 
 // ===== Utility API (Phase 5: Utility Nodes) =====
@@ -2034,5 +2185,18 @@ export const utilityApi = {
 
   getStitchStatus: (stitchId: string): Promise<StitchStatusResponse> =>
     fetchWithAuth(`/api/v1/videos/stitch/${stitchId}`),
+};
+
+// ===== Gateway API =====
+
+export const gatewayApi = {
+  listModels: (capability?: string): Promise<ProviderMetadata[]> =>
+    fetchWithAuth(`/api/v1/config/models${capability ? `?capability=${capability}` : ''}`),
+
+  getCapabilities: (): Promise<Record<string, Array<{ name: string; provider: string }>>> =>
+    fetchWithAuth('/api/v1/config/capabilities'),
+
+  getRecommended: (priority: string, capability: string): Promise<{ name: string; provider: string }> =>
+    fetchWithAuth(`/api/v1/config/recommended?priority=${priority}&capability=${capability}`),
 };
 
