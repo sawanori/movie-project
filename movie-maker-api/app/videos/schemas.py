@@ -301,7 +301,7 @@ class StoryVideoCreate(BaseModel):
     element_images: list[ElementImage] | None = Field(
         default=None,
         max_length=4,
-        description="Kling 3.0 Omni Elements 用の参照画像（最大 4 枚）。Kling専用機能"
+        description="一貫性向上用の追加画像（最大4枚、Kling 3.0 Omni Elements）"
     )
     kling_camera_control: KlingCameraControl | None = Field(
         default=None,
@@ -313,7 +313,7 @@ class StoryVideoCreate(BaseModel):
     )
     seedance_duration: Literal[5, 10, 15] | None = Field(
         default=None,
-        description="Seedance 2.0 動画のduration（秒）。5/10/15 (VIP tier のみ 10/15)"
+        description="Seedance 2.0 動画のduration（秒）。5、10、15のいずれか (VIP tier のみ 10/15 利用可)"
     )
     # V2V用フィールド
     video_mode: Optional[str] = Field("i2v", description="動画生成モード: 'i2v' or 'v2v'")
@@ -431,7 +431,16 @@ class TranslateStoryPromptRequest(BaseModel):
 
 class TranslateStoryPromptResponse(BaseModel):
     """シーン動画プロンプト翻訳レスポンス"""
-    english_prompt: str = Field(..., description="英語プロンプト（テンプレート適用済み）")
+    english_prompt: str = Field(
+        ..., description="英語プロンプト (テンプレート適用済み)"
+    )
+    extracted_dialogue: str | None = Field(
+        default=None,
+        description=(
+            "日本語入力から自動抽出されたセリフ (「」/『』内のテキスト)。"
+            "複数セリフは改行で結合。検出なしの場合は null。"
+        ),
+    )
 
 
 # ===== BGMアップロード用スキーマ =====
@@ -798,7 +807,7 @@ class StoryboardCreateRequest(BaseModel):
     element_images: list[ElementImage] | None = Field(
         default=None,
         max_length=4,
-        description="Kling 3.0 Omni Elements 用の参照画像（最大 4 枚）。Kling専用機能"
+        description="一貫性向上用の追加画像（最大4枚、Kling 3.0 Omni Elements）"
     )
 
 
@@ -815,7 +824,7 @@ class StoryboardGenerateRequest(BaseModel):
     element_images: list[ElementImage] | None = Field(
         default=None,
         max_length=4,
-        description="Kling 3.0 Omni Elements 用の参照画像（最大 4 枚、ストーリーボード保存値を上書き）。Kling専用機能"
+        description="一貫性向上用の追加画像（最大4枚、ストーリーボード保存値を上書き）。Kling 3.0 Omni Elements"
     )
     kling_duration: Literal[5, 10] | None = Field(
         default=None,
@@ -1955,6 +1964,34 @@ class VideoUploadResponse(BaseModel):
     duration: float = Field(..., description="動画の長さ（秒）")
 
 
+# ===== Stitch Videos スキーマ =====
+
+class StitchVideosRequest(BaseModel):
+    """スティッチ動画リクエスト"""
+    video_urls: list[str] = Field(
+        ...,
+        min_length=2,
+        max_length=5,
+        description="結合する動画URL（2〜5本）",
+    )
+    transition: Literal["none"] = "none"  # Phase 1 は none のみ
+
+
+class StitchVideosResponse(BaseModel):
+    """スティッチ動画作成レスポンス"""
+    id: str
+    status: Literal["pending"] = "pending"
+
+
+class StitchStatusResponse(BaseModel):
+    """スティッチ動画ステータスレスポンス"""
+    id: str
+    status: Literal["pending", "processing", "completed", "failed"]
+    progress: int  # 0-100
+    output_video_url: str | None = None
+    error_message: str | None = None
+
+
 # ===== T2V (Text-to-Video) スキーマ =====
 
 class T2VVideoCreate(BaseModel):
@@ -1973,33 +2010,6 @@ class T2VVideoResponse(BaseModel):
     video_url: Optional[str] = Field(None, description="完成した動画のURL")
     created_at: str = Field(..., description="作成日時")
     duration: Optional[float] = Field(None, description="動画の長さ（秒）")
-
-
-# ===== Stitch Videos スキーマ =====
-
-class StitchVideosRequest(BaseModel):
-    """スティッチ動画リクエスト"""
-    video_urls: list[str] = Field(
-        ...,
-        min_length=2,
-        max_length=5,
-        description="結合する動画URL（2〜5本）",
-    )
-    transition: Literal["none"] = "none"  # Phase 1 は none のみ
-
-class StitchVideosResponse(BaseModel):
-    """スティッチ動画作成レスポンス"""
-    id: str
-    status: Literal["pending"] = "pending"
-
-
-class StitchStatusResponse(BaseModel):
-    """スティッチ動画ステータスレスポンス"""
-    id: str
-    status: Literal["pending", "processing", "completed", "failed"]
-    progress: int  # 0-100
-    output_video_url: str | None = None
-    error_message: str | None = None
 
 
 # ===== フレーム抽出スキーマ =====

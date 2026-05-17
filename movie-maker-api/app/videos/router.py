@@ -85,6 +85,7 @@ from app.external.r2 import upload_image, upload_audio, upload_video, download_f
 from app.services.topaz_service import get_topaz_service
 from app.external.gemini_client import suggest_stories_from_image, generate_4scene_storyboard, generate_story_frame_image, generate_ad_script, convert_to_flux_json_prompt
 from app.tasks import start_video_processing, start_story_processing, start_concat_processing
+from app.tasks.t2v_processor import start_t2v_processing
 from app.services.ffmpeg_service import get_ffmpeg_service
 
 logger = logging.getLogger(__name__)
@@ -1286,6 +1287,105 @@ async def update_storyboard_scene(
     ).eq("scene_number", scene_number).execute()
 
     return await _get_storyboard_with_scenes(storyboard_id, user_id)
+
+
+@router.patch(
+    "/storyboards/{storyboard_id}/scenes/{scene_id}/transition",
+    response_model=TransitionUpdateResponse,
+)
+async def update_scene_transition(
+    storyboard_id: str,
+    scene_id: str,
+    request: TransitionUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    特定シーンのトランジション設定を更新
+
+    PATCH /api/v1/videos/storyboards/{id}/scenes/{scene_id}/transition
+
+    指定したシーンの transition_type と transition_duration を更新する。
+    シーンの所有権確認のため、親ストーリーボードのユーザーIDも検証する。
+    """
+    supabase = get_supabase()
+    user_id = current_user["user_id"]
+
+    # ストーリーボードの所有権確認
+    sb_response = (
+        supabase.table("storyboards")
+        .select("id")
+        .eq("id", storyboard_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+    if not sb_response.data:
+        raise HTTPException(status_code=404, detail="Storyboard not found")
+
+    # シーンのトランジション設定を更新
+    supabase.table("storyboard_scenes").update({
+        "transition_type": request.transition_type.value,
+        "transition_duration": request.transition_duration,
+    }).eq("storyboard_id", storyboard_id).eq("id", scene_id).execute()
+
+    logger.info(
+        f"Transition updated: storyboard={storyboard_id} scene={scene_id} "
+        f"type={request.transition_type.value} duration={request.transition_duration}"
+    )
+
+    return TransitionUpdateResponse(
+        scene_id=scene_id,
+        transition_type=request.transition_type.value,
+        transition_duration=request.transition_duration,
+    )
+
+
+@router.post(
+    "/storyboards/{storyboard_id}/export-timeline",
+    response_model=TimelineExportResponse,
+)
+async def export_timeline(
+    storyboard_id: str,
+    request: TimelineExportRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    タイムラインをエクスポート
+
+    POST /api/v1/videos/storyboards/{id}/export-timeline
+
+    ストーリーボードの最終動画URLを返す。
+    include_bgm / include_transitions フラグに応じて将来的な処理分岐に対応可能。
+    現時点では既存の final_video_url を返す。
+    """
+    supabase = get_supabase()
+    user_id = current_user["user_id"]
+
+    # ストーリーボードの所有権確認と情報取得
+    sb_response = (
+        supabase.table("storyboards")
+        .select("id, final_video_url, status")
+        .eq("id", storyboard_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+    if not sb_response.data:
+        raise HTTPException(status_code=404, detail="Storyboard not found")
+
+    final_video_url = sb_response.data.get("final_video_url")
+
+    logger.info(
+        f"Timeline export requested: storyboard={storyboard_id} "
+        f"include_bgm={request.include_bgm} include_transitions={request.include_transitions}"
+    )
+
+    return TimelineExportResponse(
+        storyboard_id=storyboard_id,
+        status="completed" if final_video_url else "pending",
+        message="タイムラインエクスポートが完了しました" if final_video_url else "動画がまだ生成されていません",
+        final_video_url=final_video_url,
+    )
 
 
 @router.post("/storyboard/translate-scene", response_model=TranslateSceneResponse)
@@ -3591,40 +3691,47 @@ async def suggest_stories(
 
 
 @router.post("/story/translate", response_model=TranslateStoryPromptResponse)
-async def translate_story_prompt(
+async def translate_story_prompt_endpoint(
     request: TranslateStoryPromptRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """
-    シーン動画用：日本語プロンプトを英語に翻訳（テンプレート適用）
+    """PromptNode 用: 日本語プロンプトを英語に翻訳し、セリフを分離抽出する。
 
-    - Runway/Veoプロバイダー別のテンプレートを適用
-    - 被写体タイプ（person/object/animation）別のテンプレートを適用
-    - アニメーション選択時はアニメーションスタイルテンプレートを適用
-    - ユーザー選択のカメラワークをCamera欄に反映
-    - 既存のtranslate_scene_to_runway_prompt関数を再利用
+    B2 対応: subject_type / camera_work 等の全オプションを
+    TranslateStoryPromptInput に流し込む。
     """
-    from app.external.gemini_client import translate_scene_to_runway_prompt
+    from app.external.gemini_client import (
+        translate_story_prompt,
+        TranslateStoryPromptInput,
+    )
 
     try:
-        english_prompt = await translate_scene_to_runway_prompt(
+        # B2 対応: フロント側で渡された subject_type 等を確実に流し込む
+        params = TranslateStoryPromptInput(
             description_ja=request.description_ja,
-            scene_number=1,  # シーン生成は1シーンのみ
             video_provider=request.video_provider.value,
-            scene_act=None,  # シーン生成ではact不要
-            template_mode="scene",  # シーン生成用テンプレート（インパクト重視）
-            subject_type=request.subject_type.value,  # 被写体タイプ（person/object/animation）
-            camera_work=request.camera_work,  # ユーザー選択のカメラワーク
-            # アニメーションパラメータ（animation選択時のみ）
-            animation_category=request.animation_category.value if request.animation_category else None,
-            animation_template=request.animation_template.value if request.animation_template else None,
+            subject_type=request.subject_type.value,
+            camera_work=request.camera_work,
+            animation_category=(
+                request.animation_category.value
+                if request.animation_category else None
+            ),
+            animation_template=request.animation_template,
+            use_act_two=request.use_act_two,
+            motion_type=request.motion_type,
+            expression_intensity=request.expression_intensity,
+            body_control=request.body_control,
         )
-        return TranslateStoryPromptResponse(english_prompt=english_prompt)
+        english_prompt, extracted_dialogue = await translate_story_prompt(params)
+        return TranslateStoryPromptResponse(
+            english_prompt=english_prompt,
+            extracted_dialogue=extracted_dialogue,
+        )
     except Exception as e:
         logger.exception(f"Story prompt translation failed: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"翻訳に失敗しました: {str(e)}"
+            detail=f"翻訳に失敗しました: {str(e)}",
         )
 
 
@@ -5472,6 +5579,105 @@ async def delete_ad_creator_project(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"プロジェクトの削除に失敗しました: {str(e)}"
         )
+
+
+# ===== T2V (Text-to-Video) エンドポイント =====
+
+@router.post("/text-to-video", response_model=T2VVideoResponse, status_code=status.HTTP_201_CREATED)
+async def create_text_to_video(
+    request: T2VVideoCreate,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    テキストプロンプトから動画を生成（T2V）
+
+    画像なしでテキストプロンプトのみから動画を生成します。
+    T2Vをサポートするプロバイダー（veo, piapi_kling）を使用します。
+    """
+    supabase = get_supabase()
+    user_id = current_user["user_id"]
+
+    from datetime import datetime, timezone
+
+    video_data = {
+        "user_id": user_id,
+        "prompt": request.prompt,
+        "user_prompt": request.prompt,
+        "duration": request.duration,
+        "aspect_ratio": request.aspect_ratio,
+        "video_provider": request.video_provider,
+        "generation_mode": "t2v",
+        "status": "pending",
+        "progress": 0,
+    }
+
+    try:
+        result = supabase.table("video_generations").insert(video_data).execute()
+        record = result.data[0]
+
+        video_id = record["id"]
+        await start_t2v_processing(video_id)
+
+        return T2VVideoResponse(
+            id=video_id,
+            status=record["status"],
+            progress=record.get("progress", 0),
+            video_url=record.get("final_video_url"),
+            created_at=record.get("created_at", datetime.now(timezone.utc).isoformat()),
+        )
+    except Exception as e:
+        logger.exception(f"Failed to create T2V generation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"T2V動画生成の開始に失敗しました: {str(e)}"
+        )
+
+
+@router.get("/text-to-video/{video_id}/status")
+async def get_text_to_video_status(
+    video_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    T2V動画生成ステータスを取得
+
+    Args:
+        video_id: 動画生成ID
+
+    Returns:
+        ステータス情報（status, progress, video_url）
+    """
+    supabase = get_supabase()
+    user_id = current_user["user_id"]
+
+    response = supabase.table("video_generations").select(
+        "id, status, progress, final_video_url, error_message, expires_at"
+    ).eq("id", video_id).eq("user_id", user_id).maybe_single().execute()
+
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="T2V動画が見つかりません"
+        )
+
+    data = response.data
+    video_status = data["status"]
+
+    messages = {
+        "pending": "T2V動画生成を準備中...",
+        "processing": f"T2V動画を生成中... ({data['progress']}%)",
+        "completed": "T2V動画生成が完了しました",
+        "failed": data.get("error_message") or "T2V動画生成に失敗しました",
+    }
+
+    return {
+        "id": data["id"],
+        "status": video_status,
+        "progress": data["progress"],
+        "message": messages.get(video_status, ""),
+        "video_url": data.get("final_video_url"),
+        "expires_at": data.get("expires_at"),
+    }
 
 
 # ===== Stitch Videos エンドポイント =====

@@ -1,18 +1,395 @@
 from google import genai
 from google.genai import types
 from PIL import Image
+import asyncio
+import re
 import io
 import json
 import httpx
 import logging
 from pathlib import Path
 
+from dataclasses import dataclass
+from typing import Optional, Literal
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+SubjectType = Literal["person", "object", "animation"]
+AnimationCategory = Literal["2d", "3d"]
+
+
+@dataclass
+class TranslateStoryPromptInput:
+    """translate_story_prompt の引数集約 dataclass。
+
+    引数増加に伴うシグネチャ複雑化を防ぐ。フロント (TypeScript)
+    からの JSON request body をそのまま展開して構築できる構造。
+    """
+    description_ja: str
+    video_provider: str = "runway"
+    subject_type: SubjectType = "person"
+    camera_work: Optional[str] = None
+    animation_category: Optional[AnimationCategory] = None
+    animation_template: Optional[str] = None
+    # Act-Two 関連 (Phase 1 では未使用、Phase 2 で利用)
+    use_act_two: bool = False
+    motion_type: Optional[str] = None
+    expression_intensity: int = 3
+    body_control: bool = True
+
+
+@dataclass
+class ExtractedComponents:
+    """_extract_prompt_components の戻り値 contract (B3 対応)。
+
+    型を統一して TypeError / AttributeError リスクを排除:
+    - 文字列フィールドは常に str (空なら "")。None は許容しない。
+    - dialogue のみ Optional[str]。null は「セリフなし」を表現。
+    """
+    subject_visual: str   # 必ず str (空なら "")
+    action: str           # 必ず str (空なら "")
+    camera: str           # 必ず str (空なら "")
+    micro_expression: str  # 必ず str (空なら "")
+    lighting: str         # 必ず str (空なら "")
+    other: str            # 必ず str (空なら "")
+    must_include: str     # 必ず str (空なら "")
+    dialogue: Optional[str] = None  # 唯一 None 許容
+
+
+def _build_reference_instruction(subject_type: str) -> str:
+    """B2 / B3 対応: subject_type に応じた Reference Instruction 1 行を返す。
+
+    subject_type='object' / 'animation' 時は人物前提フレーズ
+    ("Same face, same hair, same clothing") を除外した表現を使用。
+    """
+    if subject_type == "person":
+        return (
+            "Preserve subject's identity, facial features, outfit, and pose "
+            "from source image. Maintain the exact character appearance."
+        )
+    if subject_type == "object":
+        return (
+            "Preserve subject design, materials, configuration, and proportions "
+            "from source image. Maintain the exact object appearance."
+        )
+    if subject_type == "animation":
+        return (
+            "Preserve character design, art style, color palette, and visual "
+            "features from source image. Maintain the exact stylistic identity."
+        )
+    # フォールバック (未知の subject_type)
+    return (
+        "Preserve the visual identity and characteristics from source image."
+    )
+
+
+def _build_translate_system_prompt(
+    extracted: ExtractedComponents,
+    reference_instruction: str,
+    params: TranslateStoryPromptInput,
+) -> str:
+    """システムプロンプト構築。ExtractedComponents の str 統一に依存。
+
+    B3 対応: extracted.* は常に str。.strip() 直接呼び出し可能で None ガード不要。
+    A 案: CRITICAL RULES に "Preserve" typo 禁止を明示 (2 層防御の第 1 層)。
+    B 案: 必須 4 軸 + オプション 3 軸の新テンプレ (1200 文字目標)。
+    """
+    # 既に ExtractedComponents は str 統一なので .strip() で空判定のみ
+    subject_visual_hint = extracted.subject_visual.strip()
+    action_hint = extracted.action.strip()
+    camera_hint = (params.camera_work or extracted.camera).strip()
+    expression_hint = extracted.micro_expression.strip()
+    lighting_hint = extracted.lighting.strip()
+    has_dialogue = extracted.dialogue is not None  # 唯一 Optional[str]
+
+    # オプション軸の構築 (該当する記述があるときのみ含める)
+    optional_lines = []
+    if expression_hint:
+        optional_lines.append(f"Micro-expression: {{translate: {expression_hint}}}")
+    if lighting_hint:
+        optional_lines.append(f"Lighting: {{translate: {lighting_hint}}}")
+    if has_dialogue:
+        optional_lines.append(
+            "Must include (in addition): subtle lip-sync motion as if "
+            "the subject is speaking. Do NOT include the dialogue text itself."
+        )
+
+    optional_block = "\n".join(optional_lines) if optional_lines else ""
+
+    # subject_type 別の CRITICAL RULE 4 (人物前提フレーズ禁止の例示を条件化)
+    if params.subject_type == "person":
+        subject_type_rule = (
+            f'Subject type is "{params.subject_type}". Human-specific phrases are allowed.'
+        )
+    else:
+        subject_type_rule = (
+            f'Subject type is "{params.subject_type}". Do NOT use human-body phrases '
+            f'(face, hair, clothing, outfit, etc.) — they do not apply to this subject.'
+        )
+
+    return f"""\
+You are a prompt engineer for video generation AI ({params.video_provider}).
+
+GOAL: Convert the Japanese description into a compact English prompt
+that the model can execute reliably. Follow the structure below EXACTLY.
+
+CRITICAL RULES:
+1. The verb MUST be spelled "Preserve" (capital P, starts with Pr-). Do NOT use any
+   spelling that starts with "Re-" — that is a forbidden typo that reverses the meaning.
+2. The Subject field MUST include ALL visual attributes the user provided
+   (colors, materials, shape, distinctive features). DO NOT omit them as
+   "inheritable from image" -- they are required for the model to anchor.
+3. Keep total length under 1200 characters. Be concise but specific.
+4. {subject_type_rule}
+5. Dialogue lines (extracted separately) MUST NOT appear in the prompt body.
+   Only the meta-instruction "subtle lip-sync motion" is allowed.
+
+OUTPUT TEMPLATE (use this EXACT structure):
+
+{reference_instruction}
+
+CLIP SPECIFIC:
+Subject: {{translate to English, include ALL visual attributes from: {subject_visual_hint}}}
+Action: {{translate to English: {action_hint}}}
+Camera: {{translate to English or use as-is: {camera_hint or "natural framing"}}}
+Must include: {{natural motion, subtle physics appropriate to the subject}}
+{optional_block}
+
+OUTPUT: Return ONLY the prompt text following the template above.
+No explanations, no quotes, no markdown code fences.
+"""
+
+
+def _sanitize_reserve_typo(text: str) -> str:
+    """A 案安全網 (第 2 層): Reserve -> Preserve に置換 (固定フレーズのみ)。
+
+    Gemini が "Reserve" を誤生成した場合の最終防御。
+    特定フレーズのみ置換することで意図しない書き換えを避ける。
+    """
+    return (
+        text
+        .replace("Reserve exact appearance", "Preserve exact appearance")
+        .replace("Reserve the subject", "Preserve the subject")
+        .replace("Reserve the source", "Preserve the source")
+    )
+
+
+async def _run_gemini_translation(system_prompt: str, user_input: str) -> str:
+    """N5 / N6 対応: 翻訳実行を分離関数化 (テストで monkeypatch しやすい)。
+
+    Gemini SDK の generate_content は同期 API のため asyncio.to_thread で
+    event loop のブロックを回避する。
+
+    Args:
+        system_prompt: システム指示プロンプト (テンプレート込み)
+        user_input: ユーザー入力の日本語テキスト
+
+    Returns:
+        Gemini が生成した英語プロンプト文字列 (strip 済)
+
+    Raises:
+        Exception: Gemini API 呼び出し失敗時はそのまま上位に伝播
+    """
+    client = get_gemini_client()
+    response = await asyncio.to_thread(
+        client.models.generate_content,
+        model="gemini-2.0-flash",
+        contents=user_input,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=0.6,
+        ),
+    )
+    return response.text.strip()
+
+
+def _extract_dialogues_via_regex(text: str) -> Optional[str]:
+    """B1 対応: 「」/ 『』 内のセリフを正規表現で抽出して結合する。
+
+    挙動 (B1 採用案 a: 1 階層厳密対応):
+        - KAGI_BRACKET_PATTERN で「...」(内部に「」を含まない) を抽出
+        - DOUBLE_KAGI_BRACKET_PATTERN で『...』(内部に『』を含まない) を抽出
+        - 両者を結合して改行区切りで返す
+
+    異種ネスト例 「彼は『やめて』と叫んだ」:
+        → KAGI: ["彼は『やめて』と叫んだ"]
+        → DOUBLE_KAGI: ["やめて"]
+        → 結合: "彼は『やめて』と叫んだ\nやめて" (AC-C8 で固定)
+
+    空文字列 「」 は strip() フィルタで除外される。
+    """
+    inner_kagi = KAGI_BRACKET_PATTERN.findall(text)
+    inner_double_kagi = DOUBLE_KAGI_BRACKET_PATTERN.findall(text)
+
+    # 空文字フィルタ (10-5 対応: 「」内が空の場合を除外)
+    all_dialogues = [d for d in (inner_kagi + inner_double_kagi) if d.strip()]
+
+    return "\n".join(all_dialogues) if all_dialogues else None
+
+
+async def _extract_prompt_components(description_ja: str) -> ExtractedComponents:
+    """日本語プロンプトから視覚情報・動き・セリフを構造化抽出する。
+    AI による抽出 + 正規表現でのダブルチェック (セリフのみ)。
+
+    Returns:
+        ExtractedComponents (B3 対応: 戻り値 contract 統一済)
+        - 文字列フィールドは常に str (失敗時も空文字)。
+        - dialogue のみ Optional[str]。
+
+    Raises:
+        なし。AI 失敗時は正規表現フォールバックで ExtractedComponents を返す。
+    """
+    # 1. 正規表現で一次抽出 (AI を待たずに使える)
+    regex_dialogue = _extract_dialogues_via_regex(description_ja)
+
+    # 2. AI による構造化抽出 (gemini-2.0-flash, temperature=0.3)
+    client = get_gemini_client()
+    extraction_prompt = f"""\
+Extract structured information from this Japanese video prompt.
+
+Input:
+{description_ja}
+
+Return ONLY valid JSON with these keys (all values are strings, empty "" if absent):
+- subject_visual: Visual attributes of the main subject
+  (colors, materials, shape, distinctive features). Include ALL visual
+  descriptors mentioned, including non-human characteristics
+  (e.g. "no limbs", "hung on hanger", "beige knit sweater texture").
+- action: What the subject does (motion, posture changes).
+- camera: Camera work if explicitly mentioned, else "".
+- dialogue: Text inside 「」 or 『』 brackets, joined by newlines if multiple.
+  Empty "" if no brackets present.
+- micro_expression: Facial / emotional expression if mentioned, else "".
+- lighting: Lighting conditions if mentioned, else "".
+- other: Any other contextual hints, else "".
+- must_include: Specific keywords user marked as required, else "".
+
+Example output:
+{{"subject_visual": "...", "action": "...", "camera": "", "dialogue": "...", "micro_expression": "...", "lighting": "", "other": "", "must_include": ""}}
+"""
+    try:
+        # N5 対応: Gemini SDK の非同期化 (asyncio.to_thread で event loop ブロック回避)
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model="gemini-2.0-flash",
+            contents=extraction_prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.3,
+                response_mime_type="application/json",
+            ),
+        )
+        raw = json.loads(response.text.strip())
+    except Exception as e:
+        logger.warning(
+            "Component extraction failed, using regex fallback: %s", e
+        )
+        # フォールバック: description_ja をそのまま subject_visual に
+        return ExtractedComponents(
+            subject_visual=description_ja,
+            action="",
+            camera="",
+            micro_expression="",
+            lighting="",
+            other="",
+            must_include="",
+            dialogue=regex_dialogue,  # 正規表現抽出結果は活かす
+        )
+
+    # 3. AI 結果を ExtractedComponents に変換 (型統一: None / 欠落は "" に変換)
+    def _str(v) -> str:
+        if v is None:
+            return ""
+        return str(v).strip()
+
+    ai_dialogue = _str(raw.get("dialogue"))
+    # セリフのみ正規表現結果を信頼ソースに優先 (10-8)
+    final_dialogue: Optional[str]
+    if regex_dialogue:
+        final_dialogue = regex_dialogue
+    elif ai_dialogue:
+        final_dialogue = ai_dialogue
+    else:
+        final_dialogue = None
+
+    return ExtractedComponents(
+        subject_visual=_str(raw.get("subject_visual")) or description_ja,
+        action=_str(raw.get("action")),
+        camera=_str(raw.get("camera")),
+        micro_expression=_str(raw.get("micro_expression")),
+        lighting=_str(raw.get("lighting")),
+        other=_str(raw.get("other")),
+        must_include=_str(raw.get("must_include")),
+        dialogue=final_dialogue,
+    )
+
+
+async def translate_story_prompt(
+    params: TranslateStoryPromptInput,
+) -> tuple[str, Optional[str]]:
+    """PromptNode 用: 日本語プロンプトを英語に翻訳し、セリフを分離抽出する。
+
+    Args:
+        params: 翻訳パラメータ (dataclass で集約)
+
+    Returns:
+        tuple[english_prompt: str, extracted_dialogue: Optional[str]]
+        - english_prompt: 常に str (失敗時は例外送出、空文字は返さない)
+        - extracted_dialogue: 「」/『』検出時のみ str、未検出時 None
+
+    Raises:
+        Exception: Gemini 翻訳呼び出し失敗時 (フォールバックなし、呼び出し元でハンドリング)
+    """
+    # B4 対応: Phase 1 では Act-Two 引数を未使用、警告ログのみ
+    if params.use_act_two:
+        logger.warning(
+            "Act-Two mode is not supported in translate_story_prompt yet. "
+            "Phase 2 will add _build_act_two_instruction(). "
+            "Falling back to standard translation for now. "
+            "use_act_two=%s motion_type=%s expression_intensity=%s body_control=%s",
+            params.use_act_two,
+            params.motion_type,
+            params.expression_intensity,
+            params.body_control,
+        )
+
+    # --- Phase 1: 構造化抽出 ---
+    extracted: ExtractedComponents = await _extract_prompt_components(
+        params.description_ja
+    )
+
+    # --- Phase 2: 翻訳 + テンプレ整形 ---
+    reference_instruction = _build_reference_instruction(params.subject_type)
+    system_prompt = _build_translate_system_prompt(
+        extracted=extracted,
+        reference_instruction=reference_instruction,
+        params=params,
+    )
+
+    english_prompt = await _run_gemini_translation(system_prompt, params.description_ja)
+
+    # --- Phase 3: typo サニタイズ (A 案安全網、第 2 層) ---
+    english_prompt = _sanitize_reserve_typo(english_prompt)
+
+    # B5 対応: 1200 文字超過時は warning ログのみ (ハード上限なし)
+    if len(english_prompt) > 1200:
+        logger.warning(
+            "translate_story_prompt output exceeded soft target: %d chars "
+            "(target <= 1200). Kling 2500-char truncate acts as hard limit.",
+            len(english_prompt),
+        )
+
+    return english_prompt, extracted.dialogue
+
+
 # プロジェクトルートディレクトリ（movie-maker-api の親 = movie-project）
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent  # movie-project/
+
+# B1 対応: モジュールスコープでパターン定数化
+# ネストカッコは別々に抽出して結合する (採用案 a: 1 階層厳密)
+KAGI_BRACKET_PATTERN = re.compile(r"「([^「」]*?)」")
+DOUBLE_KAGI_BRACKET_PATTERN = re.compile(r"『([^『』]*?)』")
 
 
 def load_prompt_template(
@@ -1947,6 +2324,7 @@ async def generate_image_prompt_from_scene(
     aspect_ratio: str = "9:16",
     structured_input: dict | None = None,
     reference_image_url: str | None = None,
+    image_look: str = "cinematic",
 ) -> tuple[str, str]:
     """
     脚本または構造化入力から画像生成用プロンプトを生成
@@ -1974,7 +2352,7 @@ async def generate_image_prompt_from_scene(
 
     # 従来モード: description_ja + dialogue
     return await _generate_prompt_from_description(
-        client, description_ja, dialogue, aspect_ratio, aspect_desc
+        client, description_ja, dialogue, aspect_ratio, aspect_desc, image_look=image_look
     )
 
 
@@ -2262,12 +2640,66 @@ def _build_fallback_prompt_from_structured(structured_input: dict, aspect_ratio:
     )
 
 
+LOOK_SYSTEM_INSTRUCTIONS: dict[str, str | None] = {
+    "cinematic": None,  # None = 既存のARRIルックプロンプトをそのまま使用
+    "realistic": (
+        "You are an expert commercial photographer. Generate a photorealistic image prompt.\n"
+        "Style: Professional photography with natural lighting.\n"
+        "Camera: Shot on Canon EOS R5 with RF 50mm f/1.2L.\n"
+        "Post-processing: Minimal retouching, natural color grading.\n"
+        "Focus on: Sharp details, natural skin tones, realistic textures and materials."
+    ),
+    "anime": (
+        "You are a professional anime art director. Generate an anime-style image prompt.\n"
+        "Style: Modern Japanese anime, cel-shaded illustration.\n"
+        "Characteristics: Clean outlines, vibrant saturated colors, expressive character design.\n"
+        "Background: Detailed painted backgrounds in anime style.\n"
+        "Avoid: Photorealistic elements, film grain, camera references."
+    ),
+    "illustration": (
+        "You are a digital illustration art director. Generate a professional illustration prompt.\n"
+        "Style: Clean digital artwork with precise linework.\n"
+        "Characteristics: Bold colors, well-defined shapes, professional composition.\n"
+        "Technique: Digital painting with clean vector-like quality.\n"
+        "Avoid: Photorealistic textures, camera references, film effects."
+    ),
+    "watercolor": (
+        "You are a watercolor art director. Generate a watercolor painting prompt.\n"
+        "Style: Traditional watercolor with translucent washes.\n"
+        "Characteristics: Soft color bleeding, visible paper texture, wet-on-wet effects.\n"
+        "Palette: Delicate, luminous colors with white paper showing through.\n"
+        "Avoid: Sharp edges, digital effects, camera references."
+    ),
+    "3d_render": (
+        "You are a 3D art director. Generate a 3D rendered image prompt.\n"
+        "Style: High-quality 3D CGI, Pixar/Disney aesthetic.\n"
+        "Characteristics: Smooth surfaces, subsurface scattering, volumetric lighting.\n"
+        "Materials: Clean plastic-like textures, soft shadows, global illumination.\n"
+        "Avoid: Photorealistic film grain, camera lens references."
+    ),
+    "flat_design": (
+        "You are a graphic design director. Generate a flat design illustration prompt.\n"
+        "Style: Modern flat design, minimal vector art.\n"
+        "Characteristics: Bold geometric shapes, limited color palette, no gradients or shadows.\n"
+        "Composition: Clean layout with clear visual hierarchy.\n"
+        "Avoid: Realistic textures, shadows, 3D effects, camera references."
+    ),
+    "oil_painting": (
+        "You are a classical art director. Generate an oil painting style prompt.\n"
+        "Style: Traditional oil painting with rich, layered textures.\n"
+        "Characteristics: Visible brushstrokes, warm color palette, chiaroscuro lighting.\n"
+        "Technique: Impasto highlights, glazed shadows, classical composition.\n"
+        "Avoid: Digital effects, clean lines, camera references."
+    ),
+}
+
 async def _generate_prompt_from_description(
     client,
     description_ja: str | None,
     dialogue: str | None,
     aspect_ratio: str,
     aspect_desc: str,
+    image_look: str = "cinematic",
 ) -> tuple[str, str]:
     """
     従来モード: 脚本とセリフからプロンプトを生成
@@ -2281,8 +2713,11 @@ async def _generate_prompt_from_description(
 
     input_text = "\n".join(input_parts) if input_parts else "（入力なし）"
 
-    # nanobanana 5段階構造テンプレートを組み込んだシステムプロンプト（ARRI look必須）
-    system_prompt = """
+    # ルック別のシステムプロンプト分岐
+    look_instruction = LOOK_SYSTEM_INSTRUCTIONS.get(image_look)
+    if look_instruction is None:
+        # cinematic: 既存のARRIルック system_prompt をそのまま使用
+        system_prompt = """
 あなたはラグジュアリーブランド専門の広告クリエイティブディレクターです。
 CM用のシーン画像を生成するための高品質なプロンプトを作成してください。
 
@@ -2335,6 +2770,22 @@ CM用のシーン画像を生成するための高品質なプロンプトを作
 - 色はHEXコードを含める（例: #3d5a6b steel blue）
 - 180-220語（最大1800文字）
 - 静止画として成立する瞬間を描写
+"""
+    else:
+        # 非シネマティック: ルック別プロンプトに切り替え
+        system_prompt = f"""あなたはプロの広告クリエイティブディレクターです。
+{look_instruction}
+
+以下のシーン情報から、画像生成AIに渡す高品質なプロンプトを作成してください。
+アスペクト比は{aspect_desc}です。
+
+以下のJSON形式で出力してください:
+{{"prompt_ja": "日本語プロンプト", "prompt_en": "英語プロンプト"}}
+
+重要:
+- 英語プロンプトは画像生成AIが直接使用します
+- 具体的で詳細な視覚描写を含めてください
+- シーンの雰囲気、色調、構図を明確に指定してください
 """
 
     user_prompt = f"""
