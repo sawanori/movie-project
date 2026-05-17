@@ -34,8 +34,10 @@ export function PromptNode({ data, selected, id }: PromptNodeProps) {
   const { getNodes } = useReactFlow();
 
   // N3 対応: セリフ正規化 (空白/改行を統一して同一性判定)
-  const normalizeDialogue = (raw: string): string =>
-    raw.trim().replace(/\s+/g, ' ');
+  const normalizeDialogue = useCallback(
+    (raw: string): string => raw.trim().replace(/\s+/g, ' '),
+    []
+  );
 
   const updateNodeData = useCallback(
     (updates: Partial<PromptNodeData>) => {
@@ -97,7 +99,7 @@ export function PromptNode({ data, selected, id }: PromptNodeProps) {
 
     return () => clearTimeout(timer);
     // B2 対応: 翻訳パラメータ変更時も再翻訳トリガ
-  }, [localPrompt, updateNodeData, data.subjectType]);
+  }, [localPrompt, updateNodeData, data.subjectType, normalizeDialogue]);
 
   // N2 / N4 対応: createDialogueNodeFromPrompt CustomEvent を NodeEditor に伝達
   const handleCreateDialogueNode = useCallback((dialogueText: string) => {
