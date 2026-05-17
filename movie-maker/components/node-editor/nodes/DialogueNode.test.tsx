@@ -482,6 +482,66 @@ describe('DialogueNode', () => {
     });
   });
 
+  describe('regeneration after completed', () => {
+    it('test_can_regenerate_after_completed: button is enabled when status=completed and text+voiceId are present', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const completedData: DialogueNodeData = {
+        ...defaultData,
+        status: 'completed',
+        text: 'テストセリフ',
+        voiceId: 'v1',
+      };
+
+      render(<DialogueNode {...defaultProps} data={completedData} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button')).toBeDefined();
+      });
+
+      expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('test_button_label_is_regenerate_after_completed: button label shows "再合成する" when status=completed and useLipSync=false', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const completedData: DialogueNodeData = {
+        ...defaultData,
+        status: 'completed',
+        text: 'テストセリフ',
+        voiceId: 'v1',
+        useLipSync: false,
+      };
+
+      render(<DialogueNode {...defaultProps} data={completedData} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button')).toBeDefined();
+      });
+
+      const button = screen.getByRole('button');
+      expect(button.textContent).toContain('再合成する');
+      expect(button.textContent).not.toContain('リップシンク再合成');
+    });
+
+    it('test_regenerate_button_has_orange_style: button has bg-orange-500 class when status=completed and canExecute=true', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const completedData: DialogueNodeData = {
+        ...defaultData,
+        status: 'completed',
+        text: 'テストセリフ',
+        voiceId: 'v1',
+      };
+
+      render(<DialogueNode {...defaultProps} data={completedData} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button')).toBeDefined();
+      });
+
+      const button = screen.getByRole('button');
+      expect(button.className).toContain('bg-orange-500');
+    });
+  });
+
   describe('handle rendering', () => {
     it('should render input handle (target) on the left', async () => {
       mockTtsApi.listVoices.mockResolvedValue([]);

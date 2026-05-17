@@ -64,7 +64,6 @@ export function DialogueNode({ data, selected, id }: DialogueNodeProps) {
     data.status === 'pending' || data.status === 'processing';
   const canExecute =
     !isProcessing &&
-    data.status !== 'completed' &&
     !!data.text.trim() &&
     !!data.voiceId;
 
@@ -248,12 +247,16 @@ export function DialogueNode({ data, selected, id }: DialogueNodeProps) {
         className={cn(
           'w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all',
           canExecute
-            ? 'bg-[#fce300] text-black hover:bg-[#e5cd00]'
+            ? data.status === 'completed'
+              ? 'bg-orange-500 text-white hover:bg-orange-600'
+              : 'bg-[#fce300] text-black hover:bg-[#e5cd00]'
             : 'bg-[#404040] text-gray-500 cursor-not-allowed'
         )}
       >
         <Mic className="w-4 h-4" />
-        {data.useLipSync ? 'リップシンク合成する' : '合成する'}
+        {data.status === 'completed'
+          ? (data.useLipSync ? 'リップシンク再合成' : '再合成する')
+          : (data.useLipSync ? 'リップシンク合成する' : '合成する')}
       </button>
 
       {/* 出力動画 Handle */}
