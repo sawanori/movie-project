@@ -2850,7 +2850,7 @@ async def upload_user_video_endpoint(
     ユーザー動画をアップロード
 
     制限:
-    - ファイル形式: MP4, MOV
+    - ファイル形式: MP4, MOV, WebM
     - 最大サイズ: 500MB
     - 最大解像度: 4K (3840x2160)
     - 最大尺: 300秒 (5分)
@@ -2859,7 +2859,7 @@ async def upload_user_video_endpoint(
     if file.content_type not in USER_VIDEO_ALLOWED_TYPES:
         raise HTTPException(
             status_code=400,
-            detail="対応していないファイル形式です。MP4またはMOVをアップロードしてください。"
+            detail="対応していないファイル形式です。MP4、MOVまたはWebMをアップロードしてください。"
         )
 
     # ファイルサイズチェック（ストリーミング読み込み）

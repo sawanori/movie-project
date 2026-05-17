@@ -86,8 +86,45 @@ class TestUploadUserVideo:
             assert response.status_code == 400
             assert "動画が長すぎます" in response.json()["detail"]
 
+    def test_upload_accepts_webm_video(self, auth_client):
+        """有効なWebM動画をアップロードできる"""
+        mock_video_data = {
+            "id": "test-uuid-webm",
+            "user_id": "test-user-00000000-0000-0000-0000-000000000001",
+            "title": "test_webm_video",
+            "description": None,
+            "r2_key": "user_videos/test-user/test-uuid-webm.webm",
+            "video_url": "https://example.com/user_videos/test.webm",
+            "thumbnail_url": "https://example.com/user_videos/test_thumb.jpg",
+            "duration_seconds": 5.0,
+            "width": 1920,
+            "height": 1080,
+            "file_size_bytes": 512000,
+            "mime_type": "video/webm",
+            "created_at": "2025-12-22T00:00:00Z",
+            "updated_at": "2025-12-22T00:00:00Z",
+        }
+
+        with patch("app.videos.router.service_upload_user_video", new_callable=AsyncMock) as mock_upload:
+            mock_upload.return_value = mock_video_data
+
+            file_content = b"fake webm content"
+            files = {
+                "file": ("test_video.webm", BytesIO(file_content), "video/webm")
+            }
+
+            response = auth_client.post(
+                "/api/v1/videos/upload-video",
+                files=files,
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["id"] == "test-uuid-webm"
+            assert data["mime_type"] == "video/webm"
+
     def test_upload_video_invalid_format(self, auth_client):
-        """MP4/MOV以外の形式はエラー（routerでチェック）"""
+        """MP4/MOV/WebM以外の形式はエラー（routerでチェック）"""
         file_content = b"fake avi content"
         files = {
             "file": ("video.avi", BytesIO(file_content), "video/x-msvideo")
