@@ -261,7 +261,10 @@ Extract structured information from this Japanese video prompt.
 Input:
 {description_ja}
 
-Return ONLY valid JSON with these keys (all values are strings, empty "" if absent):
+Return ONLY a single valid JSON OBJECT (not an array, not wrapped in markdown code blocks).
+The output MUST start with {{ and end with }}.
+
+Keys (all values are strings, empty "" if absent):
 - subject_visual: Visual attributes of the main subject
   (colors, materials, shape, distinctive features). Include ALL visual
   descriptors mentioned, including non-human characteristics
@@ -296,7 +299,15 @@ Example output:
                 getattr(response.candidates[0] if response.candidates else None, 'finish_reason', None) if response.candidates else None,
             )
             raise ValueError("Gemini returned None text for component extraction.")
-        raw = json.loads(response.text.strip())
+        cleaned_text = re.sub(
+            r'^```(json)?\s*|\s*```$', '', response.text.strip(), flags=re.MULTILINE
+        )
+        raw = json.loads(cleaned_text)
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"Expected JSON object from Gemini, got {type(raw).__name__}: "
+                f"{str(raw)[:100]}"
+            )
     except Exception as e:
         logger.warning(
             "Component extraction failed, using regex fallback: %s", e

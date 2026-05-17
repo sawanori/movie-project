@@ -330,6 +330,54 @@ async def test_translate_scene_to_runway_prompt_backward_compat():
     assert len(result) > 0
 
 
+# ============================================================
+# 6. _extract_prompt_components の型ガード / markdown strip
+# ============================================================
+
+async def test_extract_components_handles_array_response(monkeypatch):
+    """Gemini が JSON array ([{}]) を返した時にフォールバックが動作し例外を送出しない。"""
+    array_response = MagicMock()
+    array_response.text = json.dumps([{"subject_visual": "test", "action": "move"}])
+
+    monkeypatch.setattr(
+        "app.external.gemini_client.asyncio.to_thread",
+        AsyncMock(return_value=array_response),
+    )
+    result = await _extract_prompt_components("女性が歩く")
+
+    # フォールバックが動作し ExtractedComponents が返る (例外なし)
+    assert isinstance(result, ExtractedComponents)
+    # フォールバック時は description_ja がそのまま subject_visual に入る
+    assert result.subject_visual == "女性が歩く"
+
+
+async def test_extract_components_handles_markdown_wrapper(monkeypatch):
+    """Gemini が ```json\\n{...}\\n``` のような markdown wrapper を返した時に正常 parse される。"""
+    data = {
+        "subject_visual": "young woman",
+        "action": "walk",
+        "camera": "",
+        "dialogue": "",
+        "micro_expression": "",
+        "lighting": "",
+        "other": "",
+        "must_include": "",
+    }
+    markdown_response = MagicMock()
+    markdown_response.text = f"```json\n{json.dumps(data)}\n```"
+
+    monkeypatch.setattr(
+        "app.external.gemini_client.asyncio.to_thread",
+        AsyncMock(return_value=markdown_response),
+    )
+    result = await _extract_prompt_components("女性が歩く")
+
+    # markdown wrapper が剥がれて正常に parse され、AI 結果が返る
+    assert isinstance(result, ExtractedComponents)
+    assert result.subject_visual == "young woman"
+    assert result.action == "walk"
+
+
 def test_extracted_dialogue_none_serialization():
     """AC-D2: extracted_dialogue=None で TranslateStoryPromptResponse が serialize 可能。"""
     from app.videos.schemas import TranslateStoryPromptResponse
