@@ -70,6 +70,7 @@ class ElevenLabsProvider(TTSProviderInterface):
         voice_id: str,
         language: str = "ja",
         speed: float = 1.0,
+        instructions: Optional[str] = None,
     ) -> str:
         """
         ElevenLabs API を使用して音声を生成し、R2 にアップロードして URL を返す
@@ -79,6 +80,7 @@ class ElevenLabsProvider(TTSProviderInterface):
             voice_id: ElevenLabs の音声 ID
             language: 言語コード（ElevenLabs では model_id に影響）
             speed: 読み上げ速度
+            instructions: 感情/トーン指定（ElevenLabs では未サポートのため無視）
 
         Returns:
             str: R2 にアップロードされた音声の URL
