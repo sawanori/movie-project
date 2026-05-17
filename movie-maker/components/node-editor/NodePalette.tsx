@@ -14,11 +14,11 @@ import {
   Palette,
   Layers,
   Mic,
+  ChevronDown,
+  ChevronRight,
   Scissors,
   Link,
   StickyNote,
-  ChevronDown,
-  ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
@@ -52,8 +52,8 @@ const NODE_ITEMS: NodePaletteItem[] = [
   },
   {
     type: 'videoInput',
-    label: 'V2V',
-    description: '動画入力（Runway専用）',
+    label: '動画入力',
+    description: '動画をアップロード・URL・履歴から読み込み',
     icon: 'video',
     category: 'input',
     availableFor: ['runway'],

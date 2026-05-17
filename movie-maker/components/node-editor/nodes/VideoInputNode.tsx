@@ -389,7 +389,7 @@ export function VideoInputNode({ data, selected, id }: VideoInputNodeProps) {
 
   return (
     <BaseNode
-      title="V2V"
+      title="動画入力"
       icon={<Video className="w-4 h-4" />}
       isSelected={selected}
       isValid={data.isValid}
@@ -398,7 +398,7 @@ export function VideoInputNode({ data, selected, id }: VideoInputNodeProps) {
       {/* Runway-only notice */}
       <div className="flex items-center gap-1 mb-2 px-2 py-1 bg-amber-500/10 rounded text-xs text-amber-400">
         <AlertTriangle className="w-3 h-3" />
-        <span>V2VはRunwayのみ対応</span>
+        <span>動画入力はRunwayのみ対応</span>
       </div>
 
       {/* Mode tabs */}

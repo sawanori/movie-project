@@ -86,12 +86,12 @@ describe('VideoInputNode', () => {
   describe('Rendering', () => {
     it('should render the node with title', () => {
       render(<VideoInputNode {...defaultProps} />);
-      expect(screen.getByText('V2V')).toBeDefined();
+      expect(screen.getByText('動画入力')).toBeDefined();
     });
 
     it('should display Runway-only notice', () => {
       render(<VideoInputNode {...defaultProps} />);
-      expect(screen.getByText(/V2VはRunwayのみ対応/)).toBeDefined();
+      expect(screen.getByText(/動画入力はRunwayのみ対応/)).toBeDefined();
     });
 
     it('should render upload mode tab as active by default', () => {
