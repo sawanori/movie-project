@@ -202,7 +202,16 @@ async def _run_gemini_translation(system_prompt: str, user_input: str) -> str:
             temperature=0.6,
         ),
     )
-    return response.text.strip()
+    text = response.text
+    if text is None:
+        # Gemini が空応答を返した場合 (safety filter, max_tokens 超過, structured output 失敗等)
+        logger.error(
+            "Gemini returned None text. Response candidates: %s, finish_reason: %s",
+            getattr(response, 'candidates', None),
+            getattr(response.candidates[0] if response.candidates else None, 'finish_reason', None) if response.candidates else None,
+        )
+        raise ValueError("Gemini returned empty response. Possibly blocked by safety filter or token limit exceeded.")
+    return text.strip()
 
 
 def _extract_dialogues_via_regex(text: str) -> Optional[str]:
@@ -280,6 +289,13 @@ Example output:
                 response_mime_type="application/json",
             ),
         )
+        if response.text is None:
+            logger.warning(
+                "Component extraction: Gemini returned None text (safety filter or token limit). "
+                "finish_reason: %s",
+                getattr(response.candidates[0] if response.candidates else None, 'finish_reason', None) if response.candidates else None,
+            )
+            raise ValueError("Gemini returned None text for component extraction.")
         raw = json.loads(response.text.strip())
     except Exception as e:
         logger.warning(

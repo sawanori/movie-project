@@ -3731,7 +3731,7 @@ async def translate_story_prompt_endpoint(
         logger.exception(f"Story prompt translation failed: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"翻訳に失敗しました: {str(e)}",
+            detail=f"翻訳に失敗しました: [{type(e).__name__}] {str(e)}",
         )
 
 
