@@ -195,6 +195,114 @@ describe('DialogueNode', () => {
     });
   });
 
+  describe('always shows lip sync notice', () => {
+    it('should always display the lip sync notice text', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      render(<DialogueNode {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/口の動きは合成しません/)).toBeDefined();
+      });
+    });
+
+    it('should show notice even in completed state', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const completedData: DialogueNodeData = {
+        ...defaultData,
+        status: 'completed',
+        outputVideoUrl: 'https://example.com/output.mp4',
+      };
+
+      render(<DialogueNode {...defaultProps} data={completedData} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/口の動きは合成しません/)).toBeDefined();
+      });
+    });
+  });
+
+  describe('dispatches startDialogue event on execute', () => {
+    it('should dispatch startDialogue CustomEvent when execute button is clicked', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([
+        { voice_id: 'v1', name: '声1', language: 'ja' },
+      ]);
+
+      const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
+
+      const readyData: DialogueNodeData = {
+        ...defaultData,
+        text: 'テストセリフ',
+        voiceId: 'v1',
+        status: 'idle',
+      };
+
+      render(<DialogueNode {...defaultProps} data={readyData} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button')).toBeDefined();
+      });
+
+      const button = screen.getByRole('button');
+      fireEvent.click(button);
+
+      const dispatchedEvents = dispatchEventSpy.mock.calls.map(
+        (call) => call[0] as CustomEvent
+      );
+      const startDialogueEvent = dispatchedEvents.find(
+        (e) => e.type === 'startDialogue'
+      );
+
+      expect(startDialogueEvent).toBeDefined();
+      expect(startDialogueEvent?.detail).toEqual({
+        nodeId: 'test-dialogue-node',
+      });
+
+      dispatchEventSpy.mockRestore();
+    });
+  });
+
+  describe('execute button disabled guards', () => {
+    it('should disable the button when text is empty', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([
+        { voice_id: 'v1', name: '声1', language: 'ja' },
+      ]);
+      const noTextData: DialogueNodeData = {
+        ...defaultData,
+        text: '',
+        voiceId: 'v1',
+        status: 'idle',
+      };
+
+      render(<DialogueNode {...defaultProps} data={noTextData} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button')).toBeDefined();
+      });
+
+      expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('should disable the button when voiceId is not selected', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([
+        { voice_id: 'v1', name: '声1', language: 'ja' },
+      ]);
+      const noVoiceData: DialogueNodeData = {
+        ...defaultData,
+        text: 'テストセリフ',
+        voiceId: null,
+        status: 'idle',
+      };
+
+      render(<DialogueNode {...defaultProps} data={noVoiceData} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button')).toBeDefined();
+      });
+
+      expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);
+    });
+  });
+
   // ====================================================================
   // useLipSync (Hedra リップシンク) 関連テスト
   // T2-5: 4 ケースで useLipSync の表示・操作・状態を検証する
@@ -319,85 +427,58 @@ describe('DialogueNode', () => {
     });
   });
 
-  describe('dispatches startDialogue event on execute', () => {
-    it('should dispatch startDialogue CustomEvent when execute button is clicked', async () => {
-      mockTtsApi.listVoices.mockResolvedValue([
-        { voice_id: 'v1', name: '声1', language: 'ja' },
-      ]);
-
-      const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
-
-      const readyData: DialogueNodeData = {
+  describe('video preview and download button on completion', () => {
+    it('video_preview_shown_when_completed_with_url: shows video element when status=completed and outputVideoUrl is set', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const completedData: DialogueNodeData = {
         ...defaultData,
-        text: 'テストセリフ',
-        voiceId: 'v1',
-        status: 'idle',
+        status: 'completed',
+        outputVideoUrl: 'https://example.com/output.mp4',
       };
 
-      render(<DialogueNode {...defaultProps} data={readyData} />);
+      render(<DialogueNode {...defaultProps} data={completedData} />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button')).toBeDefined();
+        const video = document.querySelector('video');
+        expect(video).not.toBeNull();
+        expect(video?.getAttribute('src')).toBe('https://example.com/output.mp4');
       });
-
-      const button = screen.getByRole('button');
-      fireEvent.click(button);
-
-      const dispatchedEvents = dispatchEventSpy.mock.calls.map(
-        (call) => call[0] as CustomEvent
-      );
-      const startDialogueEvent = dispatchedEvents.find(
-        (e) => e.type === 'startDialogue'
-      );
-
-      expect(startDialogueEvent).toBeDefined();
-      expect(startDialogueEvent?.detail).toEqual({
-        nodeId: 'test-dialogue-node',
-      });
-
-      dispatchEventSpy.mockRestore();
-    });
-  });
-
-  describe('execute button disabled guards', () => {
-    it('should disable the button when text is empty', async () => {
-      mockTtsApi.listVoices.mockResolvedValue([
-        { voice_id: 'v1', name: '声1', language: 'ja' },
-      ]);
-      const noTextData: DialogueNodeData = {
-        ...defaultData,
-        text: '',
-        voiceId: 'v1',
-        status: 'idle',
-      };
-
-      render(<DialogueNode {...defaultProps} data={noTextData} />);
-
-      await waitFor(() => {
-        expect(screen.getByRole('button')).toBeDefined();
-      });
-
-      expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);
     });
 
-    it('should disable the button when voiceId is not selected', async () => {
-      mockTtsApi.listVoices.mockResolvedValue([
-        { voice_id: 'v1', name: '声1', language: 'ja' },
-      ]);
-      const noVoiceData: DialogueNodeData = {
+    it('no_video_when_completed_without_url: hides video element when status=completed and outputVideoUrl is null', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const completedData: DialogueNodeData = {
         ...defaultData,
-        text: 'テストセリフ',
-        voiceId: null,
-        status: 'idle',
+        status: 'completed',
+        outputVideoUrl: null,
       };
 
-      render(<DialogueNode {...defaultProps} data={noVoiceData} />);
+      render(<DialogueNode {...defaultProps} data={completedData} />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button')).toBeDefined();
+        expect(screen.getByText(/合成完了/)).toBeDefined();
       });
 
-      expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);
+      expect(document.querySelector('video')).toBeNull();
+      expect(screen.queryByRole('link')).toBeNull();
+    });
+
+    it('download_link_has_correct_href: download anchor href matches outputVideoUrl', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const videoUrl = 'https://example.com/output.mp4';
+      const completedData: DialogueNodeData = {
+        ...defaultData,
+        status: 'completed',
+        outputVideoUrl: videoUrl,
+      };
+
+      render(<DialogueNode {...defaultProps} data={completedData} />);
+
+      await waitFor(() => {
+        const link = screen.getByRole('link', { name: /ダウンロード/ });
+        expect(link.getAttribute('href')).toBe(videoUrl);
+        expect(link.getAttribute('download')).toBe(`dialogue_${defaultProps.id}.mp4`);
+      });
     });
   });
 

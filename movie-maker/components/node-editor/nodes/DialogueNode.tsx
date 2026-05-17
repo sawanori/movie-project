@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { Mic, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import { Mic, Loader2, AlertCircle, CheckCircle, Download } from 'lucide-react';
 import {
   BaseNode,
   inputHandleClassName,
@@ -84,9 +84,29 @@ export function DialogueNode({ data, selected, id }: DialogueNodeProps) {
     }
     if (data.status === 'completed') {
       return (
-        <div className="flex items-center gap-2 p-2 bg-[#1a1a1a] rounded-lg">
-          <CheckCircle className="w-4 h-4 text-green-500" />
-          <span className="text-xs text-green-400">合成完了</span>
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 p-2 bg-[#1a1a1a] rounded-lg">
+            <CheckCircle className="w-4 h-4 text-green-500" />
+            <span className="text-xs text-green-400">合成完了</span>
+          </div>
+          {data.outputVideoUrl && (
+            <>
+              <video
+                src={data.outputVideoUrl}
+                controls
+                className="w-full rounded-lg bg-black"
+                preload="metadata"
+              />
+              <a
+                href={data.outputVideoUrl}
+                download={`dialogue_${id}.mp4`}
+                className="flex items-center justify-center gap-2 p-2 bg-[#fce300] text-black rounded-lg text-xs font-medium hover:bg-[#e5cd00] transition-colors"
+              >
+                <Download className="w-3 h-3" />
+                ダウンロード
+              </a>
+            </>
+          )}
         </div>
       );
     }
