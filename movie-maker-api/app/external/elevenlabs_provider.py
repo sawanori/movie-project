@@ -93,14 +93,18 @@ class ElevenLabsProvider(TTSProviderInterface):
         url = f"{ELEVENLABS_API_BASE}/text-to-speech/{voice_id}"
 
         # 言語に応じてモデルを選択
-        model_id = "eleven_multilingual_v2" if language != "en" else "eleven_monolingual_v1"
+        # eleven_turbo_v2_5: 多言語対応の最新安定版、日本語精度向上、低レイテンシ
+        # eleven_monolingual_v1: 英語専用 (英語のみの場合は monolingual で十分)
+        model_id = "eleven_turbo_v2_5" if language != "en" else "eleven_monolingual_v1"
 
         payload = {
             "text": text,
             "model_id": model_id,
             "voice_settings": {
-                "stability": 0.5,
-                "similarity_boost": 0.75,
+                "stability": 0.4,            # より表情豊か、特に日本語の抑揚
+                "similarity_boost": 0.8,     # 元の voice 特性をより保つ
+                "style": 0.4,                # 感情表現 (turbo_v2_5/multilingual_v2 専用)
+                "use_speaker_boost": True,   # 明瞭度向上
                 "speed": speed,
             },
         }

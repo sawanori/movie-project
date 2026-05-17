@@ -400,6 +400,109 @@ class TestElevenLabsProvider:
         assert "Adam" in names
 
     @pytest.mark.asyncio
+    async def test_generate_speech_uses_turbo_v2_5_for_japanese(self):
+        """language='ja' 時に model_id が 'eleven_turbo_v2_5' になる"""
+        from app.external.elevenlabs_provider import ElevenLabsProvider
+
+        provider = ElevenLabsProvider()
+
+        with patch("app.external.elevenlabs_provider.httpx.AsyncClient") as mock_client_class:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.content = b"audio_data"
+            mock_response.raise_for_status = MagicMock()
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_class.return_value = mock_client
+
+            with patch("app.external.elevenlabs_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/audio/test.mp3")
+
+                await provider.generate_speech(
+                    text="こんにちは",
+                    voice_id="test_voice_id",
+                    language="ja",
+                    speed=1.0,
+                )
+
+        call_kwargs = mock_client.post.call_args
+        request_body = call_kwargs.kwargs.get("json")
+        assert request_body["model_id"] == "eleven_turbo_v2_5"
+
+    @pytest.mark.asyncio
+    async def test_generate_speech_uses_monolingual_v1_for_english(self):
+        """language='en' 時に model_id が 'eleven_monolingual_v1' になる"""
+        from app.external.elevenlabs_provider import ElevenLabsProvider
+
+        provider = ElevenLabsProvider()
+
+        with patch("app.external.elevenlabs_provider.httpx.AsyncClient") as mock_client_class:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.content = b"audio_data"
+            mock_response.raise_for_status = MagicMock()
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_class.return_value = mock_client
+
+            with patch("app.external.elevenlabs_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/audio/test.mp3")
+
+                await provider.generate_speech(
+                    text="Hello world",
+                    voice_id="test_voice_id",
+                    language="en",
+                    speed=1.0,
+                )
+
+        call_kwargs = mock_client.post.call_args
+        request_body = call_kwargs.kwargs.get("json")
+        assert request_body["model_id"] == "eleven_monolingual_v1"
+
+    @pytest.mark.asyncio
+    async def test_voice_settings_includes_style_and_speaker_boost(self):
+        """voice_settings に style=0.4 と use_speaker_boost=True が含まれる"""
+        from app.external.elevenlabs_provider import ElevenLabsProvider
+
+        provider = ElevenLabsProvider()
+
+        with patch("app.external.elevenlabs_provider.httpx.AsyncClient") as mock_client_class:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.content = b"audio_data"
+            mock_response.raise_for_status = MagicMock()
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_class.return_value = mock_client
+
+            with patch("app.external.elevenlabs_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/audio/test.mp3")
+
+                await provider.generate_speech(
+                    text="テスト",
+                    voice_id="test_voice_id",
+                    language="ja",
+                    speed=1.0,
+                )
+
+        call_kwargs = mock_client.post.call_args
+        request_body = call_kwargs.kwargs.get("json")
+        voice_settings = request_body["voice_settings"]
+        assert voice_settings["style"] == 0.4
+        assert voice_settings["use_speaker_boost"] is True
+        assert voice_settings["stability"] == 0.4
+        assert voice_settings["similarity_boost"] == 0.8
+
+    @pytest.mark.asyncio
     async def test_other_http_errors_propagate(self):
         """401 以外の HTTP エラー (500 等) は伝播する (fallback しない)"""
         from app.external.elevenlabs_provider import ElevenLabsProvider
