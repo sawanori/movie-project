@@ -18,6 +18,35 @@ logger = logging.getLogger(__name__)
 
 ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1"
 
+# ElevenLabs Premade Voice IDs (公開、voices_read 権限なしでも使用可能)
+# 全て eleven_multilingual_v2 対応で日本語 OK
+_PREMADE_VOICES_FALLBACK: list[dict] = [
+    {"voice_id": "21m00Tcm4TlvDq8ikWAM", "name": "Rachel", "language": "en", "preview_url": None},
+    {"voice_id": "AZnzlk1XvdvUeBnXmlld", "name": "Domi", "language": "en", "preview_url": None},
+    {"voice_id": "EXAVITQu4vr4xnSDxMaL", "name": "Sarah", "language": "en", "preview_url": None},
+    {"voice_id": "ErXwobaYiN019PkySvjV", "name": "Antoni", "language": "en", "preview_url": None},
+    {"voice_id": "MF3mGyEYCl7XYWbV9V6O", "name": "Elli", "language": "en", "preview_url": None},
+    {"voice_id": "TX3LPaxmHKxFdv7VOQHJ", "name": "Liam", "language": "en", "preview_url": None},
+    {"voice_id": "pNInz6obpgDQGcFmaJgB", "name": "Adam", "language": "en", "preview_url": None},
+    {"voice_id": "TxGEqnHWrfWFTfGW9XjX", "name": "Josh", "language": "en", "preview_url": None},
+    {"voice_id": "VR6AewLTigWG4xSOukaG", "name": "Arnold", "language": "en", "preview_url": None},
+    {"voice_id": "yoZ06aMxZJJ28mfd3POQ", "name": "Sam", "language": "en", "preview_url": None},
+    {"voice_id": "ThT5KcBeYPX3keUQqHPh", "name": "Dorothy", "language": "en", "preview_url": None},
+    {"voice_id": "bVMeCyTHy58xNoL34h3p", "name": "Jeremy", "language": "en", "preview_url": None},
+    {"voice_id": "z9fAnlkpzviPz146aGWa", "name": "Glinda", "language": "en", "preview_url": None},
+    {"voice_id": "GBv7mTt0atIp3Br8iCZE", "name": "Thomas", "language": "en", "preview_url": None},
+    {"voice_id": "g5CIjZEefAph4nQFvHAz", "name": "Ethan", "language": "en", "preview_url": None},
+    {"voice_id": "JBFqnCBsd6RMkjVDRZzb", "name": "George", "language": "en", "preview_url": None},
+    {"voice_id": "N2lVS1w4EtoT3dr4eOWO", "name": "Callum", "language": "en", "preview_url": None},
+    {"voice_id": "XB0fDUnXU5powFXDhCwa", "name": "Charlotte", "language": "en", "preview_url": None},
+    {"voice_id": "Xb7hH8MSUJpSbSDYk0k2", "name": "Alice", "language": "en", "preview_url": None},
+    {"voice_id": "iP95p4xoKVk53GoZ742B", "name": "Chris", "language": "en", "preview_url": None},
+    {"voice_id": "nPczCjzI2devNBz1zQrb", "name": "Brian", "language": "en", "preview_url": None},
+    {"voice_id": "onwK4e9ZLuTAKqWW03F9", "name": "Daniel", "language": "en", "preview_url": None},
+    {"voice_id": "pFZP5JQG7iQjIQuC4Bku", "name": "Lily", "language": "en", "preview_url": None},
+    {"voice_id": "pqHfZKP75CvOlQylNhV4", "name": "Bill", "language": "en", "preview_url": None},
+]
+
 
 class ElevenLabsProvider(TTSProviderInterface):
     """ElevenLabs TTS プロバイダー"""
@@ -100,7 +129,8 @@ class ElevenLabsProvider(TTSProviderInterface):
 
     async def list_voices(self, language: Optional[str] = None) -> list[dict]:
         """
-        ElevenLabs の利用可能な音声一覧を取得
+        ElevenLabs の利用可能な音声一覧を取得。
+        voices_read 権限がない場合は hardcoded premade 一覧をフォールバックとして返す。
 
         Args:
             language: 言語コード (例: "ja", "en")。
@@ -113,10 +143,22 @@ class ElevenLabsProvider(TTSProviderInterface):
         url = f"{ELEVENLABS_API_BASE}/voices"
         headers = {"xi-api-key": self._api_key}
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-            data = response.json()
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                logger.warning(
+                    "ElevenLabs /voices returned 401 (likely missing voices_read permission). "
+                    "Falling back to hardcoded premade voice list. "
+                    "Add voices_read permission to your API key to see your custom voices: "
+                    "https://elevenlabs.io/app/settings/api-keys"
+                )
+                # Fallback to hardcoded list. 多言語 voice なので language filter は全件通過
+                return list(_PREMADE_VOICES_FALLBACK)
+            raise
 
         voices = data.get("voices", [])
 

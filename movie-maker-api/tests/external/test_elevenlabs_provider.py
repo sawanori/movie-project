@@ -332,3 +332,97 @@ class TestElevenLabsProvider:
         assert len(result) == 1
         assert result[0]["voice_id"] == "voice_ja_native"
         assert result[0]["language"] == "ja"
+
+    @pytest.mark.asyncio
+    async def test_list_voices_returns_fallback_on_401(self):
+        """401 レスポンス時に hardcoded premade 一覧が返る"""
+        from app.external.elevenlabs_provider import ElevenLabsProvider
+        import httpx
+
+        provider = ElevenLabsProvider()
+
+        with patch("app.external.elevenlabs_provider.httpx.AsyncClient") as mock_client_class:
+            mock_response = MagicMock()
+            mock_response.status_code = 401
+            mock_response.raise_for_status = MagicMock(
+                side_effect=httpx.HTTPStatusError(
+                    "Unauthorized",
+                    request=MagicMock(),
+                    response=mock_response,
+                )
+            )
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client_class.return_value = mock_client
+
+            result = await provider.list_voices()
+
+        # フォールバック一覧が返される (空ではない)
+        assert len(result) > 0
+        # 各エントリが必要なキーを持つ
+        for voice in result:
+            assert "voice_id" in voice
+            assert "name" in voice
+            assert "language" in voice
+
+    @pytest.mark.asyncio
+    async def test_fallback_contains_premade_voices(self):
+        """hardcoded 一覧に Rachel, Adam 等の premade voice が含まれる"""
+        from app.external.elevenlabs_provider import ElevenLabsProvider
+        import httpx
+
+        provider = ElevenLabsProvider()
+
+        with patch("app.external.elevenlabs_provider.httpx.AsyncClient") as mock_client_class:
+            mock_response = MagicMock()
+            mock_response.status_code = 401
+            mock_response.raise_for_status = MagicMock(
+                side_effect=httpx.HTTPStatusError(
+                    "Unauthorized",
+                    request=MagicMock(),
+                    response=mock_response,
+                )
+            )
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client_class.return_value = mock_client
+
+            result = await provider.list_voices()
+
+        names = {v["name"] for v in result}
+        assert "Rachel" in names
+        assert "Adam" in names
+
+    @pytest.mark.asyncio
+    async def test_other_http_errors_propagate(self):
+        """401 以外の HTTP エラー (500 等) は伝播する (fallback しない)"""
+        from app.external.elevenlabs_provider import ElevenLabsProvider
+        import httpx
+
+        provider = ElevenLabsProvider()
+
+        with patch("app.external.elevenlabs_provider.httpx.AsyncClient") as mock_client_class:
+            mock_response = MagicMock()
+            mock_response.status_code = 500
+            mock_response.raise_for_status = MagicMock(
+                side_effect=httpx.HTTPStatusError(
+                    "Internal Server Error",
+                    request=MagicMock(),
+                    response=mock_response,
+                )
+            )
+
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client_class.return_value = mock_client
+
+            with pytest.raises(httpx.HTTPStatusError):
+                await provider.list_voices()
