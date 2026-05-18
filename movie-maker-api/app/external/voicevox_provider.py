@@ -99,6 +99,9 @@ class VoicevoxProvider(TTSProviderInterface):
 
                 # Step 2: M2 defensive speed clamp (Voicevox 推奨範囲 0.5-2.0)
                 query_data["speedScale"] = max(0.5, min(2.0, speed))
+                # 音声品質向上: サンプリング 24kHz → 48kHz、モノラル → ステレオ
+                query_data["outputSamplingRate"] = 48000  # デフォルト 24000 を倍に
+                query_data["outputStereo"] = True          # ステレオ出力
 
                 # Step 3: synthesis で WAV バイナリを取得
                 synth_response = await client.post(

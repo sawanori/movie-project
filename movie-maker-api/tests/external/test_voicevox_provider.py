@@ -493,6 +493,84 @@ class TestVoicevoxIsKanaMode:
         assert params.get("is_kana") == "false"
 
     @pytest.mark.asyncio
+    async def test_output_sampling_rate_is_48000(self):
+        """synthesis に渡される query_data の outputSamplingRate が 48000"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+
+        mock_query_response = MagicMock()
+        mock_query_response.raise_for_status = MagicMock()
+        mock_query_response.json = MagicMock(return_value={"speedScale": 1.0})
+
+        mock_synth_response = MagicMock()
+        mock_synth_response.raise_for_status = MagicMock()
+        mock_synth_response.content = b"WAV"
+
+        captured_synthesis_body: dict = {}
+
+        async def capture_post(url, **kwargs):
+            if "/synthesis" in url:
+                captured_synthesis_body.update(kwargs.get("json", {}))
+                return mock_synth_response
+            return mock_query_response
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=capture_post)
+
+        with patch("app.external.voicevox_provider.httpx.AsyncClient", return_value=mock_client):
+            with patch("app.external.voicevox_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/tts/x.wav")
+
+                await provider.generate_speech(
+                    text="テスト",
+                    voice_id="1",
+                )
+
+        assert captured_synthesis_body["outputSamplingRate"] == 48000
+
+    @pytest.mark.asyncio
+    async def test_output_stereo_is_true(self):
+        """synthesis に渡される query_data の outputStereo が True"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+
+        mock_query_response = MagicMock()
+        mock_query_response.raise_for_status = MagicMock()
+        mock_query_response.json = MagicMock(return_value={"speedScale": 1.0})
+
+        mock_synth_response = MagicMock()
+        mock_synth_response.raise_for_status = MagicMock()
+        mock_synth_response.content = b"WAV"
+
+        captured_synthesis_body: dict = {}
+
+        async def capture_post(url, **kwargs):
+            if "/synthesis" in url:
+                captured_synthesis_body.update(kwargs.get("json", {}))
+                return mock_synth_response
+            return mock_query_response
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=capture_post)
+
+        with patch("app.external.voicevox_provider.httpx.AsyncClient", return_value=mock_client):
+            with patch("app.external.voicevox_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/tts/x.wav")
+
+                await provider.generate_speech(
+                    text="テスト",
+                    voice_id="1",
+                )
+
+        assert captured_synthesis_body["outputStereo"] is True
+
+    @pytest.mark.asyncio
     async def test_generate_speech_is_kana_explicit_false(self):
         """is_kana=False を明示的に渡した場合も audio_query の params が is_kana='false'"""
         from app.external.voicevox_provider import VoicevoxProvider
