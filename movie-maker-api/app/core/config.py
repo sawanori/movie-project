@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     # "elevenlabs", "openai_tts", or "voicevox" - TTS 生成に使用するプロバイダー
     TTS_PROVIDER: str = "elevenlabs"
 
+    # TTS Audio Postprocessing (ffmpeg: highpass/lowpass/dynaudnorm/loudnorm + MP3 320kbps)
+    # False にすると従来の WAV 出力に即時切替（障害切り戻し用）
+    ENABLE_TTS_POSTPROCESSING: bool = True
+
     # Hedra API (for Lip Sync generation)
     HEDRA_API_KEY: str = ""
 

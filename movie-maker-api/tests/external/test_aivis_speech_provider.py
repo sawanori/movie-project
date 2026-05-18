@@ -483,6 +483,106 @@ class TestGetTTSProviderFactoryAivisSpeech:
         assert isinstance(provider, AivisSpeechProvider)
 
 
+class TestAivisSpeechPostprocessingIntegration:
+    """ENABLE_TTS_POSTPROCESSING フラグと音質後処理の統合テスト"""
+
+    def _make_base_mocks(self, audio_content: bytes = b"RIFF....WAV_DATA"):
+        mock_query_response = MagicMock()
+        mock_query_response.raise_for_status = MagicMock()
+        mock_query_response.json = MagicMock(return_value={"speedScale": 1.0})
+
+        mock_synth_response = MagicMock()
+        mock_synth_response.raise_for_status = MagicMock()
+        mock_synth_response.content = audio_content
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=[mock_query_response, mock_synth_response])
+        return mock_client
+
+    @pytest.mark.asyncio
+    async def test_aivis_uses_mp3_when_postprocessing_enabled(self):
+        """ENABLE_TTS_POSTPROCESSING=True 時、R2 アップロードのキーが .mp3 で終わる"""
+        from app.external.aivis_speech_provider import AivisSpeechProvider
+
+        provider = AivisSpeechProvider()
+        mock_client = self._make_base_mocks()
+        mock_mp3_bytes = b"\xff\xfb\x90\x00" + b"\x00" * 100
+
+        with patch("app.external.aivis_speech_provider.httpx.AsyncClient", return_value=mock_client):
+            with patch("app.external.aivis_speech_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/tts/test.mp3")
+                with patch(
+                    "app.external.aivis_speech_provider.apply_audio_postprocessing",
+                    new_callable=AsyncMock,
+                    return_value=mock_mp3_bytes,
+                ):
+                    with patch("app.core.config.settings") as mock_settings:
+                        mock_settings.ENABLE_TTS_POSTPROCESSING = True
+                        await provider.generate_speech(text="こんにちは", voice_id="1")
+
+        upload_call = mock_r2.upload_file.call_args
+        key_arg = upload_call.kwargs.get("key") or upload_call.args[1]
+        assert key_arg.endswith(".mp3"), f"Expected .mp3 key, got: {key_arg}"
+        content_type_arg = upload_call.kwargs.get("content_type") or upload_call.args[2]
+        assert content_type_arg == "audio/mpeg", f"Expected audio/mpeg, got: {content_type_arg}"
+
+    @pytest.mark.asyncio
+    async def test_aivis_falls_back_to_wav_on_ffmpeg_failure(self, caplog):
+        """apply_audio_postprocessing が RuntimeError を送出すると WARN ログ + WAV フォールバック"""
+        import logging as _logging
+        from app.external.aivis_speech_provider import AivisSpeechProvider
+
+        provider = AivisSpeechProvider()
+        mock_client = self._make_base_mocks()
+
+        with patch("app.external.aivis_speech_provider.httpx.AsyncClient", return_value=mock_client):
+            with patch("app.external.aivis_speech_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/tts/test.wav")
+                with patch(
+                    "app.external.aivis_speech_provider.apply_audio_postprocessing",
+                    new_callable=AsyncMock,
+                    side_effect=RuntimeError("ffmpeg postprocessing failed: test error"),
+                ):
+                    with patch("app.core.config.settings") as mock_settings:
+                        mock_settings.ENABLE_TTS_POSTPROCESSING = True
+                        with caplog.at_level(_logging.WARNING, logger="app.external.aivis_speech_provider"):
+                            await provider.generate_speech(text="テスト", voice_id="1")
+
+        assert any("falling back to WAV" in r.message for r in caplog.records), \
+            "Expected 'falling back to WAV' in WARNING log"
+
+        upload_call = mock_r2.upload_file.call_args
+        key_arg = upload_call.kwargs.get("key") or upload_call.args[1]
+        assert key_arg.endswith(".wav"), f"Expected .wav fallback key, got: {key_arg}"
+
+    @pytest.mark.asyncio
+    async def test_aivis_skips_postprocessing_when_disabled(self):
+        """ENABLE_TTS_POSTPROCESSING=False の場合、apply_audio_postprocessing を呼ばない"""
+        from app.external.aivis_speech_provider import AivisSpeechProvider
+
+        provider = AivisSpeechProvider()
+        mock_client = self._make_base_mocks()
+
+        with patch("app.external.aivis_speech_provider.httpx.AsyncClient", return_value=mock_client):
+            with patch("app.external.aivis_speech_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/tts/test.wav")
+                with patch(
+                    "app.external.aivis_speech_provider.apply_audio_postprocessing",
+                    new_callable=AsyncMock,
+                ) as mock_postprocess:
+                    with patch("app.core.config.settings") as mock_settings:
+                        mock_settings.ENABLE_TTS_POSTPROCESSING = False
+                        await provider.generate_speech(text="テスト", voice_id="1")
+
+        mock_postprocess.assert_not_called()
+
+        upload_call = mock_r2.upload_file.call_args
+        key_arg = upload_call.kwargs.get("key") or upload_call.args[1]
+        assert key_arg.endswith(".wav"), f"Expected .wav key when disabled, got: {key_arg}"
+
+
 class TestAivisSpeechIsKanaMode:
     """is_kana パラメータ (AquesTalk カナ表記モード) のテスト"""
 

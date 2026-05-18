@@ -1,4 +1,5 @@
 import logging
+import subprocess
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +18,8 @@ from app.webhooks.polar import router as webhooks_router
 from app.webhooks.suno import router as suno_webhooks_router
 from app.library.router import router as library_router
 from app.workflows.router import router as workflows_router
+from app.tts.router import router as tts_router
+from app.lip_sync.router import router as lip_sync_router
 from app.dialogue.router import router as dialogue_router
 
 app = FastAPI(
@@ -48,7 +51,32 @@ app.include_router(library_router, prefix="/api/v1")
 app.include_router(workflows_router, prefix="/api/v1")
 app.include_router(webhooks_router, prefix="/api/v1")
 app.include_router(suno_webhooks_router, prefix="/api/v1")
+app.include_router(tts_router, prefix="/api/v1")
+app.include_router(lip_sync_router, prefix="/api/v1")
 app.include_router(dialogue_router, prefix="/api/v1")
+
+
+@app.on_event("startup")
+async def _check_ffmpeg_on_startup():
+    """起動時に ffmpeg バイナリの存在を確認し、未インストールなら postprocessing を自動 OFF"""
+    if not getattr(settings, 'ENABLE_TTS_POSTPROCESSING', True):
+        return  # postprocessing が無効なら確認不要
+
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-version"],
+            capture_output=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            raise FileNotFoundError("ffmpeg -version returned non-zero")
+        logger.info("ffmpeg detected at startup (TTS postprocessing enabled)")
+    except (FileNotFoundError, OSError):
+        logger.warning(
+            "ffmpeg not found, TTS postprocessing disabled. "
+            "Install ffmpeg or set ENABLE_TTS_POSTPROCESSING=False to suppress this warning."
+        )
+        settings._FFMPEG_AVAILABLE = False
 
 
 @app.get("/health")

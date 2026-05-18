@@ -15,6 +15,7 @@ import httpx
 
 from app.external.tts_provider import TTSProviderInterface, TTSStatus
 from app.external.r2 import r2_client
+from app.services.audio_postprocessing import apply_audio_postprocessing
 
 logger = logging.getLogger(__name__)
 
@@ -122,12 +123,27 @@ class AivisSpeechProvider(TTSProviderInterface):
                 "ghcr.io/aivis-project/aivisspeech-engine:cpu-latest"
             ) from e
 
-        # R2 アップロード (WAV)
-        audio_key = f"tts/{uuid4().hex}.wav"
+        # 音質後処理 (env で OFF にできる)
+        from app.core.config import settings
+        if getattr(settings, 'ENABLE_TTS_POSTPROCESSING', True):
+            try:
+                audio_bytes = await apply_audio_postprocessing(audio_bytes)
+                ext = "mp3"
+                mime_type = "audio/mpeg"
+            except Exception as e:
+                logger.warning(f"Audio postprocessing failed, falling back to WAV: {e}")
+                ext = "wav"
+                mime_type = "audio/wav"
+        else:
+            ext = "wav"
+            mime_type = "audio/wav"
+
+        # R2 アップロード
+        audio_key = f"tts/{uuid4().hex}.{ext}"
         audio_url = await r2_client.upload_file(
             file_data=audio_bytes,
             key=audio_key,
-            content_type="audio/wav",
+            content_type=mime_type,
         )
 
         logger.info(f"Aivis Speech TTS generated and uploaded: {audio_url}")
