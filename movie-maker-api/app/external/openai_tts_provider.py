@@ -75,11 +75,14 @@ class OpenAITTSProvider(TTSProviderInterface):
         if not text or not text.strip():
             raise ValueError("text must not be empty")
 
-        # language="ja" かつ instructions 未指定の場合はデフォルト日本語 instructions を適用
-        if instructions is None and language == "ja":
+        # language="ja" かつ instructions 未指定 (None / 空文字 / whitespace-only) の場合は
+        # デフォルト英語 instructions を適用する (AC10b: 空文字も「未指定」扱い)
+        if (not instructions) and language == "ja":
             instructions = (
-                "自然で聞き取りやすい日本語で読み上げてください。"
-                "テキストの感情に合わせた抑揚と表現を心がけてください。"
+                "Speak natural Japanese with rich emotional expression. "
+                "Vary pitch, pace, and emphasis to convey the underlying feelings in the text. "
+                "Use human-like pauses and intonation, avoiding robotic delivery. "
+                "Match the tone to the dialogue's mood (joy, sadness, anger, surprise, etc.) as appropriate."
             )
 
         payload = {

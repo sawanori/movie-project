@@ -184,6 +184,7 @@ export interface DialogueNodeData extends BaseNodeData {
   speed: number;       // デフォルト 1.0
   // リップシンク (1 フィールドのみ)
   useLipSync: boolean; // default false。true で Hedra リップシンク経路
+  ttsInstructions?: string;  // 感情/トーン指定。undefined = OpenAI プロバイダーのデフォルト適用
   // 実行状態
   status: 'idle' | 'pending' | 'processing' | 'completed' | 'failed';
   progress: number;    // 0-100 (UI 表示用、ポーリング回数ベース)
@@ -485,6 +486,7 @@ export function createDefaultNodeData(type: NodeType): WorkflowNodeData {
         language: 'ja',
         speed: 1.0,
         useLipSync: false,
+        ttsInstructions: undefined,  // undefined = デフォルト適用。空文字ではなく undefined にすること (AC10a)
         status: 'idle',
         progress: 0,
         generationId: null,

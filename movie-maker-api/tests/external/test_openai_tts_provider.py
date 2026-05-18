@@ -256,3 +256,88 @@ class TestOpenAITTSProvider:
         assert request_body["voice"] == "shimmer"
         assert request_body["speed"] == 1.0
         assert "instructions" in request_body
+
+
+class TestOpenAITTSProviderDefaultInstructions:
+    """デフォルト instructions 強化のテスト"""
+
+    async def _call_generate_speech(self, provider, captured_payload, **kwargs):
+        """generate_speech を呼び出してリクエスト payload をキャプチャするヘルパー"""
+        async def mock_post(url, json, headers):
+            captured_payload.update(json)
+            mock_response = MagicMock()
+            mock_response.raise_for_status = MagicMock()
+            mock_response.content = b"fake_audio"
+            return mock_response
+
+        with patch("app.external.openai_tts_provider.r2_client") as mock_r2, \
+             patch("app.external.openai_tts_provider.httpx.AsyncClient") as mock_client_cls:
+            mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/audio.mp3")
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(side_effect=mock_post)
+            mock_client_cls.return_value = mock_client
+
+            await provider.generate_speech(**kwargs)
+
+    @pytest.mark.asyncio
+    async def test_default_english_instructions_applied_when_instructions_none(self):
+        """instructions=None かつ language='ja' で英語デフォルト文が適用される (AC1 / AC10b)"""
+        from app.external.openai_tts_provider import OpenAITTSProvider
+
+        provider = OpenAITTSProvider()
+        captured_payload = {}
+
+        await self._call_generate_speech(
+            provider,
+            captured_payload,
+            text="こんにちは",
+            voice_id="alloy",
+            language="ja",
+            instructions=None,
+        )
+
+        assert "instructions" in captured_payload
+        instructions_sent = captured_payload["instructions"]
+        assert "Speak natural Japanese" in instructions_sent
+        assert "robotic" in instructions_sent
+
+    @pytest.mark.asyncio
+    async def test_default_instructions_applied_when_instructions_empty_string(self):
+        """instructions='' でもデフォルト英語文が適用される (AC10b: 空文字防御)"""
+        from app.external.openai_tts_provider import OpenAITTSProvider
+
+        provider = OpenAITTSProvider()
+        captured_payload = {}
+
+        await self._call_generate_speech(
+            provider,
+            captured_payload,
+            text="こんにちは",
+            voice_id="alloy",
+            language="ja",
+            instructions="",
+        )
+
+        assert "instructions" in captured_payload
+        assert "Speak natural Japanese" in captured_payload["instructions"]
+
+    @pytest.mark.asyncio
+    async def test_custom_instructions_passed_through(self):
+        """instructions='custom' が payload にそのまま含まれる"""
+        from app.external.openai_tts_provider import OpenAITTSProvider
+
+        provider = OpenAITTSProvider()
+        captured_payload = {}
+
+        await self._call_generate_speech(
+            provider,
+            captured_payload,
+            text="こんにちは",
+            voice_id="alloy",
+            language="ja",
+            instructions="Speak with dramatic excitement",
+        )
+
+        assert captured_payload.get("instructions") == "Speak with dramatic excitement"

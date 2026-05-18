@@ -75,6 +75,7 @@ async def process_dialogue_generation(generation_id: str) -> None:
         speed = record.get("speed", 1.0)
         # use_lip_sync は新規カラム。default False で既存レコードを後方互換にする
         use_lip_sync = record.get("use_lip_sync", False)
+        tts_instructions = record.get("tts_instructions")  # None の場合はデフォルト適用
 
         # 2. ステータスを processing に更新
         await update_dialogue_status(generation_id, "processing")
@@ -94,6 +95,7 @@ async def process_dialogue_generation(generation_id: str) -> None:
                 language=language,
                 speed=speed,
                 use_lip_sync=use_lip_sync,
+                tts_instructions=tts_instructions,
             ),
             timeout=PROCESSING_TIMEOUT_SECONDS,
         )
@@ -145,6 +147,7 @@ async def _process_core(
     language: str,
     speed: float,
     use_lip_sync: bool,
+    tts_instructions: Optional[str] = None,
 ) -> None:
     """
     コア処理 (asyncio.wait_for でラップされる)
@@ -161,6 +164,7 @@ async def _process_core(
         speed=speed,
         user_id=user_id,
         generation_id=generation_id,
+        tts_instructions=tts_instructions,
     )
 
     # 4-7. use_lip_sync で経路分岐
@@ -198,6 +202,10 @@ async def _run_ffmpeg_mix(
     既存の ffmpeg ミックス処理 (リップシンクなし)。
 
     元動画 + 音声 → ffmpeg amix → R2 アップロード → output_video_url 返却。
+
+    変更前 _process_core L132-173 のロジックをそのまま関数化したもの。
+    tempfile.TemporaryDirectory はこの関数内に閉じ込めて、リップシンク経路では
+    一時ディレクトリを作らない。
 
     Args:
         video_url: 元動画 URL
@@ -338,6 +346,7 @@ async def _run_tts_and_get_audio_url(
     speed: float,
     user_id: str,
     generation_id: str,
+    tts_instructions: Optional[str] = None,
 ) -> str:
     """
     TTS を内部的に実行して audio_url を返す
@@ -367,6 +376,7 @@ async def _run_tts_and_get_audio_url(
         voice_id=voice_id,
         language=language,
         speed=speed,
+        instructions=tts_instructions,
     )
     tts_generation_id = tts_record["id"]
 

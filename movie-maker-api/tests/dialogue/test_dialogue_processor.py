@@ -26,6 +26,7 @@ from app.tasks.dialogue_processor import (
 def _make_dialogue_record(
     generation_id: str | None = None,
     status: str = "processing",
+    tts_instructions: str | None = None,
 ) -> dict:
     return {
         "id": generation_id or str(uuid.uuid4()),
@@ -41,6 +42,7 @@ def _make_dialogue_record(
         "error_message": None,
         "created_at": "2026-05-14T00:00:00Z",
         "updated_at": "2026-05-14T00:00:00Z",
+        "tts_instructions": tts_instructions,
     }
 
 
@@ -508,3 +510,99 @@ class TestProcessDialogueGeneration:
         assert len(failed_calls) > 0
         error_msg = failed_calls[-1].kwargs.get("error_message", "")
         assert error_msg == "動画への音声合成中にエラーが発生しました"
+
+
+# ---------------------------------------------------------------------------
+# _run_tts_and_get_audio_url: instructions 引数伝播テスト
+# ---------------------------------------------------------------------------
+
+
+class TestRunTtsAndGetAudioUrlWithInstructions:
+    """_run_tts_and_get_audio_url が tts_instructions を create_tts_generation に渡す"""
+
+    @pytest.mark.asyncio
+    async def test_tts_instructions_propagated_to_create_tts_generation(self):
+        """tts_instructions が create_tts_generation に instructions として渡される"""
+        tts_record = {"id": "tts-001"}
+        tts_status = {
+            "id": "tts-001",
+            "status": "completed",
+            "audio_url": "https://example.com/audio.mp3",
+            "error_message": None,
+        }
+        custom_instructions = "Speak with dramatic excitement"
+
+        with patch(
+            "app.tasks.dialogue_processor.create_tts_generation",
+            new_callable=AsyncMock,
+            return_value=tts_record,
+        ) as mock_create_tts:
+            with patch(
+                "app.tasks.dialogue_processor.process_tts_generation",
+                new_callable=AsyncMock,
+            ):
+                with patch(
+                    "app.tasks.dialogue_processor.get_tts_status",
+                    new_callable=AsyncMock,
+                    return_value=tts_status,
+                ):
+                    with patch(
+                        "app.tasks.dialogue_processor.update_dialogue_status",
+                        new_callable=AsyncMock,
+                    ):
+                        await _run_tts_and_get_audio_url(
+                            text="こんにちは",
+                            voice_id="voice_ja",
+                            language="ja",
+                            speed=1.0,
+                            user_id="user-001",
+                            generation_id="gen-001",
+                            tts_instructions=custom_instructions,
+                        )
+
+        mock_create_tts.assert_called_once()
+        call_kwargs = mock_create_tts.call_args.kwargs
+        assert call_kwargs.get("instructions") == custom_instructions
+
+    @pytest.mark.asyncio
+    async def test_tts_instructions_none_when_not_specified(self):
+        """tts_instructions 未指定時は instructions=None が渡される"""
+        tts_record = {"id": "tts-002"}
+        tts_status = {
+            "id": "tts-002",
+            "status": "completed",
+            "audio_url": "https://example.com/audio.mp3",
+            "error_message": None,
+        }
+
+        with patch(
+            "app.tasks.dialogue_processor.create_tts_generation",
+            new_callable=AsyncMock,
+            return_value=tts_record,
+        ) as mock_create_tts:
+            with patch(
+                "app.tasks.dialogue_processor.process_tts_generation",
+                new_callable=AsyncMock,
+            ):
+                with patch(
+                    "app.tasks.dialogue_processor.get_tts_status",
+                    new_callable=AsyncMock,
+                    return_value=tts_status,
+                ):
+                    with patch(
+                        "app.tasks.dialogue_processor.update_dialogue_status",
+                        new_callable=AsyncMock,
+                    ):
+                        await _run_tts_and_get_audio_url(
+                            text="こんにちは",
+                            voice_id="voice_ja",
+                            language="ja",
+                            speed=1.0,
+                            user_id="user-001",
+                            generation_id="gen-002",
+                            # tts_instructions 未指定
+                        )
+
+        mock_create_tts.assert_called_once()
+        call_kwargs = mock_create_tts.call_args.kwargs
+        assert call_kwargs.get("instructions") is None

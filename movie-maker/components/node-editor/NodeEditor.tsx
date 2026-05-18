@@ -563,6 +563,7 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
           voice_id: dialogueData.voiceId,
           speed: dialogueData.speed,
           use_lip_sync: dialogueData.useLipSync,
+          tts_instructions: dialogueData.ttsInstructions?.trim() || undefined,
         });
         const generationId = result.id;
 

@@ -91,7 +91,7 @@ describe('DialogueNode', () => {
       });
 
       expect(screen.getByRole('combobox')).toBeDefined();
-      expect(screen.getByRole('button')).toBeDefined();
+      expect(screen.getByText(/合成する/)).toBeDefined();
       expect(screen.getByText(/口の動きは合成しません/)).toBeDefined();
     });
   });
@@ -146,14 +146,13 @@ describe('DialogueNode', () => {
       render(<DialogueNode {...defaultProps} data={processingData} />);
 
       await waitFor(() => {
-        const button = screen.getByRole('button');
-        expect(button).toBeDefined();
-        // Button should be disabled while processing
-        expect((button as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByText(/処理中/)).toBeDefined();
       });
 
-      // Should show "処理中" text or loading indicator
-      expect(screen.getByText(/処理中/)).toBeDefined();
+      // Execute button (合成する) should be disabled while processing
+      const executeButton = screen.getByText(/合成する/).closest('button');
+      expect(executeButton).toBeDefined();
+      expect((executeButton as HTMLButtonElement).disabled).toBe(true);
     });
   });
 
@@ -239,10 +238,10 @@ describe('DialogueNode', () => {
       render(<DialogueNode {...defaultProps} data={readyData} />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button')).toBeDefined();
+        expect(screen.getByText(/合成する/)).toBeDefined();
       });
 
-      const button = screen.getByRole('button');
+      const button = screen.getByText(/合成する/).closest('button')!;
       fireEvent.click(button);
 
       const dispatchedEvents = dispatchEventSpy.mock.calls.map(
@@ -276,10 +275,11 @@ describe('DialogueNode', () => {
       render(<DialogueNode {...defaultProps} data={noTextData} />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button')).toBeDefined();
+        expect(screen.getByText(/合成する/)).toBeDefined();
       });
 
-      expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);
+      const executeButton = screen.getByText(/合成する/).closest('button');
+      expect((executeButton as HTMLButtonElement).disabled).toBe(true);
     });
 
     it('should disable the button when voiceId is not selected', async () => {
@@ -296,10 +296,11 @@ describe('DialogueNode', () => {
       render(<DialogueNode {...defaultProps} data={noVoiceData} />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button')).toBeDefined();
+        expect(screen.getByText(/合成する/)).toBeDefined();
       });
 
-      expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true);
+      const executeButton = screen.getByText(/合成する/).closest('button');
+      expect((executeButton as HTMLButtonElement).disabled).toBe(true);
     });
   });
 
@@ -326,9 +327,10 @@ describe('DialogueNode', () => {
       expect(screen.queryByText(/キャラの顔がはっきり映る動画/)).toBeNull();
 
       // ボタンラベルは「合成する」(リップシンク合成する ではない)
-      const button = screen.getByRole('button');
-      expect(button.textContent).toContain('合成する');
-      expect(button.textContent).not.toContain('リップシンク合成する');
+      const executeButton = screen.getByText(/^合成する$/).closest('button');
+      expect(executeButton).toBeDefined();
+      expect(executeButton!.textContent).toContain('合成する');
+      expect(executeButton!.textContent).not.toContain('リップシンク合成する');
     });
   });
 
@@ -392,8 +394,9 @@ describe('DialogueNode', () => {
       ).toBeDefined();
 
       // ボタンラベルは「リップシンク合成する」
-      const button = screen.getByRole('button');
-      expect(button.textContent).toContain('リップシンク合成する');
+      const executeButton = screen.getByText(/リップシンク合成する/).closest('button');
+      expect(executeButton).toBeDefined();
+      expect(executeButton!.textContent).toContain('リップシンク合成する');
     });
   });
 
@@ -495,10 +498,11 @@ describe('DialogueNode', () => {
       render(<DialogueNode {...defaultProps} data={completedData} />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button')).toBeDefined();
+        expect(screen.getByText(/再合成する/)).toBeDefined();
       });
 
-      expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(false);
+      const executeButton = screen.getByText(/再合成する/).closest('button');
+      expect((executeButton as HTMLButtonElement).disabled).toBe(false);
     });
 
     it('test_button_label_is_regenerate_after_completed: button label shows "再合成する" when status=completed and useLipSync=false', async () => {
@@ -514,12 +518,12 @@ describe('DialogueNode', () => {
       render(<DialogueNode {...defaultProps} data={completedData} />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button')).toBeDefined();
+        expect(screen.getByText(/再合成する/)).toBeDefined();
       });
 
-      const button = screen.getByRole('button');
-      expect(button.textContent).toContain('再合成する');
-      expect(button.textContent).not.toContain('リップシンク再合成');
+      const executeButton = screen.getByText(/再合成する/).closest('button');
+      expect(executeButton!.textContent).toContain('再合成する');
+      expect(executeButton!.textContent).not.toContain('リップシンク再合成');
     });
 
     it('test_regenerate_button_has_orange_style: button has bg-orange-500 class when status=completed and canExecute=true', async () => {
@@ -534,11 +538,322 @@ describe('DialogueNode', () => {
       render(<DialogueNode {...defaultProps} data={completedData} />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button')).toBeDefined();
+        expect(screen.getByText(/再合成する/)).toBeDefined();
       });
 
-      const button = screen.getByRole('button');
-      expect(button.className).toContain('bg-orange-500');
+      const executeButton = screen.getByText(/再合成する/).closest('button');
+      expect(executeButton!.className).toContain('bg-orange-500');
+    });
+  });
+
+  // ====================================================================
+  // 感情・トーン パネル (折りたたみ) 関連テスト
+  // T2-3: 感情パネルの折りたたみ / プリセット / textarea / 注記を検証する
+  // ====================================================================
+
+  describe('emotion panel: initial collapsed state', () => {
+    it('should show collapsed header but hide preset buttons and textarea', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      render(<DialogueNode {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('感情・トーン (任意)')).toBeDefined();
+      });
+
+      // Preset buttons and textarea should not be visible in collapsed state
+      expect(screen.queryByText('喜び')).toBeNull();
+      expect(screen.queryByText('悲しみ')).toBeNull();
+      expect(
+        screen.queryByPlaceholderText(/Whisper softly with nervous hesitation/)
+      ).toBeNull();
+    });
+  });
+
+  describe('emotion panel: expand on header click', () => {
+    it('should expand panel and show 6 preset buttons when header is clicked', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      render(<DialogueNode {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('感情・トーン (任意)')).toBeDefined();
+      });
+
+      const header = screen.getByText('感情・トーン (任意)').closest('button');
+      expect(header).not.toBeNull();
+      fireEvent.click(header!);
+
+      // All 6 preset labels should be visible
+      expect(screen.getByText('喜び')).toBeDefined();
+      expect(screen.getByText('悲しみ')).toBeDefined();
+      expect(screen.getByText('怒り')).toBeDefined();
+      expect(screen.getByText('驚き')).toBeDefined();
+      expect(screen.getByText('落ち着き')).toBeDefined();
+      expect(screen.getByText('困惑')).toBeDefined();
+    });
+
+    it('should show textarea and provider note when expanded', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      render(<DialogueNode {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('感情・トーン (任意)')).toBeDefined();
+      });
+
+      const header = screen.getByText('感情・トーン (任意)').closest('button');
+      fireEvent.click(header!);
+
+      expect(
+        screen.getByPlaceholderText(/Whisper softly with nervous hesitation/)
+      ).toBeDefined();
+      expect(
+        screen.getByText(/instructions は OpenAI TTS のみで有効/)
+      ).toBeDefined();
+    });
+  });
+
+  describe('emotion panel: preset button selection', () => {
+    it('should dispatch nodeDataUpdate with preset instructions when joy button clicked', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
+
+      render(<DialogueNode {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('感情・トーン (任意)')).toBeDefined();
+      });
+
+      // Expand panel
+      const header = screen.getByText('感情・トーン (任意)').closest('button');
+      fireEvent.click(header!);
+
+      // Click joy preset
+      fireEvent.click(screen.getByText('喜び').closest('button')!);
+
+      const dispatched = dispatchEventSpy.mock.calls.map(
+        (call) => call[0] as CustomEvent
+      );
+      const updateEvent = dispatched.find(
+        (e) =>
+          e.type === 'nodeDataUpdate' &&
+          typeof (e.detail as { updates?: { ttsInstructions?: string } })?.updates
+            ?.ttsInstructions === 'string'
+      );
+
+      expect(updateEvent).toBeDefined();
+      expect(
+        (
+          updateEvent?.detail as {
+            updates: { ttsInstructions: string };
+          }
+        ).updates.ttsInstructions
+      ).toContain('cheerful');
+
+      dispatchEventSpy.mockRestore();
+    });
+
+    it('should reflect preset instructions in textarea', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+
+      // Data with joy preset instructions already set
+      const joyPresetInstructions =
+        'Speak with bright, cheerful enthusiasm. Use rising intonation and convey happiness and warmth.';
+      const dataWithJoy: DialogueNodeData = {
+        ...defaultData,
+        ttsInstructions: joyPresetInstructions,
+      };
+
+      render(<DialogueNode {...defaultProps} data={dataWithJoy} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('感情・トーン (任意)')).toBeDefined();
+      });
+
+      const header = screen.getByText('感情・トーン (任意)').closest('button');
+      fireEvent.click(header!);
+
+      const textarea = screen.getByPlaceholderText(
+        /Whisper softly with nervous hesitation/
+      ) as HTMLTextAreaElement;
+      expect(textarea.value).toBe(joyPresetInstructions);
+    });
+  });
+
+  describe('emotion panel: textarea editing', () => {
+    it('should dispatch nodeDataUpdate when textarea value changes', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
+
+      render(<DialogueNode {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('感情・トーン (任意)')).toBeDefined();
+      });
+
+      const header = screen.getByText('感情・トーン (任意)').closest('button');
+      fireEvent.click(header!);
+
+      const textarea = screen.getByPlaceholderText(
+        /Whisper softly with nervous hesitation/
+      );
+      fireEvent.change(textarea, {
+        target: { value: 'Whisper softly' },
+      });
+
+      const dispatched = dispatchEventSpy.mock.calls.map(
+        (call) => call[0] as CustomEvent
+      );
+      const updateEvent = dispatched.find(
+        (e) =>
+          e.type === 'nodeDataUpdate' &&
+          (e.detail as { updates?: { ttsInstructions?: unknown } })?.updates
+            ?.ttsInstructions === 'Whisper softly'
+      );
+
+      expect(updateEvent).toBeDefined();
+      dispatchEventSpy.mockRestore();
+    });
+
+    it('should dispatch ttsInstructions=undefined when textarea is cleared', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+
+      // Use a data object with ttsInstructions set so the textarea starts with a value
+      const dataWithInstructions: DialogueNodeData = {
+        ...defaultData,
+        ttsInstructions: 'Initial instructions',
+      };
+
+      const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
+
+      render(<DialogueNode {...defaultProps} data={dataWithInstructions} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('感情・トーン (任意)')).toBeDefined();
+      });
+
+      const header = screen.getByText('感情・トーン (任意)').closest('button');
+      fireEvent.click(header!);
+
+      // Clear the textarea
+      const textarea = screen.getByPlaceholderText(
+        /Whisper softly with nervous hesitation/
+      );
+      fireEvent.change(textarea, { target: { value: '' } });
+
+      const dispatched = dispatchEventSpy.mock.calls.map(
+        (call) => call[0] as CustomEvent
+      );
+      // When textarea is cleared (empty string), onChange dispatches ttsInstructions: undefined
+      // because `'' || undefined === undefined`
+      const updateEvent = dispatched.find((e) => {
+        if (e.type !== 'nodeDataUpdate') return false;
+        const detail = e.detail as { updates?: Record<string, unknown> };
+        // The event should have an updates object that contains ttsInstructions
+        return detail?.updates !== undefined && Object.keys(detail.updates).includes('ttsInstructions');
+      });
+
+      expect(updateEvent).toBeDefined();
+      // ttsInstructions should be undefined (not a string) in the dispatched event
+      const updates = (updateEvent!.detail as { updates: Record<string, unknown> }).updates;
+      expect(updates.ttsInstructions).toBeUndefined();
+
+      dispatchEventSpy.mockRestore();
+    });
+  });
+
+  describe('emotion panel: clear button', () => {
+    it('should show clear button when ttsInstructions is set and dispatch undefined on click', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
+
+      const dataWithInstructions: DialogueNodeData = {
+        ...defaultData,
+        ttsInstructions: 'Speak softly',
+      };
+
+      render(<DialogueNode {...defaultProps} data={dataWithInstructions} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('感情・トーン (任意)')).toBeDefined();
+      });
+
+      const header = screen.getByText('感情・トーン (任意)').closest('button');
+      fireEvent.click(header!);
+
+      // Clear button should exist (title="クリア (デフォルト適用に戻す)")
+      const clearButton = screen.getByTitle('クリア (デフォルト適用に戻す)');
+      expect(clearButton).toBeDefined();
+
+      fireEvent.click(clearButton);
+
+      const dispatched = dispatchEventSpy.mock.calls.map(
+        (call) => call[0] as CustomEvent
+      );
+      const updateEvent = dispatched.find(
+        (e) =>
+          e.type === 'nodeDataUpdate' &&
+          (e.detail as { updates?: { ttsInstructions?: unknown } })?.updates
+            ?.ttsInstructions === undefined
+      );
+
+      expect(updateEvent).toBeDefined();
+      dispatchEventSpy.mockRestore();
+    });
+
+    it('should not show clear button when ttsInstructions is undefined', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      render(<DialogueNode {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('感情・トーン (任意)')).toBeDefined();
+      });
+
+      const header = screen.getByText('感情・トーン (任意)').closest('button');
+      fireEvent.click(header!);
+
+      expect(screen.queryByTitle('クリア (デフォルト適用に戻す)')).toBeNull();
+    });
+  });
+
+  describe('emotion panel: character count warning', () => {
+    it('should show warning text when ttsInstructions exceeds 900 chars', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const longInstructions = 'a'.repeat(950);
+      const dataWithLong: DialogueNodeData = {
+        ...defaultData,
+        ttsInstructions: longInstructions,
+      };
+
+      render(<DialogueNode {...defaultProps} data={dataWithLong} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('感情・トーン (任意)')).toBeDefined();
+      });
+
+      const header = screen.getByText('感情・トーン (任意)').closest('button');
+      fireEvent.click(header!);
+
+      // Warning "あと N 文字" should appear
+      expect(screen.getByText(/あと.*文字/)).toBeDefined();
+    });
+
+    it('should not show warning when ttsInstructions is under 900 chars', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const shortInstructions = 'Speak naturally.';
+      const dataWithShort: DialogueNodeData = {
+        ...defaultData,
+        ttsInstructions: shortInstructions,
+      };
+
+      render(<DialogueNode {...defaultProps} data={dataWithShort} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('感情・トーン (任意)')).toBeDefined();
+      });
+
+      const header = screen.getByText('感情・トーン (任意)').closest('button');
+      fireEvent.click(header!);
+
+      expect(screen.queryByText(/あと.*文字/)).toBeNull();
     });
   });
 

@@ -43,6 +43,7 @@ async def create_dialogue(
         language=request.language,
         speed=request.speed,
         use_lip_sync=request.use_lip_sync,
+        tts_instructions=request.tts_instructions,
     )
 
     # バックグラウンドタスクを起動

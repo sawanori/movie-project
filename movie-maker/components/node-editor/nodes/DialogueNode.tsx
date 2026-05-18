@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { Mic, Loader2, AlertCircle, CheckCircle, Download } from 'lucide-react';
+import { Mic, Loader2, AlertCircle, CheckCircle, Download, ChevronDown, ChevronUp, X } from 'lucide-react';
+import {
+  TTS_EMOTION_PRESETS,
+  type TTSEmotionPreset,
+} from '@/lib/constants/tts-emotion-presets';
 import {
   BaseNode,
   inputHandleClassName,
@@ -23,6 +27,7 @@ type DialogueNodeProps = NodeProps & {
 export function DialogueNode({ data, selected, id }: DialogueNodeProps) {
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
   const [isLoadingVoices, setIsLoadingVoices] = useState(false);
+  const [isEmotionPanelOpen, setIsEmotionPanelOpen] = useState(false);
 
   // 声リストを取得 (ja 固定)
   useEffect(() => {
@@ -199,6 +204,103 @@ export function DialogueNode({ data, selected, id }: DialogueNodeProps) {
           }
           className="w-full accent-[#fce300]"
         />
+      </div>
+
+      {/* 感情・トーン パネル (折りたたみ) */}
+      <div>
+        {/* ヘッダ (クリックで展開/折りたたみ) */}
+        <button
+          type="button"
+          onClick={() => setIsEmotionPanelOpen((prev) => !prev)}
+          className="w-full flex items-center justify-between py-1 text-xs text-gray-400 hover:text-gray-200 transition-colors"
+        >
+          <span>感情・トーン (任意)</span>
+          {isEmotionPanelOpen ? (
+            <ChevronUp className="w-3 h-3" />
+          ) : (
+            <ChevronDown className="w-3 h-3" />
+          )}
+        </button>
+
+        {/* 展開時のコンテンツ */}
+        {isEmotionPanelOpen && (
+          <div className="mt-1 space-y-2">
+            {/* 6 プリセットボタン */}
+            <div className="grid grid-cols-3 gap-1">
+              {TTS_EMOTION_PRESETS.map((preset: TTSEmotionPreset) => {
+                const isSelected = data.ttsInstructions === preset.instructions;
+                return (
+                  <button
+                    key={preset.key}
+                    type="button"
+                    title={preset.instructions}
+                    onClick={() =>
+                      updateNodeData({ ttsInstructions: preset.instructions })
+                    }
+                    disabled={isProcessing}
+                    className={cn(
+                      'flex flex-col items-center gap-0.5 py-1 px-0.5 rounded text-[10px] border transition-colors',
+                      isSelected
+                        ? 'border-[#fce300] bg-[#fce300]/10 text-[#fce300]'
+                        : 'border-gray-700 bg-[#1a1a1a] text-gray-400 hover:border-gray-500 hover:text-gray-200',
+                      isProcessing && 'opacity-50 cursor-not-allowed'
+                    )}
+                  >
+                    <span className="text-base leading-none">{preset.emoji}</span>
+                    <span>{preset.labelJa}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* textarea + クリアボタン */}
+            <div className="relative">
+              <textarea
+                value={data.ttsInstructions ?? ''}
+                onChange={(e) =>
+                  updateNodeData({
+                    ttsInstructions: e.target.value || undefined,
+                  })
+                }
+                disabled={isProcessing}
+                placeholder="例: Whisper softly with nervous hesitation (英語推奨)"
+                rows={3}
+                maxLength={1000}
+                className={cn(
+                  nodeInputClassName,
+                  'resize-none text-[10px] pr-6',
+                  (data.ttsInstructions?.length ?? 0) > 900 && 'border-red-500/70'
+                )}
+              />
+              {/* クリアボタン */}
+              {data.ttsInstructions && (
+                <button
+                  type="button"
+                  onClick={() => updateNodeData({ ttsInstructions: undefined })}
+                  disabled={isProcessing}
+                  className="absolute top-1 right-1 p-0.5 rounded text-gray-500 hover:text-gray-300 transition-colors"
+                  title="クリア (デフォルト適用に戻す)"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* 文字数カウント (900 文字超で警告) */}
+            {(data.ttsInstructions?.length ?? 0) > 900 && (
+              <p className="text-[10px] text-red-400">
+                あと {1000 - (data.ttsInstructions?.length ?? 0)} 文字
+              </p>
+            )}
+
+            {/* プロバイダー非対応注記 (A 案: 常時表示) */}
+            <div className="p-1.5 rounded bg-[#1a1a1a] border border-gray-700/50">
+              <p className="text-[10px] text-gray-500">
+                ※ instructions は OpenAI TTS のみで有効です。現在のプロバイダーでは無視されます。
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* リップシンクトグル */}

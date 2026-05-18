@@ -22,6 +22,15 @@ class DialogueCreateRequest(BaseModel):
         default=False,
         description="True の場合 Hedra でリップシンクを行う。False は ffmpeg 単純ミックス",
     )
+    tts_instructions: Optional[str] = Field(
+        default=None,
+        max_length=1000,
+        description=(
+            "感情/トーン指定 (gpt-4o-mini-tts のみ適用)。"
+            "英語推奨。未指定の場合は OpenAI プロバイダーのデフォルト instructions が適用される。"
+            "ElevenLabs プロバイダーでは無視される。"
+        ),
+    )
 
 
 class DialogueCreateResponse(BaseModel):

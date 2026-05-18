@@ -2016,6 +2016,7 @@ type DialogueCreatePayload = {
   voice_id: string;
   speed?: number;
   use_lip_sync?: boolean;
+  tts_instructions?: string;
 };
 
 type DialogueCreateResult = {

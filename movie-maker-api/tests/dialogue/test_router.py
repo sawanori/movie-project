@@ -103,6 +103,74 @@ class TestCreateDialogue:
         )
         assert response.status_code == 422
 
+    def test_create_dialogue_with_tts_instructions(self, auth_client):
+        """POST /dialogue に tts_instructions を含めて呼ぶと正常に起動する"""
+        record = _make_record()
+        record["tts_instructions"] = "Speak with dramatic excitement"
+
+        with patch(
+            "app.dialogue.router.create_dialogue_generation",
+            new_callable=AsyncMock,
+            return_value=record,
+        ) as mock_create, patch(
+            "app.dialogue.router.start_dialogue_processing",
+            new_callable=AsyncMock,
+        ):
+            resp = auth_client.post(
+                "/api/v1/dialogue",
+                json={
+                    "video_url": "https://example.com/video.mp4",
+                    "text": "こんにちは",
+                    "voice_id": "voice_ja_001",
+                    "tts_instructions": "Speak with dramatic excitement",
+                },
+            )
+
+        assert resp.status_code == 200
+        # create_dialogue_generation が tts_instructions を受け取ったことを確認
+        call_kwargs = mock_create.call_args.kwargs
+        assert call_kwargs.get("tts_instructions") == "Speak with dramatic excitement"
+
+    def test_create_dialogue_instructions_max_length_validation(self, auth_client):
+        """tts_instructions が 1001 文字以上の場合 422 が返る (AC9)"""
+        with patch("app.dialogue.router.start_dialogue_processing", new_callable=AsyncMock):
+            resp = auth_client.post(
+                "/api/v1/dialogue",
+                json={
+                    "video_url": "https://example.com/video.mp4",
+                    "text": "こんにちは",
+                    "voice_id": "voice_ja_001",
+                    "tts_instructions": "a" * 1001,
+                },
+            )
+
+        assert resp.status_code == 422
+
+    def test_create_dialogue_without_instructions_uses_default(self, auth_client):
+        """tts_instructions 未指定の場合は後方互換 (AC6)"""
+        record = _make_record()
+
+        with patch(
+            "app.dialogue.router.create_dialogue_generation",
+            new_callable=AsyncMock,
+            return_value=record,
+        ) as mock_create, patch(
+            "app.dialogue.router.start_dialogue_processing",
+            new_callable=AsyncMock,
+        ):
+            resp = auth_client.post(
+                "/api/v1/dialogue",
+                json={
+                    "video_url": "https://example.com/video.mp4",
+                    "text": "こんにちは",
+                    "voice_id": "voice_ja_001",
+                },
+            )
+
+        assert resp.status_code == 200
+        call_kwargs = mock_create.call_args.kwargs
+        assert call_kwargs.get("tts_instructions") is None
+
 
 class TestGetDialogueStatus:
     def test_get_status_pending(self, auth_client):
