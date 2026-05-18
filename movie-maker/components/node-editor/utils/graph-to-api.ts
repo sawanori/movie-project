@@ -350,6 +350,18 @@ export function graphToStoryVideoCreate(
     request.seedance_mode = provider.seedanceMode;
   }
 
+  // Seedance 詳細パラメータ (provider=seedance の場合のみ)
+  if (provider?.provider === 'seedance') {
+    request.seedance_generate_audio = provider.seedanceGenerateAudio ?? false;
+    if (provider.seedanceSeed != null) {
+      request.seedance_seed = provider.seedanceSeed;
+    }
+    if (provider.seedanceResolution) {
+      request.seedance_resolution = provider.seedanceResolution;
+    }
+    request.seedance_camera_fixed = provider.seedanceCameraFixed ?? false;
+  }
+
   // Kling専用パラメータ（プロバイダーがKlingの場合のみ）
   if (provider?.provider === 'piapi_kling') {
     if (klingMode) {

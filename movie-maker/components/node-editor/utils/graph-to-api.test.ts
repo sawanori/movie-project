@@ -1154,3 +1154,97 @@ describe('graphToStoryVideoCreate - KlingElements image_url fallback', () => {
     expect(() => graphToStoryVideoCreate(nodes, edges)).toThrow('画像が選択されていません');
   });
 });
+
+// ========== Seedance 詳細パラメータ graph-to-api テスト (Design Doc §13.1 F-9~F-14) ==========
+
+describe('graphToStoryVideoCreate - Seedance 詳細パラメータ', () => {
+  function createSeedanceNodes(seedanceData?: Partial<ProviderNodeData>): WorkflowNode[] {
+    return [
+      createImageInputNode(),
+      createPromptNode(),
+      {
+        id: 'provider-1',
+        type: 'provider',
+        position: { x: 200, y: 0 },
+        data: {
+          type: 'provider',
+          isValid: true,
+          provider: 'seedance',
+          aspectRatio: '9:16',
+          duration: 5,
+          seedanceMode: 'pro',
+          seedanceGenerateAudio: false,
+          seedanceSeed: null,
+          seedanceResolution: '720p',
+          seedanceCameraFixed: false,
+          ...seedanceData,
+        } satisfies ProviderNodeData,
+      },
+      createGenerateNode(),
+    ];
+  }
+
+  // F-9: seedanceGenerateAudio=true → request.seedance_generate_audio === true
+  it('F-9: seedanceGenerateAudio=true → request.seedance_generate_audio === true', () => {
+    const nodes = createSeedanceNodes({ seedanceGenerateAudio: true });
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges());
+    expect(result.seedance_generate_audio).toBe(true);
+  });
+
+  // F-10: seedanceGenerateAudio 未指定 (undefined) → request.seedance_generate_audio === false (常に送信)
+  it('F-10: seedanceGenerateAudio 未指定 → request.seedance_generate_audio === false (常に送信)', () => {
+    const nodes = createSeedanceNodes({ seedanceGenerateAudio: undefined });
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges());
+    expect(result.seedance_generate_audio).toBe(false);
+  });
+
+  // F-11: seedanceSeed=42 → request.seedance_seed === 42
+  it('F-11: seedanceSeed=42 → request.seedance_seed === 42', () => {
+    const nodes = createSeedanceNodes({ seedanceSeed: 42 });
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges());
+    expect(result.seedance_seed).toBe(42);
+  });
+
+  // seedanceSeed=null → request.seedance_seed は undefined (送信しない)
+  it('seedanceSeed=null → request.seedance_seed は undefined (送信しない)', () => {
+    const nodes = createSeedanceNodes({ seedanceSeed: null });
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges());
+    expect(result.seedance_seed).toBeUndefined();
+  });
+
+  // F-12: seedanceResolution='1080p' → request.seedance_resolution === '1080p'
+  it('F-12: seedanceResolution=1080p → request.seedance_resolution === 1080p', () => {
+    const nodes = createSeedanceNodes({ seedanceResolution: '1080p' });
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges());
+    expect(result.seedance_resolution).toBe('1080p');
+  });
+
+  // F-13: seedanceCameraFixed=true → request.seedance_camera_fixed === true
+  it('F-13: seedanceCameraFixed=true → request.seedance_camera_fixed === true', () => {
+    const nodes = createSeedanceNodes({ seedanceCameraFixed: true });
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges());
+    expect(result.seedance_camera_fixed).toBe(true);
+  });
+
+  // F-14: provider != seedance → seedance_* fields 含まれない
+  it('F-14: provider=runway の場合 seedance_* fields は含まれない', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createProviderNode('runway'),
+      createGenerateNode(),
+    ];
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges());
+    expect(result.seedance_generate_audio).toBeUndefined();
+    expect(result.seedance_seed).toBeUndefined();
+    expect(result.seedance_resolution).toBeUndefined();
+    expect(result.seedance_camera_fixed).toBeUndefined();
+  });
+
+  // seedance_camera_fixed は default false として常に送信される
+  it('seedanceCameraFixed 未指定 → request.seedance_camera_fixed === false (常に送信)', () => {
+    const nodes = createSeedanceNodes({ seedanceCameraFixed: undefined });
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges());
+    expect(result.seedance_camera_fixed).toBe(false);
+  });
+});

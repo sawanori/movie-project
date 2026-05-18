@@ -92,6 +92,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/videos", tags=["videos"])
 
 
+def _check_seedance_1080p_vip_requirement(
+    resolution: Optional[str],
+    task_type_env: str,
+) -> None:
+    """非 VIP env で 1080p 指定時に明示的 422 を返す"""
+    if resolution == '1080p' and not task_type_env.endswith('-vip'):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "seedance_resolution=1080p は VIP プランが必要です。"
+                "環境の PIAPI_SEEDANCE_TASK_TYPE に -vip suffix がありません。"
+            ),
+        )
+
+
 # ===== Act-Two モーションライブラリ用エンドポイント (静的パスは動的パスより先に定義) =====
 
 @router.get("/motions", response_model=list[dict])
@@ -3800,7 +3815,17 @@ async def create_story_video(
         "kling_duration": request.kling_duration,
         "seedance_duration": request.seedance_duration,
         "seedance_mode": request.seedance_mode,
+        "seedance_generate_audio": request.seedance_generate_audio,
+        "seedance_seed": request.seedance_seed,
+        "seedance_resolution": request.seedance_resolution,
+        "seedance_camera_fixed": request.seedance_camera_fixed,
     }
+
+    # Seedance 1080p + 非 VIP チェック
+    _check_seedance_1080p_vip_requirement(
+        request.seedance_resolution,
+        settings.PIAPI_SEEDANCE_TASK_TYPE,
+    )
 
     # Kling Elements用の画像URLリストを取得
     element_urls = [e.image_url for e in request.element_images] if request.element_images else None

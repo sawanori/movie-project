@@ -69,7 +69,8 @@ async def test_generate_video_success(provider):
         )
 
     assert task_id == "seed_123"
-    # audio フィールドが含まれないことを確認
+    # "audio" フィールド (旧 Phase 1 禁止キー) が含まれないことを確認
+    # 新: generate_audio は常に送信されるが "audio" キーは依然として含まれない
     assert "audio" not in captured_payload
     assert "audio" not in captured_payload.get("input", {})
 
@@ -179,12 +180,15 @@ async def test_check_status_failed_credit(provider):
 async def test_duration_clamping(provider):
     """
     duration のクランプが正しく動作することを確認する。
-    - duration=7 → payload の input.duration が 5
-    - duration=12 → payload の input.duration が 10
+    C-1 修正後: VALID_DURATIONS 廃止、4-15 範囲クランプで透過送信。
+    - duration=7 → payload の input.duration が 7 (旧: 5)
+    - duration=12 → payload の input.duration が 12 (旧: 10)
+    - duration=4 → payload の input.duration が 4 (範囲内最小)
+    - duration=20 → payload の input.duration が 15 (上限クランプ)
     """
     mock_response = _make_mock_response({"data": {"task_id": "seed_clamp"}})
 
-    for input_duration, expected_duration in [(7, 5), (12, 10), (4, 5), (20, 15)]:
+    for input_duration, expected_duration in [(7, 7), (12, 12), (4, 4), (20, 15)]:
         captured_payload = {}
 
         async def fake_post(url, headers, json, timeout, _exp=expected_duration):

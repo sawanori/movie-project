@@ -1,16 +1,14 @@
 """
 PiAPISeedanceProvider の duration 任意秒数対応テスト
 
-Design Doc §7 / §12.2 に基づく:
-  - duration=7 (任意秒数) が payload に含まれること
-  - duration=4 (min) が payload に含まれること
-  - duration=15 (max) が payload に含まれること
-
-Note: 既存テスト (tests/videos/test_piapi_seedance_provider.py) は VALID_DURATIONS クランプの
-      挙動を検証している。本テストは Design Doc §3 Seedance "4-15 秒任意" を直接検証する。
-      ただし現実装は VALID_DURATIONS=[5,10,15] へのクランプを行っているため、
-      本 PR では Seedance プロバイダー側は変更不要 (Design Doc §4.1 "No Ripple Effect" 確認)
-      という観点から、実際の payload 値を検証する。
+C-1 バグ修正後の期待挙動:
+  - VALID_DURATIONS=[5,10,15] による丸め廃止
+  - 4-15 の範囲でクランプし、指定値を透過送信
+  - duration=7 → payload に 7 (5 に丸めない)
+  - duration=4 (min) → payload に 4
+  - duration=15 (max) → payload に 15
+  - duration=3 (範囲外下限) → 4 にクランプ
+  - duration=20 (範囲外上限) → 15 にクランプ
 """
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -37,19 +35,21 @@ def _make_mock_response(json_data: dict, status_code: int = 200):
 
 
 # ===========================================================================
-# duration が payload["input"]["duration"] に含まれることを確認
+# C-1 修正: duration が VALID_DURATIONS に丸められず透過送信されることを確認
 # ===========================================================================
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("input_duration,expected_duration", [
-    (7, 5),   # 7 は VALID_DURATIONS=[5,10,15] に clamp → 5
-    (4, 5),   # 4 は 5 に clamp
-    (15, 15), # 15 は exact match
+    (7, 7),   # C-1 修正: 7 は 5/10 に丸めず 7 のまま送信
+    (4, 4),   # 範囲内最小値そのまま
+    (15, 15), # 範囲内最大値そのまま
+    (5, 5),   # 旧 VALID_DURATIONS 値も正しく動作
+    (10, 10), # 旧 VALID_DURATIONS 値も正しく動作
 ])
 async def test_duration_is_included_in_payload(provider, input_duration, expected_duration):
     """
-    generate_video() が payload["input"]["duration"] に duration を含めること。
-    現状実装は VALID_DURATIONS=[5,10,15] クランプを行う。
+    generate_video() が payload["input"]["duration"] に指定値を透過送信すること。
+    C-1 修正: VALID_DURATIONS=[5,10,15] クランプを廃止し 4-15 範囲で透過送信。
     """
     mock_response = _make_mock_response({"data": {"task_id": f"seed_{input_duration}"}})
 

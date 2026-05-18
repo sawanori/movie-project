@@ -116,6 +116,10 @@ async def process_story_video(video_id: str, video_provider_name: str = None, el
         # Seedance 用パラメータ
         seedance_duration = video_data.get("seedance_duration")
         seedance_mode = video_data.get("seedance_mode")
+        seedance_generate_audio = video_data.get("seedance_generate_audio")
+        seedance_seed = video_data.get("seedance_seed")
+        seedance_resolution = video_data.get("seedance_resolution")
+        seedance_camera_fixed = video_data.get("seedance_camera_fixed")
 
         # プロバイダーを決定（引数 > DB > デフォルト）
         provider_name = video_provider_name or video_data.get("video_provider") or "runway"
@@ -186,7 +190,19 @@ async def process_story_video(video_id: str, video_provider_name: str = None, el
             elif provider_name == "seedance":
                 if seedance_mode:
                     extra_params["mode"] = seedance_mode
-                    logger.info(f"Using Seedance mode: {seedance_mode}")
+                # generate_audio: NULL (既存ドラフト) → False として後方互換
+                extra_params["generate_audio"] = seedance_generate_audio if seedance_generate_audio is not None else False
+                if seedance_seed is not None:
+                    extra_params["seed"] = seedance_seed
+                if seedance_resolution:
+                    extra_params["resolution"] = seedance_resolution
+                if seedance_camera_fixed is not None:
+                    extra_params["camera_fixed"] = seedance_camera_fixed
+                logger.info(
+                    f"Seedance config: mode={seedance_mode}, audio={extra_params['generate_audio']}, "
+                    f"seed={seedance_seed}, resolution={seedance_resolution}, "
+                    f"camera_fixed={seedance_camera_fixed}"
+                )
 
             # Duration決定: プロバイダー別に DB の値を使用、デフォルト 5 秒
             effective_duration = 5

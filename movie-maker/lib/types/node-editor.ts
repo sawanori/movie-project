@@ -79,10 +79,15 @@ export interface ProviderNodeData extends BaseNodeData {
   provider: VideoProvider;
   aspectRatio: '9:16' | '16:9';
   // 動画時間 (秒)。null = プロバイダーのデフォルト/固定値を使う。
-  // Kling は 5/10、Seedance は 5/10/15、他プロバイダーは固定 (null のみ)。
+  // Kling は 5/10、Seedance は 4-15、他プロバイダーは固定 (null のみ)。
   duration: number | null;
   // Seedance 選択時のモード (default: 'pro')
   seedanceMode?: 'pro' | 'fast';
+  // === Seedance 詳細パラメータ ===
+  seedanceGenerateAudio?: boolean;       // default: false
+  seedanceSeed?: number | null;          // default: null (=ランダム)
+  seedanceResolution?: '480p' | '720p' | '1080p';  // default: '720p'
+  seedanceCameraFixed?: boolean;         // default: false
 }
 
 export interface CameraWorkNodeData extends BaseNodeData {
@@ -392,6 +397,10 @@ export function createDefaultNodeData(type: NodeType): WorkflowNodeData {
         aspectRatio: '9:16',
         duration: null,
         seedanceMode: 'pro',
+        seedanceGenerateAudio: false,
+        seedanceSeed: null,
+        seedanceResolution: '720p',
+        seedanceCameraFixed: false,
       };
     case 'cameraWork':
       return {
@@ -718,4 +727,9 @@ export interface StoryVideoCreateRequest {
   veo_duration?: number;  // 4 | 6 | 8 のいずれか
   // Seedance モード
   seedance_mode?: 'pro' | 'fast';
+  // Seedance 詳細パラメータ
+  seedance_generate_audio?: boolean;
+  seedance_seed?: number;
+  seedance_resolution?: '480p' | '720p' | '1080p';
+  seedance_camera_fixed?: boolean;
 }

@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
-import { Settings, Info } from 'lucide-react';
+import { Settings, Info, ChevronDown, ChevronRight } from 'lucide-react';
 import {
   BaseNode,
   inputHandleClassName,
@@ -58,6 +58,8 @@ const DURATION_CONFIG: Record<VideoProvider, DurationConfig> = {
 };
 
 export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
+  const [isSeedanceAdvancedOpen, setIsSeedanceAdvancedOpen] = useState(false);
+
   const updateNodeData = useCallback(
     (updates: Partial<ProviderNodeData>) => {
       const event = new CustomEvent('nodeDataUpdate', {
@@ -228,6 +230,91 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
             <option value="pro">Pro (高品質、$0.13/秒)</option>
             <option value="fast">Fast (高速、$0.10/秒)</option>
           </select>
+        </div>
+      )}
+
+      {/* Seedance 詳細設定 (折りたたみ) */}
+      {data.provider === 'seedance' && (
+        <div className="mt-3 border-t border-[#2a2a2a] pt-3">
+          <button
+            onClick={() => setIsSeedanceAdvancedOpen((o) => !o)}
+            className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-white"
+          >
+            {isSeedanceAdvancedOpen ? (
+              <ChevronDown className="w-3 h-3" />
+            ) : (
+              <ChevronRight className="w-3 h-3" />
+            )}
+            Seedance 詳細設定
+          </button>
+
+          {isSeedanceAdvancedOpen && (
+            <div className="mt-2 space-y-3 p-2 bg-[#1a1a1a] rounded">
+              {/* BGM 自動生成 */}
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={data.seedanceGenerateAudio ?? false}
+                  onChange={(e) =>
+                    updateNodeData({ seedanceGenerateAudio: e.target.checked })
+                  }
+                />
+                BGM 自動生成 (Seedance による音声生成)
+              </label>
+
+              {/* シード値 */}
+              <div>
+                <label className={nodeLabelClassName}>シード値 (任意、再現性)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={2147483647}
+                  value={data.seedanceSeed ?? ''}
+                  placeholder="未指定=ランダム"
+                  onChange={(e) => {
+                    const v = e.target.value === '' ? null : Number(e.target.value);
+                    updateNodeData({ seedanceSeed: v });
+                  }}
+                  className={nodeSelectClassName}
+                />
+              </div>
+
+              {/* 解像度 */}
+              <div>
+                <label className={nodeLabelClassName}>解像度</label>
+                <select
+                  value={data.seedanceResolution ?? '720p'}
+                  onChange={(e) =>
+                    updateNodeData({
+                      seedanceResolution: e.target.value as '480p' | '720p' | '1080p',
+                    })
+                  }
+                  className={nodeSelectClassName}
+                >
+                  <option value="480p">480p</option>
+                  <option value="720p">720p (推奨)</option>
+                  <option value="1080p">1080p (VIP プラン必須)</option>
+                </select>
+                {(data.seedanceResolution === '1080p') && (
+                  <div className="mt-1 rounded px-2 py-1 text-xs font-medium bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
+                    1080p は Seedance VIP プラン契約が必要です。非 VIP 環境ではリクエストが拒否されます。
+                  </div>
+                )}
+              </div>
+
+              {/* カメラ固定 */}
+              <label className="flex items-center gap-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={data.seedanceCameraFixed ?? false}
+                  onChange={(e) =>
+                    updateNodeData({ seedanceCameraFixed: e.target.checked })
+                  }
+                />
+                カメラ固定 (商品撮影/静物向け)
+              </label>
+            </div>
+          )}
         </div>
       )}
 

@@ -322,6 +322,24 @@ class StoryVideoCreate(BaseModel):
         description="Seedance 2.0 のモデルモード ('pro' or 'fast')。"
                     "None の場合は環境変数 PIAPI_SEEDANCE_TASK_TYPE のデフォルト (Pro) 採用。"
     )
+    seedance_generate_audio: bool = Field(
+        default=False,
+        description="Seedance: BGM 自動生成の有効化 (default: False。BGMNode との競合回避)"
+    )
+    seedance_seed: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=2147483647,
+        description="Seedance: 再現性のためのシード値 (None=ランダム)。32-bit signed int 上限"
+    )
+    seedance_resolution: Optional[Literal['480p', '720p', '1080p']] = Field(
+        default=None,
+        description="Seedance: 出力解像度。1080p は VIP プラン必須"
+    )
+    seedance_camera_fixed: bool = Field(
+        default=False,
+        description="Seedance: カメラ固定モード (default: False。商品撮影/静物向け)"
+    )
     veo_duration: Optional[int] = Field(
         default=None,
         ge=4,
@@ -342,14 +360,36 @@ class StoryVideoCreate(BaseModel):
         return v
 
     @model_validator(mode='after')
-    def validate_provider_specific_durations(self) -> Self:
-        """provider 固有の duration / mode フィールドの cross-validator"""
-        if self.seedance_duration is not None and self.video_provider not in (None, VideoProvider.SEEDANCE):
-            raise ValueError("seedance_duration is only valid for video_provider=seedance")
+    def validate_seedance_only_fields(self) -> Self:
+        """Seedance 専用フィールドの統合クロスバリデーター。
+
+        seedance_* フィールド全体 + veo_duration を provider 整合性チェック。
+        非 seedance provider で seedance_* フィールド (非デフォルト値) が指定された場合は 422 を返す。
+        """
+        # Seedance 専用フィールドの provider mismatch チェック
+        seedance_fields_with_values: dict = {}
+        if self.seedance_duration is not None:
+            seedance_fields_with_values['seedance_duration'] = self.seedance_duration
+        if self.seedance_mode is not None:
+            seedance_fields_with_values['seedance_mode'] = self.seedance_mode
+        # generate_audio: bool default=False。False はデフォルト値のため mismatch チェック除外
+        if self.seedance_generate_audio is True:
+            seedance_fields_with_values['seedance_generate_audio'] = self.seedance_generate_audio
+        if self.seedance_seed is not None:
+            seedance_fields_with_values['seedance_seed'] = self.seedance_seed
+        if self.seedance_resolution is not None:
+            seedance_fields_with_values['seedance_resolution'] = self.seedance_resolution
+        # camera_fixed: bool default=False。False はデフォルト値のため mismatch チェック除外
+        if self.seedance_camera_fixed is True:
+            seedance_fields_with_values['seedance_camera_fixed'] = self.seedance_camera_fixed
+
+        for field_name in seedance_fields_with_values:
+            if self.video_provider not in (None, VideoProvider.SEEDANCE):
+                raise ValueError(f"{field_name} は video_provider=seedance 専用フィールドです")
+
+        # veo_duration は veo 専用
         if self.veo_duration is not None and self.video_provider not in (None, VideoProvider.VEO):
             raise ValueError("veo_duration is only valid for video_provider=veo")
-        if self.seedance_mode is not None and self.video_provider not in (None, VideoProvider.SEEDANCE):
-            raise ValueError("seedance_mode is only valid for video_provider=seedance")
         return self
 
     @model_validator(mode='after')

@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 
 PIAPI_BASE_URL = "https://api.piapi.ai/api/v1"
 
-VALID_DURATIONS = [5, 10, 15]
+DURATION_MIN = 4
+DURATION_MAX = 15
 
 
 def _map_error_message(error: str) -> str:
@@ -101,6 +102,10 @@ class PiAPISeedanceProvider(VideoProviderInterface):
         aspect_ratio: str = "9:16",
         camera_work: Optional[str] = None,
         mode: Optional[str] = None,
+        generate_audio: bool = False,
+        seed: Optional[int] = None,
+        resolution: Optional[str] = None,
+        camera_fixed: Optional[bool] = None,
     ) -> str:
         """
         Seedance 2.0 で画像+プロンプトから動画を生成
@@ -108,22 +113,31 @@ class PiAPISeedanceProvider(VideoProviderInterface):
         Args:
             image_url: 先頭フレーム画像 URL
             prompt: 動画生成プロンプト（最大4000文字）
-            duration: 動画長さ（5 | 10 | 15 秒）
+            duration: 動画長さ（秒）。4-15 の範囲でクランプ。
             aspect_ratio: アスペクト比 ("9:16" | "16:9" | "4:3" | "3:4")
             camera_work: 無視（Seedanceはプロンプト追従のみ）
             mode: モデルモード ('pro' | 'fast' | None)。None の場合は env デフォルト採用。
+            generate_audio: BGM 自動生成 ON/OFF (default: False)
+            seed: 再現性用シード値 (None=ランダム)
+            resolution: 出力解像度 ('480p' | '720p' | '1080p')。None の場合は env fallback。
+            camera_fixed: カメラ固定モード (default: None=False 相当)
 
         Returns:
             str: task_id
 
         Raises:
             VideoProviderError: タスク作成失敗
+            ValueError: resolution=1080p かつ 非 VIP task_type
         """
         if camera_work:
             logger.warning(f"Seedance: camera_work '{camera_work}' ignored (prompt-only)")
 
         task_type = self._resolve_task_type(mode)
-        clamped_duration = min(VALID_DURATIONS, key=lambda d: abs(d - duration))
+        # C-1 修正: VALID_DURATIONS 廃止、4-15 範囲クランプで透過送信
+        clamped_duration = max(DURATION_MIN, min(DURATION_MAX, int(duration)))
+
+        # resolution: UI 指定 > env (フォールバック)
+        effective_resolution = resolution or self.resolution
 
         input_payload: dict = {
             "prompt": prompt[:4000],
@@ -131,8 +145,22 @@ class PiAPISeedanceProvider(VideoProviderInterface):
             "aspect_ratio": aspect_ratio,
             "image_urls": [image_url],
         }
+
         if task_type.endswith("-vip"):
-            input_payload["resolution"] = self.resolution
+            input_payload["resolution"] = effective_resolution
+        elif effective_resolution == '1080p':
+            # 非 VIP env で 1080p が来た場合は例外 (正常系では backend で弾かれるが safety net)
+            raise ValueError(
+                "resolution=1080p requires VIP plan. "
+                "Either change resolution to 480p/720p or set PIAPI_SEEDANCE_TASK_TYPE to a -vip variant."
+            )
+
+        # 常に generate_audio を送信
+        input_payload["generate_audio"] = generate_audio
+        if seed is not None:
+            input_payload["seed"] = seed
+        if camera_fixed is not None:
+            input_payload["camerafixed"] = camera_fixed
 
         payload = {
             "model": "seedance",
@@ -140,7 +168,6 @@ class PiAPISeedanceProvider(VideoProviderInterface):
             "input": input_payload,
             "config": {"service_mode": "public"},
         }
-        # audio フィールドは Phase 1 では送信しない
 
         try:
             async with httpx.AsyncClient() as client:
@@ -171,21 +198,33 @@ class PiAPISeedanceProvider(VideoProviderInterface):
         duration: int = 5,
         aspect_ratio: str = "9:16",
         mode: Optional[str] = None,
+        generate_audio: bool = False,
+        seed: Optional[int] = None,
+        resolution: Optional[str] = None,
+        camera_fixed: Optional[bool] = None,
     ) -> str:
         """
         Seedance T2V: image_urls を送信しない
 
         Args:
             prompt: 動画生成プロンプト（最大4000文字）
-            duration: 動画長さ（5 | 10 | 15 秒）
+            duration: 動画長さ（秒）。4-15 の範囲でクランプ。
             aspect_ratio: アスペクト比 ("9:16" | "16:9" | "4:3" | "3:4")
             mode: モデルモード ('pro' | 'fast' | None)。None の場合は env デフォルト採用。
+            generate_audio: BGM 自動生成 ON/OFF (default: False)
+            seed: 再現性用シード値 (None=ランダム)
+            resolution: 出力解像度 ('480p' | '720p' | '1080p')。None の場合は env fallback。
+            camera_fixed: カメラ固定モード (default: None=False 相当)
 
         Returns:
             str: task_id
         """
         task_type = self._resolve_task_type(mode)
-        clamped_duration = min(VALID_DURATIONS, key=lambda d: abs(d - duration))
+        # C-1 修正: VALID_DURATIONS 廃止、4-15 範囲クランプで透過送信
+        clamped_duration = max(DURATION_MIN, min(DURATION_MAX, int(duration)))
+
+        # resolution: UI 指定 > env (フォールバック)
+        effective_resolution = resolution or self.resolution
 
         input_payload: dict = {
             "prompt": prompt[:4000],
@@ -193,8 +232,21 @@ class PiAPISeedanceProvider(VideoProviderInterface):
             "aspect_ratio": aspect_ratio,
             # image_urls を省略 = T2V
         }
+
         if task_type.endswith("-vip"):
-            input_payload["resolution"] = self.resolution
+            input_payload["resolution"] = effective_resolution
+        elif effective_resolution == '1080p':
+            raise ValueError(
+                "resolution=1080p requires VIP plan. "
+                "Either change resolution to 480p/720p or set PIAPI_SEEDANCE_TASK_TYPE to a -vip variant."
+            )
+
+        # 常に generate_audio を送信
+        input_payload["generate_audio"] = generate_audio
+        if seed is not None:
+            input_payload["seed"] = seed
+        if camera_fixed is not None:
+            input_payload["camerafixed"] = camera_fixed
 
         payload = {
             "model": "seedance",
@@ -202,7 +254,6 @@ class PiAPISeedanceProvider(VideoProviderInterface):
             "input": input_payload,
             "config": {"service_mode": "public"},
         }
-        # audio フィールドは Phase 1 では送信しない
 
         try:
             async with httpx.AsyncClient() as client:

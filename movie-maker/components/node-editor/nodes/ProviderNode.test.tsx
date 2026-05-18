@@ -426,3 +426,146 @@ describe('ProviderNode - Seedance 速度モード', () => {
     expect(modeSelect.value).toBe('pro');
   });
 });
+
+// ========== Seedance 詳細設定セクション テスト (Design Doc §13.1) ==========
+
+describe('ProviderNode - Seedance 詳細設定', () => {
+  const seedanceData: ProviderNodeData = {
+    type: 'provider',
+    isValid: true,
+    provider: 'seedance',
+    aspectRatio: '9:16',
+    duration: 5,
+    seedanceMode: 'pro',
+    seedanceGenerateAudio: false,
+    seedanceSeed: null,
+    seedanceResolution: '720p',
+    seedanceCameraFixed: false,
+  };
+
+  // F-1: Seedance 選択時に「Seedance 詳細設定」ボタンが表示される
+  it('F-1: Seedance 選択時に「Seedance 詳細設定」折りたたみボタンが表示される', () => {
+    render(<ProviderNode {...defaultProps} data={seedanceData} />);
+    expect(screen.getByText('Seedance 詳細設定')).not.toBeNull();
+  });
+
+  // F-2: provider != seedance 時、詳細設定セクション非表示
+  it('F-2: Runway 選択時に「Seedance 詳細設定」ボタンが表示されない', () => {
+    const runwayData: ProviderNodeData = {
+      type: 'provider',
+      isValid: true,
+      provider: 'runway',
+      aspectRatio: '9:16',
+      duration: null,
+    };
+    render(<ProviderNode {...defaultProps} data={runwayData} />);
+    expect(screen.queryByText('Seedance 詳細設定')).toBeNull();
+  });
+
+  // F-3: 詳細設定 click で 4 つの input/checkbox が展開される
+  it('F-3: 「Seedance 詳細設定」クリックで BGM・シード・解像度・カメラ固定が展開される', () => {
+    render(<ProviderNode {...defaultProps} data={seedanceData} />);
+
+    // クリック前: 詳細 input は非表示
+    expect(screen.queryByText('BGM 自動生成 (Seedance による音声生成)')).toBeNull();
+
+    // クリック後: 詳細が展開される
+    fireEvent.click(screen.getByText('Seedance 詳細設定'));
+    expect(screen.getByText('BGM 自動生成 (Seedance による音声生成)')).not.toBeNull();
+    expect(screen.getByText('シード値 (任意、再現性)')).not.toBeNull();
+    expect(screen.getByText('解像度')).not.toBeNull();
+    expect(screen.getByText('カメラ固定 (商品撮影/静物向け)')).not.toBeNull();
+  });
+
+  // F-4: BGM チェックボックス変更 → seedanceGenerateAudio 更新
+  it('F-4: BGM チェックボックス ON → seedanceGenerateAudio=true の nodeDataUpdate が発火される', () => {
+    const eventSpy = vi.fn();
+    window.addEventListener('nodeDataUpdate', eventSpy);
+
+    render(<ProviderNode {...defaultProps} data={seedanceData} />);
+    fireEvent.click(screen.getByText('Seedance 詳細設定'));
+
+    const checkbox = screen.getByLabelText('BGM 自動生成 (Seedance による音声生成)');
+    fireEvent.click(checkbox);
+
+    const calls = eventSpy.mock.calls.map((c) => (c[0] as CustomEvent).detail);
+    const audioCall = calls.find((d) => d.updates?.seedanceGenerateAudio === true);
+    expect(audioCall).toBeDefined();
+
+    window.removeEventListener('nodeDataUpdate', eventSpy);
+  });
+
+  // F-5: seed input に数値入力 → seedanceSeed 更新
+  it('F-5: seed input に "12345" を入力すると seedanceSeed=12345 の nodeDataUpdate が発火される', () => {
+    const eventSpy = vi.fn();
+    window.addEventListener('nodeDataUpdate', eventSpy);
+
+    render(<ProviderNode {...defaultProps} data={seedanceData} />);
+    fireEvent.click(screen.getByText('Seedance 詳細設定'));
+
+    const seedInput = screen.getByPlaceholderText('未指定=ランダム');
+    fireEvent.change(seedInput, { target: { value: '12345' } });
+
+    const calls = eventSpy.mock.calls.map((c) => (c[0] as CustomEvent).detail);
+    const seedCall = calls.find((d) => d.updates?.seedanceSeed === 12345);
+    expect(seedCall).toBeDefined();
+
+    window.removeEventListener('nodeDataUpdate', eventSpy);
+  });
+
+  // F-6: seed input 空文字 → seedanceSeed=null (Number(0) ではなく null)
+  it('F-6: seed input を空にすると seedanceSeed=null の nodeDataUpdate が発火される (0 でなく null)', () => {
+    const dataWithSeed: ProviderNodeData = { ...seedanceData, seedanceSeed: 42 };
+    const eventSpy = vi.fn();
+    window.addEventListener('nodeDataUpdate', eventSpy);
+
+    render(<ProviderNode {...defaultProps} data={dataWithSeed} />);
+    fireEvent.click(screen.getByText('Seedance 詳細設定'));
+
+    const seedInput = screen.getByPlaceholderText('未指定=ランダム');
+    fireEvent.change(seedInput, { target: { value: '' } });
+
+    const calls = eventSpy.mock.calls.map((c) => (c[0] as CustomEvent).detail);
+    const nullCall = calls.find(
+      (d) => 'seedanceSeed' in (d.updates ?? {}) && d.updates.seedanceSeed === null
+    );
+    expect(nullCall).toBeDefined();
+
+    window.removeEventListener('nodeDataUpdate', eventSpy);
+  });
+
+  // F-7: resolution dropdown を 1080p → VIP 警告バナー表示
+  it('F-7: resolution=1080p の ProviderNodeData を渡すと VIP 警告バナーが表示される', () => {
+    const data1080p: ProviderNodeData = { ...seedanceData, seedanceResolution: '1080p' };
+    render(<ProviderNode {...defaultProps} data={data1080p} />);
+    fireEvent.click(screen.getByText('Seedance 詳細設定'));
+
+    expect(screen.getByText(/VIP プラン契約が必要/)).not.toBeNull();
+  });
+
+  // F-7b: resolution=720p では警告バナー非表示
+  it('F-7b: resolution=720p の場合 VIP 警告バナーが表示されない', () => {
+    render(<ProviderNode {...defaultProps} data={seedanceData} />);
+    fireEvent.click(screen.getByText('Seedance 詳細設定'));
+
+    expect(screen.queryByText(/VIP プラン契約が必要/)).toBeNull();
+  });
+
+  // F-8: カメラ固定チェックボックス ON → seedanceCameraFixed=true
+  it('F-8: カメラ固定チェックボックス ON → seedanceCameraFixed=true の nodeDataUpdate が発火される', () => {
+    const eventSpy = vi.fn();
+    window.addEventListener('nodeDataUpdate', eventSpy);
+
+    render(<ProviderNode {...defaultProps} data={seedanceData} />);
+    fireEvent.click(screen.getByText('Seedance 詳細設定'));
+
+    const checkbox = screen.getByLabelText('カメラ固定 (商品撮影/静物向け)');
+    fireEvent.click(checkbox);
+
+    const calls = eventSpy.mock.calls.map((c) => (c[0] as CustomEvent).detail);
+    const cameraCall = calls.find((d) => d.updates?.seedanceCameraFixed === true);
+    expect(cameraCall).toBeDefined();
+
+    window.removeEventListener('nodeDataUpdate', eventSpy);
+  });
+});
