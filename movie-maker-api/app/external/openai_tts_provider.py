@@ -79,10 +79,12 @@ class OpenAITTSProvider(TTSProviderInterface):
         # デフォルト英語 instructions を適用する (AC10b: 空文字も「未指定」扱い)
         if (not instructions) and language == "ja":
             instructions = (
-                "Speak natural Japanese with rich emotional expression. "
-                "Vary pitch, pace, and emphasis to convey the underlying feelings in the text. "
-                "Use human-like pauses and intonation, avoiding robotic delivery. "
-                "Match the tone to the dialogue's mood (joy, sadness, anger, surprise, etc.) as appropriate."
+                "Speak natural Japanese with rich emotional expression and dynamic intonation. "
+                "Vary pitch widely (low to high), pace (slow to fast), and emphasis to convey "
+                "the underlying feelings in the text. Insert natural pauses between phrases. "
+                "Use human-like rhythm and avoid any robotic or monotone delivery. Match the "
+                "tone to the dialogue's mood (joy, sadness, anger, surprise, etc.) as appropriate, "
+                "adding pitch variation on emotionally charged words."
             )
 
         payload = {

@@ -341,3 +341,45 @@ class TestOpenAITTSProviderDefaultInstructions:
         )
 
         assert captured_payload.get("instructions") == "Speak with dramatic excitement"
+
+    @pytest.mark.asyncio
+    async def test_default_instructions_contains_dynamic_intonation(self):
+        """B3 反映: After 固有語句 'dynamic intonation' / 'low to high' / 'emotionally charged' が新デフォルトに含まれる"""
+        from app.external.openai_tts_provider import OpenAITTSProvider
+
+        provider = OpenAITTSProvider()
+        captured_payload = {}
+
+        await self._call_generate_speech(
+            provider,
+            captured_payload,
+            text="こんにちは",
+            voice_id="alloy",
+            language="ja",
+            instructions="",
+        )
+
+        instructions_sent = captured_payload["instructions"]
+        assert "dynamic intonation" in instructions_sent
+        assert "low to high" in instructions_sent
+        assert "emotionally charged" in instructions_sent
+
+    @pytest.mark.asyncio
+    async def test_default_instructions_minimum_length(self):
+        """B2 反映: 新デフォルト instructions が 380 文字以上 (抑揚指示込み)"""
+        from app.external.openai_tts_provider import OpenAITTSProvider
+
+        provider = OpenAITTSProvider()
+        captured_payload = {}
+
+        await self._call_generate_speech(
+            provider,
+            captured_payload,
+            text="こんにちは",
+            voice_id="alloy",
+            language="ja",
+            instructions=None,
+        )
+
+        instructions_sent = captured_payload["instructions"]
+        assert len(instructions_sent) >= 380
