@@ -91,6 +91,9 @@ class Settings(BaseSettings):
     # Voicevox TTS (local Docker)
     VOICEVOX_API_URL: str = "http://localhost:50021"
 
+    # Aivis Speech Engine (Voicevox 互換 API, local Docker)
+    AIVIS_SPEECH_API_URL: str = "http://localhost:10101"
+
     # TTS Provider Settings
     # "elevenlabs", "openai_tts", or "voicevox" - TTS 生成に使用するプロバイダー
     TTS_PROVIDER: str = "elevenlabs"

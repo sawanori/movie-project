@@ -138,6 +138,10 @@ def get_tts_provider(provider_name: Optional[str] = None) -> TTSProviderInterfac
         from app.external.voicevox_provider import VoicevoxProvider
         logger.info("Using Voicevox TTS provider")
         return VoicevoxProvider()
+    elif provider_name == "aivis_speech":
+        from app.external.aivis_speech_provider import AivisSpeechProvider
+        logger.info("Using Aivis Speech TTS provider")
+        return AivisSpeechProvider()
     elif provider_name == "elevenlabs":
         from app.external.elevenlabs_provider import ElevenLabsProvider
         logger.info("Using ElevenLabs TTS provider")
