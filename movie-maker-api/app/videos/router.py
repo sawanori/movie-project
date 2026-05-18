@@ -3799,6 +3799,7 @@ async def create_story_video(
         "kling_camera_control": request.kling_camera_control.model_dump() if request.kling_camera_control else None,
         "kling_duration": request.kling_duration,
         "seedance_duration": request.seedance_duration,
+        "seedance_mode": request.seedance_mode,
     }
 
     # Kling Elements用の画像URLリストを取得

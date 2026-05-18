@@ -60,6 +60,28 @@ class PiAPISeedanceProvider(VideoProviderInterface):
     def provider_name(self) -> str:
         return "seedance"
 
+    def _resolve_task_type(self, mode: Optional[str]) -> str:
+        """
+        mode と env の組合せから task_type を決定する。
+        env の VIP suffix は維持し、preview <-> fast-preview だけ置換する。
+
+        例:
+            env=seedance-2-preview-vip + mode='fast' → seedance-2-fast-preview-vip
+            env=seedance-2-fast-preview-vip + mode='pro' → seedance-2-preview-vip
+            env=seedance-2-preview + mode='fast' → seedance-2-fast-preview
+            mode=None → env そのまま
+        """
+        base = self.task_type
+        if mode is None:
+            return base
+        if mode == 'pro':
+            return base.replace('-fast-preview', '-preview')
+        if mode == 'fast':
+            if '-fast-preview' in base:
+                return base
+            return base.replace('-preview', '-fast-preview')
+        raise ValueError(f"Invalid seedance mode: {mode}")
+
     @property
     def supports_t2v(self) -> bool:
         """Seedance は T2V をサポート（image_urls を省略）"""
@@ -78,6 +100,7 @@ class PiAPISeedanceProvider(VideoProviderInterface):
         duration: int = 5,
         aspect_ratio: str = "9:16",
         camera_work: Optional[str] = None,
+        mode: Optional[str] = None,
     ) -> str:
         """
         Seedance 2.0 で画像+プロンプトから動画を生成
@@ -88,6 +111,7 @@ class PiAPISeedanceProvider(VideoProviderInterface):
             duration: 動画長さ（5 | 10 | 15 秒）
             aspect_ratio: アスペクト比 ("9:16" | "16:9" | "4:3" | "3:4")
             camera_work: 無視（Seedanceはプロンプト追従のみ）
+            mode: モデルモード ('pro' | 'fast' | None)。None の場合は env デフォルト採用。
 
         Returns:
             str: task_id
@@ -98,6 +122,7 @@ class PiAPISeedanceProvider(VideoProviderInterface):
         if camera_work:
             logger.warning(f"Seedance: camera_work '{camera_work}' ignored (prompt-only)")
 
+        task_type = self._resolve_task_type(mode)
         clamped_duration = min(VALID_DURATIONS, key=lambda d: abs(d - duration))
 
         input_payload: dict = {
@@ -106,12 +131,12 @@ class PiAPISeedanceProvider(VideoProviderInterface):
             "aspect_ratio": aspect_ratio,
             "image_urls": [image_url],
         }
-        if self.task_type.endswith("-vip"):
+        if task_type.endswith("-vip"):
             input_payload["resolution"] = self.resolution
 
         payload = {
             "model": "seedance",
-            "task_type": self.task_type,
+            "task_type": task_type,
             "input": input_payload,
             "config": {"service_mode": "public"},
         }
@@ -145,13 +170,21 @@ class PiAPISeedanceProvider(VideoProviderInterface):
         prompt: str,
         duration: int = 5,
         aspect_ratio: str = "9:16",
+        mode: Optional[str] = None,
     ) -> str:
         """
         Seedance T2V: image_urls を送信しない
 
+        Args:
+            prompt: 動画生成プロンプト（最大4000文字）
+            duration: 動画長さ（5 | 10 | 15 秒）
+            aspect_ratio: アスペクト比 ("9:16" | "16:9" | "4:3" | "3:4")
+            mode: モデルモード ('pro' | 'fast' | None)。None の場合は env デフォルト採用。
+
         Returns:
             str: task_id
         """
+        task_type = self._resolve_task_type(mode)
         clamped_duration = min(VALID_DURATIONS, key=lambda d: abs(d - duration))
 
         input_payload: dict = {
@@ -160,12 +193,12 @@ class PiAPISeedanceProvider(VideoProviderInterface):
             "aspect_ratio": aspect_ratio,
             # image_urls を省略 = T2V
         }
-        if self.task_type.endswith("-vip"):
+        if task_type.endswith("-vip"):
             input_payload["resolution"] = self.resolution
 
         payload = {
             "model": "seedance",
-            "task_type": self.task_type,
+            "task_type": task_type,
             "input": input_payload,
             "config": {"service_mode": "public"},
         }

@@ -344,3 +344,85 @@ describe('ProviderNode - DURATION_CONFIG UI', () => {
     window.removeEventListener('nodeDataUpdate', eventSpy);
   });
 });
+
+// ========== Seedance 速度モード UI テスト ==========
+
+describe('ProviderNode - Seedance 速度モード', () => {
+  const seedanceData: ProviderNodeData = {
+    type: 'provider',
+    isValid: true,
+    provider: 'seedance',
+    aspectRatio: '9:16',
+    duration: 5,
+    seedanceMode: 'pro',
+  };
+
+  // AC-1: Seedance 選択 → 速度モード dropdown 表示
+  it('AC-1: Seedance 選択時に速度モード dropdown が表示される', () => {
+    render(<ProviderNode {...defaultProps} data={seedanceData} />);
+    expect(screen.getByText('速度モード')).not.toBeNull();
+    expect(screen.getByText('Pro (高品質、$0.13/秒)')).not.toBeNull();
+    expect(screen.getByText('Fast (高速、$0.10/秒)')).not.toBeNull();
+  });
+
+  // AC-2: 他 provider 選択 → 速度モード dropdown 非表示
+  it('AC-2: Runway 選択時に速度モード dropdown が表示されない', () => {
+    const runwayData: ProviderNodeData = {
+      type: 'provider',
+      isValid: true,
+      provider: 'runway',
+      aspectRatio: '9:16',
+      duration: null,
+    };
+    render(<ProviderNode {...defaultProps} data={runwayData} />);
+    expect(screen.queryByText('速度モード')).toBeNull();
+  });
+
+  it('AC-2: Kling 選択時に速度モード dropdown が表示されない', () => {
+    const klingData: ProviderNodeData = {
+      type: 'provider',
+      isValid: true,
+      provider: 'piapi_kling',
+      aspectRatio: '9:16',
+      duration: 5,
+    };
+    render(<ProviderNode {...defaultProps} data={klingData} />);
+    expect(screen.queryByText('速度モード')).toBeNull();
+  });
+
+  // AC-3: dropdown 切替で seedanceMode 更新イベント発火
+  it('AC-3: dropdown 切替で seedanceMode=fast の nodeDataUpdate が発火される', () => {
+    const eventSpy = vi.fn();
+    window.addEventListener('nodeDataUpdate', eventSpy);
+
+    render(<ProviderNode {...defaultProps} data={seedanceData} />);
+
+    // 速度モード select は 3 番目 (アスペクト比、動画時間、速度モード)
+    const { container } = render(<ProviderNode {...defaultProps} data={seedanceData} />);
+    const selects = container.querySelectorAll('select');
+    // 速度モードは最後の select
+    const modeSelect = selects[selects.length - 1] as HTMLSelectElement;
+    fireEvent.change(modeSelect, { target: { value: 'fast' } });
+
+    const calls = eventSpy.mock.calls.map((c) => (c[0] as CustomEvent).detail);
+    const modeCall = calls.find((d) => d.updates?.seedanceMode === 'fast');
+    expect(modeCall).toBeDefined();
+
+    window.removeEventListener('nodeDataUpdate', eventSpy);
+  });
+
+  // seedanceMode が未定義でも pro が fallback 表示される
+  it('seedanceMode が未定義の場合、選択値が pro になる', () => {
+    const dataWithoutMode: ProviderNodeData = {
+      type: 'provider',
+      isValid: true,
+      provider: 'seedance',
+      aspectRatio: '9:16',
+      duration: 5,
+    };
+    const { container } = render(<ProviderNode {...defaultProps} data={dataWithoutMode} />);
+    const selects = container.querySelectorAll('select');
+    const modeSelect = selects[selects.length - 1] as HTMLSelectElement;
+    expect(modeSelect.value).toBe('pro');
+  });
+});

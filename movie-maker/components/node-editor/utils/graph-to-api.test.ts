@@ -996,6 +996,88 @@ describe('graphToStoryVideoCreate - duration mapping', () => {
   })
 })
 
+// ========== Seedance モードマッピングテスト ==========
+
+describe('graphToStoryVideoCreate - seedance_mode mapping', () => {
+  function createProviderNodeWithSeedanceMode(
+    seedanceMode: 'pro' | 'fast' | undefined
+  ): WorkflowNode {
+    return {
+      id: 'provider-1',
+      type: 'provider',
+      position: { x: 200, y: 0 },
+      data: {
+        type: 'provider',
+        isValid: true,
+        provider: 'seedance',
+        aspectRatio: '9:16',
+        duration: 5,
+        seedanceMode,
+      } satisfies ProviderNodeData,
+    }
+  }
+
+  // AC-4: fast 指定時に seedance_mode が含まれる
+  it('AC-4: seedanceMode=fast の場合 request.seedance_mode が "fast" になる', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createProviderNodeWithSeedanceMode('fast'),
+      createGenerateNode(),
+    ]
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges())
+    expect(result.seedance_mode).toBe('fast')
+  })
+
+  // pro 指定時
+  it('seedanceMode=pro の場合 request.seedance_mode が "pro" になる', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createProviderNodeWithSeedanceMode('pro'),
+      createGenerateNode(),
+    ]
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges())
+    expect(result.seedance_mode).toBe('pro')
+  })
+
+  // seedanceMode が undefined の場合は seedance_mode が含まれない
+  it('seedanceMode が undefined の場合 request.seedance_mode が含まれない', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createProviderNodeWithSeedanceMode(undefined),
+      createGenerateNode(),
+    ]
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges())
+    expect(result.seedance_mode).toBeUndefined()
+  })
+
+  // AC-5: provider 切替時 seedanceMode は provider ノードに維持される (他 provider では無視)
+  it('AC-5: provider=runway の場合 seedance_mode は request に含まれない', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      {
+        id: 'provider-1',
+        type: 'provider',
+        position: { x: 200, y: 0 },
+        data: {
+          type: 'provider',
+          isValid: true,
+          provider: 'runway',
+          aspectRatio: '9:16',
+          duration: null,
+          seedanceMode: 'fast',  // seedanceMode があっても runway では無視
+        } satisfies ProviderNodeData,
+      },
+      createGenerateNode(),
+    ]
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges())
+    expect(result.seedance_mode).toBeUndefined()
+  })
+})
+
 // ========== KlingElements image_url フォールバック ==========
 
 describe('graphToStoryVideoCreate - KlingElements image_url fallback', () => {

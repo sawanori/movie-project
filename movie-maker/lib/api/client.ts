@@ -255,6 +255,7 @@ export const videosApi = {
     element_images?: { image_url: string }[];  // 一貫性向上用の追加画像（Kling専用、最大3枚）
     kling_duration?: 5 | 10;  // Kling AI動画のduration（秒）
     seedance_duration?: number;  // Seedance 2.0 動画のduration（秒）。4-15 の整数
+    seedance_mode?: 'pro' | 'fast';  // Seedance 速度モード（デフォルト: pro）
     veo_duration?: number;  // Veo 3 動画のduration（秒）。4 | 6 | 8 のいずれか
   }) => fetchWithAuth("/api/v1/videos/story", { method: "POST", body: JSON.stringify(data) }),
 

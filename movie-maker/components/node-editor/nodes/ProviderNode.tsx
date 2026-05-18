@@ -216,6 +216,21 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
         );
       })()}
 
+      {/* 速度モード (Seedance のみ) */}
+      {data.provider === 'seedance' && (
+        <div className="mt-3">
+          <label className={nodeLabelClassName}>速度モード</label>
+          <select
+            value={data.seedanceMode ?? 'pro'}
+            onChange={(e) => updateNodeData({ seedanceMode: e.target.value as 'pro' | 'fast' })}
+            className={nodeSelectClassName}
+          >
+            <option value="pro">Pro (高品質、$0.13/秒)</option>
+            <option value="fast">Fast (高速、$0.10/秒)</option>
+          </select>
+        </div>
+      )}
+
       {/* 凡例: 左ハンドル接続説明 */}
       <div className="mt-3 flex gap-1.5 rounded-md border border-[#2a2a2a] bg-[#111] p-2">
         <Info className="mt-0.5 h-3 w-3 shrink-0 text-gray-500" />

@@ -317,6 +317,11 @@ class StoryVideoCreate(BaseModel):
         le=15,
         description="Seedance 2.0 動画のduration（秒）。4-15 の整数 (VIP tier のみ 10 秒超利用可)"
     )
+    seedance_mode: Optional[Literal['pro', 'fast']] = Field(
+        default=None,
+        description="Seedance 2.0 のモデルモード ('pro' or 'fast')。"
+                    "None の場合は環境変数 PIAPI_SEEDANCE_TASK_TYPE のデフォルト (Pro) 採用。"
+    )
     veo_duration: Optional[int] = Field(
         default=None,
         ge=4,
@@ -338,11 +343,13 @@ class StoryVideoCreate(BaseModel):
 
     @model_validator(mode='after')
     def validate_provider_specific_durations(self) -> Self:
-        """provider 固有の duration フィールドの cross-validator"""
+        """provider 固有の duration / mode フィールドの cross-validator"""
         if self.seedance_duration is not None and self.video_provider not in (None, VideoProvider.SEEDANCE):
             raise ValueError("seedance_duration is only valid for video_provider=seedance")
         if self.veo_duration is not None and self.video_provider not in (None, VideoProvider.VEO):
             raise ValueError("veo_duration is only valid for video_provider=veo")
+        if self.seedance_mode is not None and self.video_provider not in (None, VideoProvider.SEEDANCE):
+            raise ValueError("seedance_mode is only valid for video_provider=seedance")
         return self
 
     @model_validator(mode='after')

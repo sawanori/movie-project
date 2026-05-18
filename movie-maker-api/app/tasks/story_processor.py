@@ -115,6 +115,7 @@ async def process_story_video(video_id: str, video_provider_name: str = None, el
 
         # Seedance 用パラメータ
         seedance_duration = video_data.get("seedance_duration")
+        seedance_mode = video_data.get("seedance_mode")
 
         # プロバイダーを決定（引数 > DB > デフォルト）
         provider_name = video_provider_name or video_data.get("video_provider") or "runway"
@@ -166,7 +167,7 @@ async def process_story_video(video_id: str, video_provider_name: str = None, el
             # 通常モード: テキストプロンプトベース
             logger.info(f"Starting video generation with {provider.provider_name}: {video_id}, camera_work: {camera_work}, end_frame: {end_frame_image_url is not None}")
 
-            # Kling AI用の追加パラメータを構築
+            # プロバイダー別の追加パラメータを構築
             extra_params = {}
             if provider_name == "piapi_kling":
                 if kling_mode:
@@ -182,6 +183,10 @@ async def process_story_video(video_id: str, video_provider_name: str = None, el
                     all_elements = [image_url] + element_images
                     extra_params["element_images"] = all_elements[:4]  # 最大4枚
                     logger.info(f"Using Kling Elements with {len(extra_params['element_images'])} images")
+            elif provider_name == "seedance":
+                if seedance_mode:
+                    extra_params["mode"] = seedance_mode
+                    logger.info(f"Using Seedance mode: {seedance_mode}")
 
             # Duration決定: プロバイダー別に DB の値を使用、デフォルト 5 秒
             effective_duration = 5
@@ -286,6 +291,7 @@ async def process_story_video(video_id: str, video_provider_name: str = None, el
                     text_font=video_data.get("overlay_font", "NotoSansJP"),
                     text_color=video_data.get("overlay_color", "#FFFFFF"),
                     bgm_path=bgm_path,
+                    target_fps=None,
                 )
             except FFmpegError as e:
                 logger.warning(f"FFmpeg processing failed, using raw video: {e}")

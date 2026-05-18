@@ -345,6 +345,11 @@ export function graphToStoryVideoCreate(
     // 他プロバイダー (runway/domoai/hailuo) は duration 固定のため無視
   }
 
+  // Seedance モード (seedanceMode が指定されている場合のみ)
+  if (provider?.provider === 'seedance' && provider.seedanceMode) {
+    request.seedance_mode = provider.seedanceMode;
+  }
+
   // Kling専用パラメータ（プロバイダーがKlingの場合のみ）
   if (provider?.provider === 'piapi_kling') {
     if (klingMode) {

@@ -81,6 +81,8 @@ export interface ProviderNodeData extends BaseNodeData {
   // 動画時間 (秒)。null = プロバイダーのデフォルト/固定値を使う。
   // Kling は 5/10、Seedance は 5/10/15、他プロバイダーは固定 (null のみ)。
   duration: number | null;
+  // Seedance 選択時のモード (default: 'pro')
+  seedanceMode?: 'pro' | 'fast';
 }
 
 export interface CameraWorkNodeData extends BaseNodeData {
@@ -389,6 +391,7 @@ export function createDefaultNodeData(type: NodeType): WorkflowNodeData {
         provider: 'runway',
         aspectRatio: '9:16',
         duration: null,
+        seedanceMode: 'pro',
       };
     case 'cameraWork':
       return {
@@ -713,4 +716,6 @@ export interface StoryVideoCreateRequest {
   kling_duration?: 5 | 10;
   seedance_duration?: number;  // 4-15 の整数
   veo_duration?: number;  // 4 | 6 | 8 のいずれか
+  // Seedance モード
+  seedance_mode?: 'pro' | 'fast';
 }
