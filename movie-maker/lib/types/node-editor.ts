@@ -185,6 +185,9 @@ export interface DialogueNodeData extends BaseNodeData {
   // リップシンク (1 フィールドのみ)
   useLipSync: boolean; // default false。true で Hedra リップシンク経路
   ttsInstructions?: string;  // 感情/トーン指定。undefined = OpenAI プロバイダーのデフォルト適用
+  // カナ表記 (Voicevox AquesTalk カナ記法)
+  kanaText?: string;      // AquesTalk カナ表記 (ダンボ'ール 等)
+  useKanaMode?: boolean;  // カナ表記モード有効化。false (デフォルト) = セリフテキストを使用
   // 実行状態
   status: 'idle' | 'pending' | 'processing' | 'completed' | 'failed';
   progress: number;    // 0-100 (UI 表示用、ポーリング回数ベース)
@@ -487,6 +490,8 @@ export function createDefaultNodeData(type: NodeType): WorkflowNodeData {
         speed: 1.0,
         useLipSync: false,
         ttsInstructions: undefined,  // undefined = デフォルト適用。空文字ではなく undefined にすること (AC10a)
+        kanaText: undefined,
+        useKanaMode: false,
         status: 'idle',
         progress: 0,
         generationId: null,

@@ -53,6 +53,7 @@ class TestTTSProcessor:
             language="ja",
             speed=1.0,
             instructions=None,
+            is_kana=False,
         )
 
         # DB が completed で更新されたことを確認

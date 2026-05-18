@@ -31,6 +31,15 @@ class DialogueCreateRequest(BaseModel):
             "ElevenLabs プロバイダーでは無視される。"
         ),
     )
+    kana_text: Optional[str] = Field(
+        default=None,
+        max_length=5000,
+        description=(
+            "AquesTalk カナ表記でアクセント核指定 (Voicevox 専用)。"
+            "指定した場合、text の代わりにこの値で音声合成し is_kana=True モードで呼び出す。"
+            "例: ダンボ'ール (「ぼ」を強くしたい場合)"
+        ),
+    )
 
 
 class DialogueCreateResponse(BaseModel):

@@ -206,6 +206,34 @@ export function DialogueNode({ data, selected, id }: DialogueNodeProps) {
         />
       </div>
 
+      {/* カナ表記モード */}
+      <div className="space-y-1 p-2 rounded bg-[#1a1a1a] border border-[#2a2a2a]">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={data.useKanaMode ?? false}
+            onChange={(e) => updateNodeData({ useKanaMode: e.target.checked })}
+            className="accent-[#fce300]"
+          />
+          <span className="text-xs text-gray-300">カナ表記モード (Voicevox 専用)</span>
+        </label>
+        {data.useKanaMode && (
+          <>
+            <textarea
+              value={data.kanaText ?? ''}
+              onChange={(e) => updateNodeData({ kanaText: e.target.value })}
+              placeholder="ダンボ'ール (= ぼ にアクセント) / ' でアクセント核、_ で平板、? で疑問文"
+              maxLength={5000}
+              rows={2}
+              className={cn(nodeInputClassName, 'text-xs leading-relaxed')}
+            />
+            <p className="text-[10px] text-gray-500">
+              AquesTalk 形式 (カタカナ + &apos; / _ / ?)。指定時はセリフよりこちらが優先されます。
+            </p>
+          </>
+        )}
+      </div>
+
       {/* 感情・トーン パネル (折りたたみ) */}
       <div>
         {/* ヘッダ (クリックで展開/折りたたみ) */}

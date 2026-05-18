@@ -51,6 +51,7 @@ class TTSProviderInterface(ABC):
         language: str = "ja",
         speed: float = 1.0,
         instructions: Optional[str] = None,
+        is_kana: bool = False,
     ) -> str:
         """
         音声合成を開始
@@ -61,6 +62,9 @@ class TTSProviderInterface(ABC):
             language: 言語コード（デフォルト: "ja"）
             speed: 読み上げ速度（0.25〜4.0）
             instructions: 感情/トーン指定（gpt-4o-mini-tts 等でサポート。非対応プロバイダーは無視）
+            is_kana: AquesTalk カナ表記モード（Voicevox 専用）。True の場合 text は
+                     AquesTalk カナ記法（例: ダンボ'ール）として扱われる。
+                     他プロバイダーでは無視される。デフォルト: False
 
         Returns:
             str: task_id（非同期プロバイダー）またはオーディオ URL（同期プロバイダー）

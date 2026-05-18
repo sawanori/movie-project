@@ -76,12 +76,13 @@ async def process_dialogue_generation(generation_id: str) -> None:
         # use_lip_sync は新規カラム。default False で既存レコードを後方互換にする
         use_lip_sync = record.get("use_lip_sync", False)
         tts_instructions = record.get("tts_instructions")  # None の場合はデフォルト適用
+        kana_text = record.get("kana_text")  # None の場合は通常テキスト読み上げ
 
         # 2. ステータスを processing に更新
         await update_dialogue_status(generation_id, "processing")
         logger.info(
             f"Starting dialogue processing: {generation_id} "
-            f"(use_lip_sync={use_lip_sync})"
+            f"(use_lip_sync={use_lip_sync}, is_kana={bool(kana_text)})"
         )
 
         # 3-8. メイン処理 (タイムアウト付き)
@@ -96,6 +97,7 @@ async def process_dialogue_generation(generation_id: str) -> None:
                 speed=speed,
                 use_lip_sync=use_lip_sync,
                 tts_instructions=tts_instructions,
+                kana_text=kana_text,
             ),
             timeout=PROCESSING_TIMEOUT_SECONDS,
         )
@@ -148,6 +150,7 @@ async def _process_core(
     speed: float,
     use_lip_sync: bool,
     tts_instructions: Optional[str] = None,
+    kana_text: Optional[str] = None,
 ) -> None:
     """
     コア処理 (asyncio.wait_for でラップされる)
@@ -165,6 +168,7 @@ async def _process_core(
         user_id=user_id,
         generation_id=generation_id,
         tts_instructions=tts_instructions,
+        kana_text=kana_text,
     )
 
     # 4-7. use_lip_sync で経路分岐
@@ -347,6 +351,7 @@ async def _run_tts_and_get_audio_url(
     user_id: str,
     generation_id: str,
     tts_instructions: Optional[str] = None,
+    kana_text: Optional[str] = None,
 ) -> str:
     """
     TTS を内部的に実行して audio_url を返す
@@ -355,13 +360,19 @@ async def _run_tts_and_get_audio_url(
 
     B3 解決: process_tts_generation を直列 await し、ポーリングループは使わない。
 
+    kana_text が指定された場合、text の代わりに kana_text を TTS レコードに保存し、
+    is_kana=True モード (AquesTalk カナ表記) で Voicevox を呼び出す。
+
     Args:
-        text: 読み上げテキスト
+        text: 読み上げテキスト（kana_text が指定されている場合は表示・保存用）
         voice_id: TTS 音声 ID
         language: 言語コード
         speed: 読み上げ速度
         user_id: ユーザー ID
         generation_id: Dialogue 生成 ID (tts_generation_id FK 記録用)
+        tts_instructions: 感情/トーン指定
+        kana_text: AquesTalk カナ表記 (Voicevox 専用)。指定時は TTS 合成に kana_text を
+                   使い is_kana=True で呼び出す
 
     Returns:
         str: audio_url
@@ -369,14 +380,20 @@ async def _run_tts_and_get_audio_url(
     Raises:
         ValueError: TTS が "failed" ステータスになった場合
     """
-    # 1. TTS 生成レコードを作成
+    # kana_text が指定されている場合は is_kana=True モードで合成する
+    effective_text = kana_text if kana_text else text
+    effective_is_kana = bool(kana_text)
+
+    # 1. TTS 生成レコードを作成 (kana_text も保存する)
     tts_record = await create_tts_generation(
         user_id=user_id,
-        text=text,
+        text=effective_text,
         voice_id=voice_id,
         language=language,
         speed=speed,
         instructions=tts_instructions,
+        kana_text=kana_text,
+        is_kana=effective_is_kana,
     )
     tts_generation_id = tts_record["id"]
 

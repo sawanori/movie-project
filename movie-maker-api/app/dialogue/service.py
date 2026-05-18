@@ -22,6 +22,7 @@ async def create_dialogue_generation(
     speed: float = 1.0,
     use_lip_sync: bool = False,
     tts_instructions: Optional[str] = None,
+    kana_text: Optional[str] = None,
 ) -> dict:
     """
     dialogue_generations テーブルにレコードを作成して返す
@@ -35,6 +36,8 @@ async def create_dialogue_generation(
         speed: 読み上げ速度
         use_lip_sync: True の場合 Hedra でリップシンクを行う (デフォルト: False)
         tts_instructions: 感情/トーン指定 (gpt-4o-mini-tts のみ適用)。None の場合はデフォルト適用。
+        kana_text: AquesTalk カナ表記 (Voicevox 専用)。指定時は text の代わりに使用し
+                   is_kana=True で音声合成する。例: ダンボ'ール
 
     Returns:
         dict: 作成された生成レコード
@@ -53,6 +56,7 @@ async def create_dialogue_generation(
         # provider には DB DEFAULT がないため service 層で必ず明示的に設定する (N3 解決)
         "provider": settings.TTS_PROVIDER,
         "tts_instructions": tts_instructions,
+        "kana_text": kana_text,
     }
 
     response = supabase.table("dialogue_generations").insert(record_data).execute()

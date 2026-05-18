@@ -50,10 +50,13 @@ async def process_tts_generation(generation_id: str) -> None:
         language = record.get("language", "ja")
         speed = record.get("speed", 1.0)
         instructions = record.get("instructions")  # None の場合はプロバイダーのデフォルトが適用される
+        # kana_text が存在する場合は is_kana=True で Voicevox に渡す
+        kana_text = record.get("kana_text")
+        is_kana = bool(kana_text)
 
         # ステータスを processing に更新
         _update_status(supabase, generation_id, "processing")
-        logger.info(f"Starting TTS processing: {generation_id}")
+        logger.info(f"Starting TTS processing: {generation_id}, is_kana={is_kana}")
 
         # TTS プロバイダーを取得
         provider = get_tts_provider()
@@ -65,6 +68,7 @@ async def process_tts_generation(generation_id: str) -> None:
             language=language,
             speed=speed,
             instructions=instructions,
+            is_kana=is_kana,
         )
 
         if provider.is_synchronous:

@@ -19,6 +19,8 @@ async def create_tts_generation(
     language: str = "ja",
     speed: float = 1.0,
     instructions: Optional[str] = None,
+    kana_text: Optional[str] = None,
+    is_kana: bool = False,
 ) -> dict:
     """
     TTS 生成レコードを DB に作成して返す
@@ -30,6 +32,8 @@ async def create_tts_generation(
         language: 言語コード
         speed: 読み上げ速度
         instructions: 感情/トーン指定 (gpt-4o-mini-tts のみ適用)。None の場合はデフォルト適用
+        kana_text: AquesTalk カナ表記 (Voicevox 専用)。DB への保存のみ目的。
+        is_kana: is_kana モードかどうか。tts_processor で generate_speech に渡すために記録する。
 
     Returns:
         dict: 作成された生成レコード
@@ -44,6 +48,7 @@ async def create_tts_generation(
         "speed": speed,
         "status": "pending",
         "instructions": instructions,
+        "kana_text": kana_text,
     }
 
     response = supabase.table("tts_generations").insert(record_data).execute()

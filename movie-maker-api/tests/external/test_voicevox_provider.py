@@ -426,3 +426,90 @@ class TestGetTTSProviderFactory:
             get_tts_provider("unknown_provider_xyz")
 
         assert any("unknown_provider_xyz" in r.message for r in caplog.records)
+
+
+class TestVoicevoxIsKanaMode:
+    """is_kana パラメータ (AquesTalk カナ表記モード) のテスト"""
+
+    def _make_mock_client(self, query_data=None, audio_content=b"WAV"):
+        """audio_query + synthesis の 2 ステップ mock を生成するヘルパー"""
+        mock_query_response = MagicMock()
+        mock_query_response.raise_for_status = MagicMock()
+        mock_query_response.json = MagicMock(return_value=query_data or {"speedScale": 1.0})
+
+        mock_synth_response = MagicMock()
+        mock_synth_response.raise_for_status = MagicMock()
+        mock_synth_response.content = audio_content
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=[mock_query_response, mock_synth_response])
+        return mock_client
+
+    @pytest.mark.asyncio
+    async def test_generate_speech_with_is_kana_true(self):
+        """is_kana=True の場合、audio_query の params に is_kana='true' が含まれる"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+        mock_client = self._make_mock_client()
+
+        with patch("app.external.voicevox_provider.httpx.AsyncClient", return_value=mock_client):
+            with patch("app.external.voicevox_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/tts/x.wav")
+
+                await provider.generate_speech(
+                    text="ダンボ'ール",
+                    voice_id="1",
+                    is_kana=True,
+                )
+
+        # audio_query (1 回目の POST) の params を確認
+        first_call = mock_client.post.call_args_list[0]
+        params = first_call.kwargs.get("params", {})
+        assert params.get("is_kana") == "true"
+
+    @pytest.mark.asyncio
+    async def test_generate_speech_with_is_kana_false_default(self):
+        """is_kana=False (デフォルト) の場合、audio_query の params に is_kana='false' が含まれる"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+        mock_client = self._make_mock_client()
+
+        with patch("app.external.voicevox_provider.httpx.AsyncClient", return_value=mock_client):
+            with patch("app.external.voicevox_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/tts/x.wav")
+
+                await provider.generate_speech(
+                    text="こんにちは",
+                    voice_id="1",
+                    # is_kana は省略 → デフォルト False
+                )
+
+        first_call = mock_client.post.call_args_list[0]
+        params = first_call.kwargs.get("params", {})
+        assert params.get("is_kana") == "false"
+
+    @pytest.mark.asyncio
+    async def test_generate_speech_is_kana_explicit_false(self):
+        """is_kana=False を明示的に渡した場合も audio_query の params が is_kana='false'"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+        mock_client = self._make_mock_client()
+
+        with patch("app.external.voicevox_provider.httpx.AsyncClient", return_value=mock_client):
+            with patch("app.external.voicevox_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/tts/x.wav")
+
+                await provider.generate_speech(
+                    text="テスト",
+                    voice_id="3",
+                    is_kana=False,
+                )
+
+        first_call = mock_client.post.call_args_list[0]
+        params = first_call.kwargs.get("params", {})
+        assert params.get("is_kana") == "false"

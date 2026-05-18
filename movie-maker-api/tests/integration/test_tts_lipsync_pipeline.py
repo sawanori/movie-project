@@ -148,6 +148,7 @@ async def test_tts_to_lipsync_full_pipeline(mock_supabase, mock_tts_provider, mo
         language="ja",
         speed=1.0,
         instructions=None,
+        is_kana=False,
     )
 
     # LipSync phase — use the TTS-produced audio URL

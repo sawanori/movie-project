@@ -71,6 +71,7 @@ class ElevenLabsProvider(TTSProviderInterface):
         language: str = "ja",
         speed: float = 1.0,
         instructions: Optional[str] = None,
+        is_kana: bool = False,
     ) -> str:
         """
         ElevenLabs API を使用して音声を生成し、R2 にアップロードして URL を返す
@@ -81,6 +82,7 @@ class ElevenLabsProvider(TTSProviderInterface):
             language: 言語コード（ElevenLabs では model_id に影響）
             speed: 読み上げ速度
             instructions: 感情/トーン指定（ElevenLabs では未サポートのため無視）
+            is_kana: 無視される（Voicevox 専用パラメータ）
 
         Returns:
             str: R2 にアップロードされた音声の URL

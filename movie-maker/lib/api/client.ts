@@ -2017,6 +2017,7 @@ type DialogueCreatePayload = {
   speed?: number;
   use_lip_sync?: boolean;
   tts_instructions?: string;
+  kana_text?: string;
 };
 
 type DialogueCreateResult = {

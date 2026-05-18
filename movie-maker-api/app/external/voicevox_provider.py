@@ -42,16 +42,21 @@ class VoicevoxProvider(TTSProviderInterface):
         language: str = "ja",
         speed: float = 1.0,
         instructions: Optional[str] = None,
+        is_kana: bool = False,
     ) -> str:
         """
         Voicevox で TTS 生成 (audio_query + synthesis の 2 ステップ)
 
         Args:
-            text: 読み上げテキスト
+            text: 読み上げテキスト。is_kana=True の場合は AquesTalk カナ記法
+                  (例: ダンボ'ール) でアクセント核を指定できる
             voice_id: Voicevox スタイル ID (数値文字列)
             language: 言語コード (Voicevox は日本語専用; 引数は互換性のため受け取る)
             speed: 読み上げ速度 (Voicevox 推奨範囲 0.5-2.0 にクランプ)
             instructions: 無視される (Voicevox 非サポート; 初回のみ WARN ログ)
+            is_kana: True の場合 AquesTalk カナ表記モードで audio_query を呼び出す。
+                     text に AquesTalk カナ記法 (例: ダンボ'ール) を渡してアクセント核を
+                     指定する。False (デフォルト) の場合は通常テキスト読み上げ。
 
         Returns:
             str: R2 にアップロードされた WAV の URL
@@ -80,9 +85,14 @@ class VoicevoxProvider(TTSProviderInterface):
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 # Step 1: audio_query でクエリデータを取得
+                # is_kana=True の場合、AquesTalk カナ記法でアクセント核を指定する
                 query_response = await client.post(
                     f"{self._api_url}/audio_query",
-                    params={"text": text, "speaker": speaker_id},
+                    params={
+                        "text": text,
+                        "speaker": speaker_id,
+                        "is_kana": str(is_kana).lower(),  # "true" or "false"
+                    },
                 )
                 query_response.raise_for_status()
                 query_data = query_response.json()

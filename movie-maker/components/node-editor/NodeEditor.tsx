@@ -557,6 +557,10 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
 
       try {
         // 5. dialogueApi.create() を呼び出し
+        const kanaTextValue = dialogueData.useKanaMode
+          ? (dialogueData.kanaText?.trim() || undefined)
+          : undefined;
+
         const result = await dialogueApi.create({
           video_url: videoUrl,
           text: dialogueData.text,
@@ -564,6 +568,7 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
           speed: dialogueData.speed,
           use_lip_sync: dialogueData.useLipSync,
           tts_instructions: dialogueData.ttsInstructions?.trim() || undefined,
+          kana_text: kanaTextValue,
         });
         const generationId = result.id;
 

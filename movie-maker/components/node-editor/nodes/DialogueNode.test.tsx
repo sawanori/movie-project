@@ -857,6 +857,85 @@ describe('DialogueNode', () => {
     });
   });
 
+  // ====================================================================
+  // カナ表記モード 関連テスト
+  // ====================================================================
+
+  describe('kana mode: checkbox hidden textarea when useKanaMode=false', () => {
+    it('should not show kana textarea when useKanaMode is false (default)', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      render(<DialogueNode {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('カナ表記モード (Voicevox 専用)')).toBeDefined();
+      });
+
+      expect(
+        screen.queryByPlaceholderText(/ダンボ'ール/)
+      ).toBeNull();
+    });
+  });
+
+  describe('kana mode: textarea shown when useKanaMode=true', () => {
+    it('should show kana textarea when useKanaMode is true', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const kanaData: DialogueNodeData = {
+        ...defaultData,
+        useKanaMode: true,
+        kanaText: '',
+      };
+
+      render(<DialogueNode {...defaultProps} data={kanaData} />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByPlaceholderText(/ダンボ'ール/)
+        ).toBeDefined();
+      });
+
+      expect(
+        screen.getByText(/AquesTalk 形式/)
+      ).toBeDefined();
+    });
+  });
+
+  describe('kana mode: checkbox toggle dispatches nodeDataUpdate', () => {
+    it('should dispatch nodeDataUpdate with { useKanaMode: true } when checked', async () => {
+      mockTtsApi.listVoices.mockResolvedValue([]);
+      const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent');
+
+      render(
+        <DialogueNode
+          {...defaultProps}
+          data={{ ...defaultData, useKanaMode: false }}
+        />
+      );
+
+      const checkbox = await waitFor(() =>
+        screen.getByRole('checkbox', { name: /カナ表記モード/ })
+      );
+      expect((checkbox as HTMLInputElement).checked).toBe(false);
+
+      fireEvent.click(checkbox);
+
+      const dispatched = dispatchEventSpy.mock.calls.map(
+        (call) => call[0] as CustomEvent
+      );
+      const updateEvent = dispatched.find(
+        (e) =>
+          e.type === 'nodeDataUpdate' &&
+          (e.detail as { updates?: { useKanaMode?: boolean } })?.updates
+            ?.useKanaMode === true
+      );
+      expect(updateEvent).toBeDefined();
+      expect(
+        (updateEvent?.detail as { updates: { useKanaMode: boolean } }).updates
+      ).toEqual({ useKanaMode: true });
+
+      dispatchEventSpy.mockRestore();
+    });
+  });
+
   describe('handle rendering', () => {
     it('should render input handle (target) on the left', async () => {
       mockTtsApi.listVoices.mockResolvedValue([]);

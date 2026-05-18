@@ -52,6 +52,91 @@ describe('NodeEditor createDialogueNodeFromPrompt listener', () => {
 })
 
 // =============================================================================
+// handleStartDialogue: kana_text 送信 / 非送信 ロジックテスト
+// =============================================================================
+
+/**
+ * NodeEditor.tsx の handleStartDialogue 内 kana_text 正規化ロジックを
+ * 純粋関数として抽出して検証する。
+ *
+ * 実際の実装:
+ *   const kanaTextValue = dialogueData.useKanaMode
+ *     ? (dialogueData.kanaText?.trim() || undefined)
+ *     : undefined;
+ */
+function resolveKanaText(useKanaMode: boolean, kanaText: string | undefined): string | undefined {
+  return useKanaMode ? (kanaText?.trim() || undefined) : undefined
+}
+
+describe('handleStartDialogue: kana_text resolution', () => {
+  it('sends kana_text when useKanaMode=true and kanaText is set', () => {
+    const mockCreate = vi.fn().mockResolvedValue({ id: 'gen-kana-001' })
+
+    const kanaText = resolveKanaText(true, "ダンボ'ール")
+
+    mockCreate({
+      video_url: 'https://example.com/video.mp4',
+      text: 'だんぼーる',
+      voice_id: 'v1',
+      speed: 1.0,
+      use_lip_sync: false,
+      kana_text: kanaText,
+    })
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kana_text: "ダンボ'ール",
+      })
+    )
+  })
+
+  it('omits kana_text when useKanaMode=false', () => {
+    const mockCreate = vi.fn().mockResolvedValue({ id: 'gen-kana-002' })
+
+    const kanaText = resolveKanaText(false, "ダンボ'ール")
+
+    const payload: {
+      video_url: string
+      text: string
+      voice_id: string
+      speed: number
+      use_lip_sync: boolean
+      kana_text?: string
+    } = {
+      video_url: 'https://example.com/video.mp4',
+      text: 'だんぼーる',
+      voice_id: 'v1',
+      speed: 1.0,
+      use_lip_sync: false,
+      kana_text: kanaText,
+    }
+
+    mockCreate(payload)
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kana_text: undefined,
+      })
+    )
+  })
+
+  it('omits kana_text when useKanaMode=true but kanaText is empty string', () => {
+    const result = resolveKanaText(true, '')
+    expect(result).toBeUndefined()
+  })
+
+  it('omits kana_text when useKanaMode=true but kanaText is whitespace only', () => {
+    const result = resolveKanaText(true, '   ')
+    expect(result).toBeUndefined()
+  })
+
+  it('trims surrounding whitespace from kanaText when useKanaMode=true', () => {
+    const result = resolveKanaText(true, "  ダンボ'ール  ")
+    expect(result).toBe("ダンボ'ール")
+  })
+})
+
+// =============================================================================
 // handleStartDialogue: dialogueApi.create への tts_instructions 伝播テスト (AC10a)
 // NodeEditor 内部ロジックを独立した純粋関数として抽出して検証する
 // =============================================================================

@@ -60,6 +60,7 @@ class OpenAITTSProvider(TTSProviderInterface):
         language: str = "ja",
         speed: float = 1.0,
         instructions: Optional[str] = None,
+        is_kana: bool = False,
     ) -> str:
         """
         OpenAI TTS API を使用して音声を生成し、R2 にアップロードして URL を返す
@@ -71,6 +72,7 @@ class OpenAITTSProvider(TTSProviderInterface):
             speed: 読み上げ速度（0.25〜4.0）
             instructions: 感情/トーン指定（例: "穏やかで自然な日本語のナレーション"）。
                           未指定かつ language="ja" の場合はデフォルト日本語 instructions を使用。
+            is_kana: 無視される（Voicevox 専用パラメータ）
 
         Returns:
             str: R2 にアップロードされた音声の URL
