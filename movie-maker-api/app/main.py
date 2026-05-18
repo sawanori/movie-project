@@ -6,6 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
+
 # ログ設定
 logging.basicConfig(
     level=logging.INFO,
