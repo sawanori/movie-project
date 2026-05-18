@@ -238,7 +238,7 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
         <div className="mt-3 border-t border-[#2a2a2a] pt-3">
           <button
             onClick={() => setIsSeedanceAdvancedOpen((o) => !o)}
-            className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-white"
+            className="flex items-center gap-2 text-[10px] text-gray-400 hover:text-white"
           >
             {isSeedanceAdvancedOpen ? (
               <ChevronDown className="w-3 h-3" />
@@ -246,6 +246,11 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
               <ChevronRight className="w-3 h-3" />
             )}
             Seedance 詳細設定
+            {data.seedanceResolution === '1080p' && (
+              <span className="px-1.5 py-0.5 text-[10px] bg-yellow-500/20 text-yellow-300 rounded border border-yellow-500/40">
+                ⚠ 1080p (VIP)
+              </span>
+            )}
           </button>
 
           {isSeedanceAdvancedOpen && (

@@ -1241,10 +1241,10 @@ describe('graphToStoryVideoCreate - Seedance 詳細パラメータ', () => {
     expect(result.seedance_camera_fixed).toBeUndefined();
   });
 
-  // seedance_camera_fixed は default false として常に送信される
-  it('seedanceCameraFixed 未指定 → request.seedance_camera_fixed === false (常に送信)', () => {
+  // seedanceCameraFixed=undefined の場合、フィールドを payload に含めない (m-4 対応)
+  it('seedanceCameraFixed 未指定 → request.seedance_camera_fixed は undefined (payload に含まれない)', () => {
     const nodes = createSeedanceNodes({ seedanceCameraFixed: undefined });
     const result = graphToStoryVideoCreate(nodes, createBasicEdges());
-    expect(result.seedance_camera_fixed).toBe(false);
+    expect(result.seedance_camera_fixed).toBeUndefined();
   });
 });

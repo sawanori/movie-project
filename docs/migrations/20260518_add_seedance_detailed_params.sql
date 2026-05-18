@@ -14,6 +14,6 @@ ALTER TABLE video_generations
 
 -- コメント (Supabase ダッシュボードで参照しやすく)
 COMMENT ON COLUMN video_generations.seedance_generate_audio IS 'Seedance 2.0: BGM 自動生成 ON/OFF (default: False)';
-COMMENT ON COLUMN video_generations.seedance_seed IS 'Seedance 2.0: 再現性シード値 (0-2147483647, 32-bit signed int)';
+COMMENT ON COLUMN video_generations.seedance_seed IS 'Seedance 再現性 seed (現在: 32-bit signed int 0-2147483647、将来 PiAPI 仕様変更時の拡張余地として BIGINT 採用)';
 COMMENT ON COLUMN video_generations.seedance_resolution IS 'Seedance 2.0: 出力解像度 480p/720p/1080p (1080p は VIP プラン必須)';
 COMMENT ON COLUMN video_generations.seedance_camera_fixed IS 'Seedance 2.0: カメラ固定モード';

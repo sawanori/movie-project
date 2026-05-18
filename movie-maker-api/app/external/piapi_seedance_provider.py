@@ -5,10 +5,13 @@ PiAPI経由で Seedance 2.0 モデルによる動画生成を行うプロバイ�
 VideoProviderInterface を実装。
 
 認証: PIAPI_API_KEY (既存設定と共用)
-Phase 1 制限:
-  - audio は常に OFF（APIに送信しない）
-  - video_references / audio_references / parent_task_id は未対応
-  - VIP以外 (standard) は480p のみ
+サポートパラメータ (UI から制御可能):
+  - prompt / duration (4-15秒、1秒刻み) / aspect_ratio / resolution
+  - seedance_mode (pro/fast)、generate_audio (BGM)、seed (再現性)、camerafixed
+  - 1080p は -vip task_type 必須 (router で 422 reject)
+未対応:
+  - video_references / audio_references / parent_task_id (omni-reference モード)
+  - last_frame_url (first-last-frames モード)
 
 API: POST/GET https://api.piapi.ai/api/v1/task
 """

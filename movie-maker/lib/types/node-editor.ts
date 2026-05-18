@@ -731,5 +731,5 @@ export interface StoryVideoCreateRequest {
   seedance_generate_audio?: boolean;
   seedance_seed?: number;
   seedance_resolution?: '480p' | '720p' | '1080p';
-  seedance_camera_fixed?: boolean;
+  seedance_camera_fixed?: boolean | null;
 }

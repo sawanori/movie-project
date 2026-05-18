@@ -3768,6 +3768,12 @@ async def create_story_video(
     user_id = current_user["user_id"]
     video_id = str(uuid.uuid4())
 
+    # Fail-Fast: Seedance 1080p + 非 VIP チェック (video_data 構築前に reject)
+    _check_seedance_1080p_vip_requirement(
+        request.seedance_resolution,
+        settings.PIAPI_SEEDANCE_TASK_TYPE,
+    )
+
     # オーバーレイ設定を辞書に変換
     overlay_text = None
     overlay_position = None
@@ -3820,12 +3826,6 @@ async def create_story_video(
         "seedance_resolution": request.seedance_resolution,
         "seedance_camera_fixed": request.seedance_camera_fixed,
     }
-
-    # Seedance 1080p + 非 VIP チェック
-    _check_seedance_1080p_vip_requirement(
-        request.seedance_resolution,
-        settings.PIAPI_SEEDANCE_TASK_TYPE,
-    )
 
     # Kling Elements用の画像URLリストを取得
     element_urls = [e.image_url for e in request.element_images] if request.element_images else None

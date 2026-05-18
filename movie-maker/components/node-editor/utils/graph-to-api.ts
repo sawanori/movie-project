@@ -359,7 +359,9 @@ export function graphToStoryVideoCreate(
     if (provider.seedanceResolution) {
       request.seedance_resolution = provider.seedanceResolution;
     }
-    request.seedance_camera_fixed = provider.seedanceCameraFixed ?? false;
+    if (provider.seedanceCameraFixed !== undefined) {
+      request.seedance_camera_fixed = provider.seedanceCameraFixed;
+    }
   }
 
   // Kling専用パラメータ（プロバイダーがKlingの場合のみ）

@@ -259,7 +259,7 @@ export const videosApi = {
     seedance_generate_audio?: boolean;  // Seedance BGM 自動生成 ON/OFF
     seedance_seed?: number;  // Seedance 再現性シード値
     seedance_resolution?: '480p' | '720p' | '1080p';  // Seedance 出力解像度
-    seedance_camera_fixed?: boolean;  // Seedance カメラ固定モード
+    seedance_camera_fixed?: boolean | null;  // Seedance カメラ固定モード
     veo_duration?: number;  // Veo 3 動画のduration（秒）。4 | 6 | 8 のいずれか
   }) => fetchWithAuth("/api/v1/videos/story", { method: "POST", body: JSON.stringify(data) }),
 

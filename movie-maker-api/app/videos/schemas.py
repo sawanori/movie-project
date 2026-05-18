@@ -336,9 +336,9 @@ class StoryVideoCreate(BaseModel):
         default=None,
         description="Seedance: 出力解像度。1080p は VIP プラン必須"
     )
-    seedance_camera_fixed: bool = Field(
-        default=False,
-        description="Seedance: カメラ固定モード (default: False。商品撮影/静物向け)"
+    seedance_camera_fixed: Optional[bool] = Field(
+        default=None,
+        description="Seedance カメラ固定モード (静物撮影等)。None=API デフォルト (False) に従う"
     )
     veo_duration: Optional[int] = Field(
         default=None,
@@ -372,15 +372,16 @@ class StoryVideoCreate(BaseModel):
             seedance_fields_with_values['seedance_duration'] = self.seedance_duration
         if self.seedance_mode is not None:
             seedance_fields_with_values['seedance_mode'] = self.seedance_mode
-        # generate_audio: bool default=False。False はデフォルト値のため mismatch チェック除外
+        # Note: Frontend may send default False even for non-seedance providers
+        # (graph-to-api.ts always sends generate_audio), so we only flag True as mismatch.
         if self.seedance_generate_audio is True:
             seedance_fields_with_values['seedance_generate_audio'] = self.seedance_generate_audio
         if self.seedance_seed is not None:
             seedance_fields_with_values['seedance_seed'] = self.seedance_seed
         if self.seedance_resolution is not None:
             seedance_fields_with_values['seedance_resolution'] = self.seedance_resolution
-        # camera_fixed: bool default=False。False はデフォルト値のため mismatch チェック除外
-        if self.seedance_camera_fixed is True:
+        # camera_fixed: Optional[bool]。None はデフォルト (API 任せ) のため mismatch チェック除外、True/False は両方 mismatch 対象
+        if self.seedance_camera_fixed is not None:
             seedance_fields_with_values['seedance_camera_fixed'] = self.seedance_camera_fixed
 
         for field_name in seedance_fields_with_values:

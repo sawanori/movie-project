@@ -217,13 +217,22 @@ class TestSeedanceCrossValidator:
         ))
         assert obj.seedance_generate_audio is False
 
-    def test_seedance_camera_fixed_false_default_with_any_provider_valid(self):
-        """seedance_camera_fixed=False (default) + provider=runway → valid (default 値は検査しない)"""
+    def test_seedance_camera_fixed_none_default_with_any_provider_valid(self):
+        """seedance_camera_fixed=None (new default) + provider=runway → valid (None は mismatch 対象外)"""
         obj = StoryVideoCreate(**_make_request(
-            seedance_camera_fixed=False,
+            seedance_camera_fixed=None,
             video_provider="runway",
         ))
-        assert obj.seedance_camera_fixed is False
+        assert obj.seedance_camera_fixed is None
+
+    def test_seedance_camera_fixed_false_with_non_seedance_provider_raises(self):
+        """seedance_camera_fixed=False (explicit) + provider=runway → ValidationError (None でない True/False は mismatch 対象)"""
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            StoryVideoCreate(**_make_request(
+                seedance_camera_fixed=False,
+                video_provider="runway",
+            ))
 
 
 # ===========================================================================
@@ -238,7 +247,8 @@ class TestSeedanceDefaults:
         assert obj.seedance_generate_audio is False
         assert obj.seedance_seed is None
         assert obj.seedance_resolution is None
-        assert obj.seedance_camera_fixed is False
+        # seedance_camera_fixed は Optional[bool] default=None (M-1 Design Doc 整合)
+        assert obj.seedance_camera_fixed is None
 
     def test_existing_seedance_fields_still_work(self):
         """既存 seedance_duration / seedance_mode は引き続き動作すること"""

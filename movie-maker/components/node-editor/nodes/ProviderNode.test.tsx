@@ -395,8 +395,6 @@ describe('ProviderNode - Seedance 速度モード', () => {
     const eventSpy = vi.fn();
     window.addEventListener('nodeDataUpdate', eventSpy);
 
-    render(<ProviderNode {...defaultProps} data={seedanceData} />);
-
     // 速度モード select は 3 番目 (アスペクト比、動画時間、速度モード)
     const { container } = render(<ProviderNode {...defaultProps} data={seedanceData} />);
     const selects = container.querySelectorAll('select');
@@ -549,6 +547,22 @@ describe('ProviderNode - Seedance 詳細設定', () => {
     fireEvent.click(screen.getByText('Seedance 詳細設定'));
 
     expect(screen.queryByText(/VIP プラン契約が必要/)).toBeNull();
+  });
+
+  // F-7c (m-3): resolution=1080p の場合、折りたたみが閉じていても赤バッジが見える
+  it('F-7c: resolution=1080p の場合、詳細設定が閉じていても「⚠ 1080p (VIP)」バッジが表示される', () => {
+    const data1080p: ProviderNodeData = { ...seedanceData, seedanceResolution: '1080p' };
+    render(<ProviderNode {...defaultProps} data={data1080p} />);
+
+    // 折りたたみは閉じたまま（クリックしない）
+    expect(screen.getByText('⚠ 1080p (VIP)')).not.toBeNull();
+  });
+
+  // F-7d (m-3): resolution=720p の場合、バッジは表示されない
+  it('F-7d: resolution=720p の場合、「⚠ 1080p (VIP)」バッジが表示されない', () => {
+    render(<ProviderNode {...defaultProps} data={seedanceData} />);
+
+    expect(screen.queryByText('⚠ 1080p (VIP)')).toBeNull();
   });
 
   // F-8: カメラ固定チェックボックス ON → seedanceCameraFixed=true
