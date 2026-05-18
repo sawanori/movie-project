@@ -335,10 +335,14 @@ export function graphToStoryVideoCreate(
   if (provider?.duration != null) {
     if (provider.provider === 'piapi_kling' && (provider.duration === 5 || provider.duration === 10)) {
       request.kling_duration = provider.duration;
-    } else if (provider.provider === 'seedance' && (provider.duration === 5 || provider.duration === 10 || provider.duration === 15)) {
-      request.seedance_duration = provider.duration;
+    } else if (provider.provider === 'seedance') {
+      request.seedance_duration = Math.min(15, Math.max(4, Math.round(provider.duration)));
+    } else if (provider.provider === 'veo') {
+      const veoPresets = [4, 6, 8];
+      const validVeoDuration = veoPresets.includes(provider.duration) ? provider.duration : 8;
+      request.veo_duration = validVeoDuration;
     }
-    // 他プロバイダー (runway/veo/domoai/hailuo) は duration 固定のため無視
+    // 他プロバイダー (runway/domoai/hailuo) は duration 固定のため無視
   }
 
   // Kling専用パラメータ（プロバイダーがKlingの場合のみ）

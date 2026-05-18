@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import { Settings, Info } from 'lucide-react';
 import {
@@ -43,14 +43,18 @@ const HANDLE_PROVIDER_COMPAT: Record<string, VideoProvider[]> = {
   [HANDLE_IDS.HAILUO_END_FRAME_INPUT]: ['hailuo'],
 };
 
-// プロバイダー別の動画時間選択肢。空配列 = duration 設定 UI を表示しない (固定/自動)。
-const DURATION_OPTIONS: Record<VideoProvider, number[]> = {
-  runway: [],          // 5秒固定
-  veo: [],             // プロバイダーが自動決定 (6〜10秒)
-  domoai: [],          // 固定
-  hailuo: [],          // 6秒固定
-  piapi_kling: [5, 10],
-  seedance: [5, 10, 15],
+type DurationConfig =
+  | { type: 'fixed'; value: number }
+  | { type: 'preset'; presets: number[]; default: number }
+  | { type: 'range'; min: number; max: number; step: number; default: number };
+
+const DURATION_CONFIG: Record<VideoProvider, DurationConfig> = {
+  runway:      { type: 'fixed',  value: 5 },
+  veo:         { type: 'preset', presets: [4, 6, 8], default: 8 },
+  domoai:      { type: 'fixed',  value: 5 },
+  hailuo:      { type: 'fixed',  value: 6 },
+  piapi_kling: { type: 'preset', presets: [5, 10], default: 5 },
+  seedance:    { type: 'range',  min: 4, max: 15, step: 1, default: 5 },
 };
 
 export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
@@ -66,11 +70,12 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
 
   const handleProviderChange = useCallback(
     (provider: VideoProvider) => {
-      // プロバイダー切替時に duration をデフォルト値にリセット
-      // (前プロバイダーの選択肢が新プロバイダーに無効な値だと UI が崩れるため)
-      const newDuration = DURATION_OPTIONS[provider].length > 0
-        ? DURATION_OPTIONS[provider][0]
-        : null;
+      // プロバイダー切替時に duration を新プロバイダーのデフォルト値にリセット
+      const config = DURATION_CONFIG[provider];
+      const newDuration =
+        config.type === 'fixed' ? null :
+        config.type === 'preset' ? config.default :
+        config.default;
       updateNodeData({ provider, duration: newDuration });
 
       // プロバイダー変更をグローバルに通知
@@ -90,6 +95,22 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
     },
     [updateNodeData]
   );
+
+  // 保存済グラフ再読込時に duration を現プロバイダーの有効範囲に正規化する
+  useEffect(() => {
+    const config = DURATION_CONFIG[data.provider];
+    let normalized: number | null;
+    if (config.type === 'fixed') {
+      normalized = null;
+    } else if (config.type === 'preset') {
+      normalized = config.presets.includes(data.duration ?? 0) ? data.duration! : config.default;
+    } else {
+      normalized = Math.max(config.min, Math.min(config.max, data.duration ?? config.default));
+    }
+    if (normalized !== data.duration) {
+      updateNodeData({ duration: normalized });
+    }
+  }, [data.provider]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <BaseNode
@@ -147,23 +168,53 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
         </select>
       </div>
 
-      {/* 動画時間 (対応プロバイダーのみ表示) */}
-      {DURATION_OPTIONS[data.provider].length > 0 && (
-        <div>
-          <label className={nodeLabelClassName}>動画時間</label>
-          <select
-            value={data.duration ?? DURATION_OPTIONS[data.provider][0]}
-            onChange={(e) => updateNodeData({ duration: Number(e.target.value) })}
-            className={nodeSelectClassName}
-          >
-            {DURATION_OPTIONS[data.provider].map((sec) => (
-              <option key={sec} value={sec}>
-                {sec} 秒
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      {/* 動画時間 (プロバイダー設定に応じて表示切替) */}
+      {(() => {
+        const config = DURATION_CONFIG[data.provider];
+        if (config.type === 'fixed') {
+          return (
+            <div>
+              <label className={nodeLabelClassName}>動画時間</label>
+              <p className="text-xs text-gray-400">{config.value} 秒 (固定)</p>
+            </div>
+          );
+        }
+        if (config.type === 'preset') {
+          return (
+            <div>
+              <label className={nodeLabelClassName}>動画時間</label>
+              <select
+                value={data.duration ?? config.default}
+                onChange={(e) => updateNodeData({ duration: Number(e.target.value) })}
+                className={nodeSelectClassName}
+              >
+                {config.presets.map((sec) => (
+                  <option key={sec} value={sec}>{sec} 秒</option>
+                ))}
+              </select>
+            </div>
+          );
+        }
+        // range type
+        return (
+          <div>
+            <label className={nodeLabelClassName}>動画時間</label>
+            <input
+              type="number"
+              min={config.min}
+              max={config.max}
+              step={config.step}
+              value={data.duration ?? config.default}
+              onChange={(e) => {
+                const v = e.target.value === '' ? config.default : Number(e.target.value);
+                updateNodeData({ duration: v });
+              }}
+              className={nodeSelectClassName}
+            />
+            <p className="text-[10px] text-gray-500 mt-1">{config.min}-{config.max} 秒</p>
+          </div>
+        );
+      })()}
 
       {/* 凡例: 左ハンドル接続説明 */}
       <div className="mt-3 flex gap-1.5 rounded-md border border-[#2a2a2a] bg-[#111] p-2">

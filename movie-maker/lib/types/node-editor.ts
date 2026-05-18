@@ -711,5 +711,6 @@ export interface StoryVideoCreateRequest {
   };
   // 動画時間
   kling_duration?: 5 | 10;
-  seedance_duration?: 5 | 10 | 15;
+  seedance_duration?: number;  // 4-15 の整数
+  veo_duration?: number;  // 4 | 6 | 8 のいずれか
 }

@@ -77,6 +77,93 @@ class VeoProvider(VideoProviderInterface):
             return "image/webp"
         return "image/jpeg"
 
+    @property
+    def supports_t2v(self) -> bool:
+        """Veo supports Text-to-Video generation"""
+        return True
+
+    async def generate_video_from_text(
+        self,
+        prompt: str,
+        duration: int = 5,
+        aspect_ratio: str = "9:16",
+    ) -> str:
+        """
+        Veo API でテキストプロンプトから動画を生成（画像なし）
+
+        Args:
+            prompt: 動画生成プロンプト
+            duration: 動画長さ（4 / 6 / 8 秒の離散値。SDK 未対応の場合は無視）
+            aspect_ratio: アスペクト比 ("9:16", "16:9")
+
+        Returns:
+            str: オペレーション名（ポーリング用識別子）
+
+        Raises:
+            VideoProviderError: 生成開始に失敗した場合
+        """
+        try:
+            from google.genai import types
+
+            client = self._get_client()
+
+            last_error = None
+            for model_name in VEO_MODELS:
+                try:
+                    logger.info(f"T2V: Trying Veo model: {model_name}, prompt: {prompt[:100]}...")
+
+                    def _generate(m=model_name, d=duration):
+                        config_kwargs: dict = {
+                            "aspect_ratio": aspect_ratio,
+                            "number_of_videos": 1,
+                        }
+                        if d is not None:
+                            try:
+                                types.GenerateVideosConfig(duration_seconds=d)
+                                config_kwargs["duration_seconds"] = d
+                            except TypeError:
+                                logger.warning(
+                                    "GenerateVideosConfig does not support duration_seconds; ignoring duration"
+                                )
+                        return client.models.generate_videos(
+                            model=m,
+                            prompt=prompt,
+                            config=types.GenerateVideosConfig(**config_kwargs),
+                        )
+
+                    operation = await asyncio.get_event_loop().run_in_executor(None, _generate)
+
+                    operation_name = operation.name
+                    if not operation_name:
+                        logger.warning(f"T2V: Model {model_name} returned no operation name, trying next...")
+                        continue
+
+                    self._pending_operations[operation_name] = operation
+                    logger.info(f"T2V: Veo operation created with {model_name}: {operation_name}")
+                    return operation_name
+
+                except Exception as e:
+                    error_str = str(e).lower()
+                    logger.warning(f"T2V: Model {model_name} failed: {e}")
+                    last_error = e
+                    if "overload" in error_str or "quota" in error_str or "limit" in error_str:
+                        logger.info(f"T2V: Model {model_name} is overloaded, trying next model...")
+                        continue
+                    raise
+
+            raise VideoProviderError(
+                f"T2V: 全てのVeoモデルが利用不可です。しばらく待ってから再試行してください。: {last_error}"
+            )
+
+        except VideoProviderError:
+            raise
+        except Exception as e:
+            logger.exception(f"T2V: Veo video generation failed: {e}")
+            error_msg = str(e)
+            if "quota" in error_msg.lower() or "limit" in error_msg.lower():
+                raise VideoProviderError("Veo APIの使用制限に達しました。")
+            raise VideoProviderError(f"T2V動画生成に失敗しました: {error_msg}")
+
     async def generate_video(
         self,
         image_url: str,
@@ -91,7 +178,7 @@ class VeoProvider(VideoProviderInterface):
         Args:
             image_url: 入力画像URL
             prompt: 動画生成プロンプト
-            duration: 動画長さ（Veo 3は8秒固定のため無視）
+            duration: 動画長さ（4 / 6 / 8 秒の離散値。SDK 未対応の場合は無視）
             aspect_ratio: アスペクト比 ("9:16", "16:9")
             camera_work: カメラワーク名（オプション）
 
@@ -130,15 +217,24 @@ class VeoProvider(VideoProviderInterface):
                     logger.info(f"Trying Veo model: {model_name}, prompt: {full_prompt[:100]}...")
 
                     # 同期APIを非同期で実行
-                    def _generate(m=model_name):
+                    def _generate(m=model_name, d=duration):
+                        config_kwargs: dict = {
+                            "aspect_ratio": aspect_ratio,
+                            "number_of_videos": 1,
+                        }
+                        if d is not None:
+                            try:
+                                types.GenerateVideosConfig(duration_seconds=d)
+                                config_kwargs["duration_seconds"] = d
+                            except TypeError:
+                                logger.warning(
+                                    "GenerateVideosConfig does not support duration_seconds; ignoring duration"
+                                )
                         return client.models.generate_videos(
                             model=m,
                             prompt=full_prompt,
                             image=image_data,
-                            config=types.GenerateVideosConfig(
-                                aspect_ratio=aspect_ratio,
-                                number_of_videos=1,
-                            ),
+                            config=types.GenerateVideosConfig(**config_kwargs),
                         )
 
                     operation = await asyncio.get_event_loop().run_in_executor(None, _generate)

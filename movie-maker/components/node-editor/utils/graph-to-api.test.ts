@@ -873,6 +873,129 @@ describe('graphToStoryVideoCreate - edge scoping (新規)', () => {
   });
 });
 
+// ========== Duration mapping テスト (2026-05-18) ==========
+
+describe('graphToStoryVideoCreate - duration mapping', () => {
+  function createProviderNodeWithDuration(
+    provider: ProviderNodeData['provider'],
+    duration: number | null
+  ): WorkflowNode {
+    return {
+      id: 'provider-1',
+      type: 'provider',
+      position: { x: 200, y: 0 },
+      data: {
+        type: 'provider',
+        isValid: true,
+        provider,
+        aspectRatio: '9:16',
+        duration,
+      } satisfies ProviderNodeData,
+    }
+  }
+
+  it('Seedance + duration=7 → seedance_duration=7', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createProviderNodeWithDuration('seedance', 7),
+      createGenerateNode(),
+    ]
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges())
+    expect(result.seedance_duration).toBe(7)
+  })
+
+  it('Seedance + duration=4 (min) → seedance_duration=4', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createProviderNodeWithDuration('seedance', 4),
+      createGenerateNode(),
+    ]
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges())
+    expect(result.seedance_duration).toBe(4)
+  })
+
+  it('Seedance + duration=15 (max) → seedance_duration=15', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createProviderNodeWithDuration('seedance', 15),
+      createGenerateNode(),
+    ]
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges())
+    expect(result.seedance_duration).toBe(15)
+  })
+
+  it('Veo + duration=6 → veo_duration=6', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createProviderNodeWithDuration('veo', 6),
+      createGenerateNode(),
+    ]
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges())
+    expect(result.veo_duration).toBe(6)
+  })
+
+  it('Veo + duration=4 (min preset) → veo_duration=4', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createProviderNodeWithDuration('veo', 4),
+      createGenerateNode(),
+    ]
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges())
+    expect(result.veo_duration).toBe(4)
+  })
+
+  it('Veo + duration=8 (max preset) → veo_duration=8', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createProviderNodeWithDuration('veo', 8),
+      createGenerateNode(),
+    ]
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges())
+    expect(result.veo_duration).toBe(8)
+  })
+
+  it('Kling + duration=10 → kling_duration=10 (変更なし確認)', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createProviderNodeWithDuration('piapi_kling', 10),
+      createGenerateNode(),
+    ]
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges())
+    expect(result.kling_duration).toBe(10)
+    expect(result.seedance_duration).toBeUndefined()
+    expect(result.veo_duration).toBeUndefined()
+  })
+
+  it('Seedance + duration=20 (超過) → clamp して seedance_duration=15', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createProviderNodeWithDuration('seedance', 20),
+      createGenerateNode(),
+    ]
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges())
+    expect(result.seedance_duration).toBe(15)
+  })
+
+  it('Veo + duration=7 (無効値) → 8 にフォールバック', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createProviderNodeWithDuration('veo', 7),
+      createGenerateNode(),
+    ]
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges())
+    expect(result.veo_duration).toBe(8)
+  })
+})
+
 // ========== KlingElements image_url フォールバック ==========
 
 describe('graphToStoryVideoCreate - KlingElements image_url fallback', () => {

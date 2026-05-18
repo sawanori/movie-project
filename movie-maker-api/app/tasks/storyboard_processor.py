@@ -89,6 +89,7 @@ async def generate_video_with_v2v_fallback(
     force_mode: str = None,
     image_tail_url: Optional[str] = None,
     element_images: Optional[list[str]] = None,
+    kling_duration: Optional[int] = None,
 ) -> tuple[str, str]:
     """
     V2V対応の動画生成（フォールバック付き）
@@ -150,10 +151,15 @@ async def generate_video_with_v2v_fallback(
     logger.info(f"Using I2V generation with {provider.provider_name}")
 
     # Kling専用オプション（image_tail_url, element_images）をサポート
+    # Veo は duration を未指定 (8 秒固定維持)、それ以外は kling_duration or 5
+    if hasattr(provider, 'provider_name') and provider.provider_name == 'veo':
+        veo_duration = None  # Veo は default (8 秒) に任せる
+    else:
+        veo_duration = kling_duration or 5
     generate_kwargs = {
         "image_url": scene_image_url,
         "prompt": runway_prompt,
-        "duration": 5,
+        "duration": veo_duration,
         "aspect_ratio": aspect_ratio,
         "camera_work": camera_work,
     }
@@ -317,6 +323,7 @@ async def process_storyboard_generation(
     scene_video_modes: dict = None,
     scene_end_frame_images: dict = None,
     element_images: list[str] = None,
+    kling_duration: int = None,
 ):
     """
     ストーリーボードから全シーンを順番に生成
@@ -473,6 +480,7 @@ async def process_storyboard_generation(
                     force_mode=force_mode,
                     image_tail_url=scene_image_tail_url,
                     element_images=element_images,
+                    kling_duration=kling_duration,
                 )
 
                 if not task_id:
@@ -567,10 +575,11 @@ def start_storyboard_processing(
     scene_video_modes: dict = None,
     scene_end_frame_images: dict = None,
     element_images: list[str] = None,
+    kling_duration: int = None,
 ):
     """ストーリーボード処理を開始（同期ラッパー）"""
     asyncio.run(process_storyboard_generation(
-        storyboard_id, video_provider, scene_video_modes, scene_end_frame_images, element_images
+        storyboard_id, video_provider, scene_video_modes, scene_end_frame_images, element_images, kling_duration
     ))
 
 
@@ -583,6 +592,7 @@ async def process_single_scene_regeneration(
     source_video_url: str = None,
     kling_mode: str = None,
     image_tail_url: str = None,
+    kling_duration: int = None,
 ):
     """
     単一シーンの動画を再生成
@@ -733,7 +743,7 @@ async def process_single_scene_regeneration(
             generate_kwargs = {
                 "image_url": scene_image_url,
                 "prompt": runway_prompt,
-                "duration": 5,
+                "duration": kling_duration or 5,
                 "aspect_ratio": aspect_ratio,
                 "camera_work": camera_work,
             }
@@ -804,9 +814,9 @@ async def process_single_scene_regeneration(
         }).eq("id", scene_id).execute()
 
 
-def start_single_scene_regeneration(storyboard_id: str, scene_number: int, video_provider: str = None, custom_prompt: str = None, video_mode: str = None, source_video_url: str = None, kling_mode: str = None, image_tail_url: str = None):
+def start_single_scene_regeneration(storyboard_id: str, scene_number: int, video_provider: str = None, custom_prompt: str = None, video_mode: str = None, source_video_url: str = None, kling_mode: str = None, image_tail_url: str = None, kling_duration: int = None):
     """単一シーン再生成を開始（同期ラッパー）"""
-    asyncio.run(process_single_scene_regeneration(storyboard_id, scene_number, video_provider, custom_prompt, video_mode, source_video_url, kling_mode, image_tail_url))
+    asyncio.run(process_single_scene_regeneration(storyboard_id, scene_number, video_provider, custom_prompt, video_mode, source_video_url, kling_mode, image_tail_url, kling_duration))
 
 
 async def process_storyboard_concatenation(
@@ -883,7 +893,7 @@ async def process_storyboard_concatenation(
                     f.write(content)
                 video_paths.append(path)
 
-            # FFmpegで結合（トランジションなし）
+            # FFmpegで結合（トランジションなし、元動画のFPSを維持）
             concat_output = os.path.join(temp_dir, "concat.mp4")
             logger.info(f"Concatenating {len(video_paths)} scenes without transition")
             await ffmpeg.concat_videos(

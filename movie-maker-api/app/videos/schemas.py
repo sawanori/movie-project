@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator, validator
+from pydantic import BaseModel, Field, field_validator, model_validator, validator
 from datetime import datetime
 from enum import Enum
 from typing import Self, Optional, Literal
@@ -311,14 +311,39 @@ class StoryVideoCreate(BaseModel):
         default=None,
         description="Kling AI動画のduration（秒）。5または10"
     )
-    seedance_duration: Literal[5, 10, 15] | None = Field(
+    seedance_duration: Optional[int] = Field(
         default=None,
-        description="Seedance 2.0 動画のduration（秒）。5、10、15のいずれか (VIP tier のみ 10/15 利用可)"
+        ge=4,
+        le=15,
+        description="Seedance 2.0 動画のduration（秒）。4-15 の整数 (VIP tier のみ 10 秒超利用可)"
+    )
+    veo_duration: Optional[int] = Field(
+        default=None,
+        ge=4,
+        le=8,
+        description="Veo 3 動画のduration（秒）。4 / 6 / 8 のいずれか"
     )
     # V2V用フィールド
     video_mode: Optional[str] = Field("i2v", description="動画生成モード: 'i2v' or 'v2v'")
     source_video_url: Optional[str] = Field(None, description="V2V参照動画URL")
     subject_type: Optional[str] = Field("person", description="被写体タイプ: 'person', 'animal', 'object', etc.")
+
+    @field_validator('veo_duration')
+    @classmethod
+    def validate_veo_duration_discrete(cls, v: Optional[int]) -> Optional[int]:
+        """veo_duration は 4 / 6 / 8 の離散値のみ受け付ける"""
+        if v is not None and v not in (4, 6, 8):
+            raise ValueError("veo_duration must be one of 4, 6, 8")
+        return v
+
+    @model_validator(mode='after')
+    def validate_provider_specific_durations(self) -> Self:
+        """provider 固有の duration フィールドの cross-validator"""
+        if self.seedance_duration is not None and self.video_provider not in (None, VideoProvider.SEEDANCE):
+            raise ValueError("seedance_duration is only valid for video_provider=seedance")
+        if self.veo_duration is not None and self.video_provider not in (None, VideoProvider.VEO):
+            raise ValueError("veo_duration is only valid for video_provider=veo")
+        return self
 
     @model_validator(mode='after')
     def validate_kling_only_features(self) -> Self:
