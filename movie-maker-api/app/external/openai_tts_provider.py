@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 
 OPENAI_TTS_API_URL = "https://api.openai.com/v1/audio/speech"
 
+# 日本語ピッチアクセント指示 prefix (language="ja" 時に instructions 先頭に必ず付与)
+JAPANESE_ACCENT_PREFIX = (
+    "Use natural Japanese pitch accent (Tokyo dialect standard). "
+    "Pay attention to mora-timed rhythm and proper word-level pitch placement. "
+    "Sound like a native Japanese speaker, not with a foreign accent. "
+)
+
 # OpenAI TTS の利用可能な音声
 OPENAI_VOICES = [
     {"voice_id": "alloy", "name": "Alloy", "language": None, "preview_url": None},
@@ -75,10 +82,12 @@ class OpenAITTSProvider(TTSProviderInterface):
         if not text or not text.strip():
             raise ValueError("text must not be empty")
 
-        # language="ja" かつ instructions 未指定 (None / 空文字 / whitespace-only) の場合は
-        # デフォルト英語 instructions を適用する (AC10b: 空文字も「未指定」扱い)
-        if (not instructions) and language == "ja":
-            instructions = (
+        # language="ja" の場合、JAPANESE_ACCENT_PREFIX を instructions 先頭に必ず付与する。
+        # instructions 未指定 (None / 空文字 / whitespace-only) の場合は
+        # デフォルト英語本文 (AC10b: 空文字も「未指定」扱い) に prefix を付与する。
+        # instructions が既に prefix で始まる場合は重複付与しない。
+        if language == "ja":
+            default_body = (
                 "Speak natural Japanese with rich emotional expression and dynamic intonation. "
                 "Vary pitch widely (low to high), pace (slow to fast), and emphasis to convey "
                 "the underlying feelings in the text. Insert natural pauses between phrases. "
@@ -86,6 +95,11 @@ class OpenAITTSProvider(TTSProviderInterface):
                 "tone to the dialogue's mood (joy, sadness, anger, surprise, etc.) as appropriate, "
                 "adding pitch variation on emotionally charged words."
             )
+            if not instructions:
+                instructions = JAPANESE_ACCENT_PREFIX + default_body
+            else:
+                if not instructions.startswith(JAPANESE_ACCENT_PREFIX[:30]):
+                    instructions = JAPANESE_ACCENT_PREFIX + instructions
 
         payload = {
             "model": self._model,
