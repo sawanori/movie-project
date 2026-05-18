@@ -84,7 +84,8 @@ class AivisSpeechProvider(TTSProviderInterface):
             )
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            # CPU 推論 + Style-Bert-VITS2 + 48kHz ステレオで重いため長めに設定
+            async with httpx.AsyncClient(timeout=300.0) as client:
                 # Step 1: audio_query でクエリデータを取得
                 # is_kana=True の場合、AquesTalk カナ記法でアクセント核を指定する
                 query_response = await client.post(
