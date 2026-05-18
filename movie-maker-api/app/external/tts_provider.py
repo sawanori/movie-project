@@ -116,7 +116,7 @@ def get_tts_provider(provider_name: Optional[str] = None) -> TTSProviderInterfac
     設定に応じた TTS プロバイダーを返すファクトリー関数
 
     Args:
-        provider_name: プロバイダー名（"elevenlabs", "openai_tts"）。
+        provider_name: プロバイダー名（"elevenlabs", "openai_tts", "voicevox"）。
                        指定がなければ環境変数 TTS_PROVIDER を使用
 
     Returns:
@@ -130,7 +130,18 @@ def get_tts_provider(provider_name: Optional[str] = None) -> TTSProviderInterfac
         from app.external.openai_tts_provider import OpenAITTSProvider
         logger.info("Using OpenAI TTS provider")
         return OpenAITTSProvider()
-    else:
+    elif provider_name == "voicevox":
+        from app.external.voicevox_provider import VoicevoxProvider
+        logger.info("Using Voicevox TTS provider")
+        return VoicevoxProvider()
+    elif provider_name == "elevenlabs":
         from app.external.elevenlabs_provider import ElevenLabsProvider
         logger.info("Using ElevenLabs TTS provider")
+        return ElevenLabsProvider()
+    else:
+        # M1 対応: 未知の provider は WARN + ElevenLabs フォールバック
+        logger.warning(
+            f"Unknown TTS provider '{provider_name}', falling back to ElevenLabs"
+        )
+        from app.external.elevenlabs_provider import ElevenLabsProvider
         return ElevenLabsProvider()

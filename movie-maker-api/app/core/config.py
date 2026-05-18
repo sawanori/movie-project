@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     PIAPI_SEEDANCE_TASK_TYPE: str = "seedance-2-preview-vip"  # or "seedance-2-preview"
     PIAPI_SEEDANCE_RESOLUTION: str = "720p"  # "720p" or "1080p" (VIP tier)
 
-    # OpenAI Image Generation (GPT Image 2)
+    # OpenAI Image Generation
     OPENAI_IMAGE_MODEL: str = "gpt-image-2"
 
     # PiAPI Flux Settings (Image Generation)
@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     # "runway", "veo", "domoai", "piapi_kling", "hailuo", or "seedance" - 動画生成に使用するプロバイダー
     VIDEO_PROVIDER: str = "runway"
 
+    # Gateway Settings
+    GATEWAY_ENABLED: bool = False
+    GATEWAY_DEFAULT_PRIORITY: str = "quality"
+
     # Topaz Video API (for 60fps frame interpolation)
     TOPAZ_API_KEY: str = ""
 
@@ -80,6 +84,23 @@ class Settings(BaseSettings):
     # Use third-party provider like SunoAPI.org since official API is not public
     SUNO_API_KEY: str = ""
     SUNO_API_BASE_URL: str = "https://api.sunoapi.org"
+
+    # ElevenLabs TTS
+    ELEVENLABS_API_KEY: str = ""
+
+    # Voicevox TTS (local Docker)
+    VOICEVOX_API_URL: str = "http://localhost:50021"
+
+    # TTS Provider Settings
+    # "elevenlabs", "openai_tts", or "voicevox" - TTS 生成に使用するプロバイダー
+    TTS_PROVIDER: str = "elevenlabs"
+
+    # Hedra API (for Lip Sync generation)
+    HEDRA_API_KEY: str = ""
+
+    # LipSync Provider Settings
+    # "hedra" - Lip Sync 生成に使用するプロバイダー
+    LIP_SYNC_PROVIDER: str = "hedra"
 
     # Backend API URL (for webhook callbacks from external services)
     BACKEND_URL: str = "http://localhost:8000"

@@ -1,0 +1,428 @@
+"""
+VoicevoxProvider のテスト
+
+Voicevox Engine (Docker) は不要。httpx.AsyncClient を mock して完全に unit テストする。
+"""
+import logging
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+
+class TestVoicevoxProviderName:
+    """provider_name プロパティのテスト"""
+
+    def test_provider_name(self):
+        """provider_name が 'voicevox' を返す"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+        assert provider.provider_name == "voicevox"
+
+    def test_is_synchronous_returns_true(self):
+        """is_synchronous が True を返す (同期プロバイダー)"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+        assert provider.is_synchronous is True
+
+
+class TestVoicevoxGenerateSpeech:
+    """generate_speech のテスト"""
+
+    @pytest.mark.asyncio
+    async def test_generate_speech_calls_audio_query_and_synthesis(self):
+        """audio_query と synthesis の 2 つの POST リクエストが発行される"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+        mock_audio_url = "https://r2.example.com/tts/test.wav"
+
+        # audio_query レスポンス
+        mock_query_response = MagicMock()
+        mock_query_response.raise_for_status = MagicMock()
+        mock_query_response.json = MagicMock(return_value={"speedScale": 1.0})
+
+        # synthesis レスポンス
+        mock_synth_response = MagicMock()
+        mock_synth_response.raise_for_status = MagicMock()
+        mock_synth_response.content = b"RIFF....WAV_DATA"
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        # 1回目 (audio_query) と 2回目 (synthesis) で異なるレスポンスを返す
+        mock_client.post = AsyncMock(
+            side_effect=[mock_query_response, mock_synth_response]
+        )
+
+        with patch("app.external.voicevox_provider.httpx.AsyncClient", return_value=mock_client):
+            with patch("app.external.voicevox_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value=mock_audio_url)
+
+                result = await provider.generate_speech(
+                    text="こんにちは",
+                    voice_id="1",
+                )
+
+        assert result == mock_audio_url
+        assert mock_client.post.call_count == 2
+
+        # 1 回目が audio_query エンドポイント
+        first_call_url = mock_client.post.call_args_list[0].args[0]
+        assert "/audio_query" in first_call_url
+
+        # 2 回目が synthesis エンドポイント
+        second_call_url = mock_client.post.call_args_list[1].args[0]
+        assert "/synthesis" in second_call_url
+
+    @pytest.mark.asyncio
+    async def test_speed_clamped_to_voicevox_range(self):
+        """speed=4.0 は Voicevox 推奨上限 2.0 にクランプされる"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+
+        mock_query_response = MagicMock()
+        mock_query_response.raise_for_status = MagicMock()
+        # 元の speedScale は 1.0 (Voicevox デフォルト)
+        mock_query_response.json = MagicMock(return_value={"speedScale": 1.0})
+
+        mock_synth_response = MagicMock()
+        mock_synth_response.raise_for_status = MagicMock()
+        mock_synth_response.content = b"WAV"
+
+        captured_synthesis_body: dict = {}
+
+        async def capture_post(url, **kwargs):
+            if "/synthesis" in url:
+                captured_synthesis_body.update(kwargs.get("json", {}))
+                return mock_synth_response
+            return mock_query_response
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=capture_post)
+
+        with patch("app.external.voicevox_provider.httpx.AsyncClient", return_value=mock_client):
+            with patch("app.external.voicevox_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/tts/x.wav")
+
+                await provider.generate_speech(
+                    text="テスト",
+                    voice_id="1",
+                    speed=4.0,
+                )
+
+        # synthesis に渡された body の speedScale は 2.0 にクランプされている
+        assert captured_synthesis_body["speedScale"] == 2.0
+
+    @pytest.mark.asyncio
+    async def test_speed_clamped_to_minimum(self):
+        """speed=0.1 は Voicevox 推奨下限 0.5 にクランプされる"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+
+        mock_query_response = MagicMock()
+        mock_query_response.raise_for_status = MagicMock()
+        mock_query_response.json = MagicMock(return_value={"speedScale": 1.0})
+
+        mock_synth_response = MagicMock()
+        mock_synth_response.raise_for_status = MagicMock()
+        mock_synth_response.content = b"WAV"
+
+        captured_synthesis_body: dict = {}
+
+        async def capture_post(url, **kwargs):
+            if "/synthesis" in url:
+                captured_synthesis_body.update(kwargs.get("json", {}))
+                return mock_synth_response
+            return mock_query_response
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=capture_post)
+
+        with patch("app.external.voicevox_provider.httpx.AsyncClient", return_value=mock_client):
+            with patch("app.external.voicevox_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/tts/x.wav")
+
+                await provider.generate_speech(
+                    text="テスト",
+                    voice_id="1",
+                    speed=0.1,
+                )
+
+        assert captured_synthesis_body["speedScale"] == 0.5
+
+    @pytest.mark.asyncio
+    async def test_connect_error_raises_runtime_error_with_docker_hint(self):
+        """httpx.ConnectError は RuntimeError に変換され docker run ヒントが含まれる"""
+        import httpx
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(
+            side_effect=httpx.ConnectError("Connection refused")
+        )
+
+        with patch("app.external.voicevox_provider.httpx.AsyncClient", return_value=mock_client):
+            with pytest.raises(RuntimeError) as exc_info:
+                await provider.generate_speech(text="テスト", voice_id="1")
+
+        error_message = str(exc_info.value)
+        assert "docker run" in error_message.lower() or "Docker" in error_message
+
+    @pytest.mark.asyncio
+    async def test_invalid_voice_id_raises_value_error(self):
+        """数値でない voice_id は ValueError を発生させる"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+
+        with pytest.raises(ValueError, match="voice_id"):
+            await provider.generate_speech(text="テスト", voice_id="not_a_number")
+
+    @pytest.mark.asyncio
+    async def test_empty_text_raises_value_error(self):
+        """空のテキストは ValueError を発生させる"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+
+        with pytest.raises(ValueError, match="text"):
+            await provider.generate_speech(text="", voice_id="1")
+
+    @pytest.mark.asyncio
+    async def test_whitespace_only_text_raises_value_error(self):
+        """空白のみのテキストは ValueError を発生させる"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+
+        with pytest.raises(ValueError, match="text"):
+            await provider.generate_speech(text="   ", voice_id="1")
+
+
+class TestVoicevoxInstructionsWarning:
+    """instructions 引数の WARN ログ動作テスト"""
+
+    @pytest.mark.asyncio
+    async def test_instructions_warning_only_once(self, caplog):
+        """instructions 引数は 1 回目だけ WARN ログが出て 2 回目以降は quiet"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+
+        mock_query_response = MagicMock()
+        mock_query_response.raise_for_status = MagicMock()
+        mock_query_response.json = MagicMock(return_value={"speedScale": 1.0})
+
+        mock_synth_response = MagicMock()
+        mock_synth_response.raise_for_status = MagicMock()
+        mock_synth_response.content = b"WAV"
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(
+            side_effect=[
+                mock_query_response, mock_synth_response,
+                mock_query_response, mock_synth_response,
+            ]
+        )
+
+        with patch("app.external.voicevox_provider.httpx.AsyncClient", return_value=mock_client):
+            with patch("app.external.voicevox_provider.r2_client") as mock_r2:
+                mock_r2.upload_file = AsyncMock(return_value="https://r2.example.com/tts/x.wav")
+
+                with caplog.at_level(logging.WARNING, logger="app.external.voicevox_provider"):
+                    await provider.generate_speech(
+                        text="テスト1", voice_id="1", instructions="明るく読んでください"
+                    )
+                    warn_count_after_first = sum(
+                        1 for r in caplog.records
+                        if r.levelno == logging.WARNING and "instructions" in r.message
+                    )
+
+                    await provider.generate_speech(
+                        text="テスト2", voice_id="1", instructions="ゆっくり読んでください"
+                    )
+                    warn_count_after_second = sum(
+                        1 for r in caplog.records
+                        if r.levelno == logging.WARNING and "instructions" in r.message
+                    )
+
+        # 1 回目呼び出し後: WARN 1 件
+        assert warn_count_after_first == 1
+        # 2 回目呼び出し後: 追加の WARN は出ない (合計 1 件のまま)
+        assert warn_count_after_second == 1
+
+
+class TestVoicevoxListVoices:
+    """list_voices のテスト"""
+
+    @pytest.mark.asyncio
+    async def test_list_voices_flattens_speakers_and_styles(self):
+        """speakers[].styles[] がフラット化されたリストになる"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+
+        mock_speakers = [
+            {
+                "name": "四国めたん",
+                "styles": [
+                    {"id": 2, "name": "ノーマル"},
+                    {"id": 0, "name": "あまあま"},
+                ],
+            },
+            {
+                "name": "ずんだもん",
+                "styles": [
+                    {"id": 3, "name": "ノーマル"},
+                ],
+            },
+        ]
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json = MagicMock(return_value=mock_speakers)
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("app.external.voicevox_provider.httpx.AsyncClient", return_value=mock_client):
+            result = await provider.list_voices()
+
+        # 3 スタイル分がフラット化される
+        assert len(result) == 3
+
+        voice_ids = {v["voice_id"] for v in result}
+        assert "2" in voice_ids
+        assert "0" in voice_ids
+        assert "3" in voice_ids
+
+        names = {v["name"] for v in result}
+        assert "四国めたん (ノーマル)" in names
+        assert "四国めたん (あまあま)" in names
+        assert "ずんだもん (ノーマル)" in names
+
+        # 全ての language が "ja"
+        for voice in result:
+            assert voice["language"] == "ja"
+            assert voice["preview_url"] is None
+
+    @pytest.mark.asyncio
+    async def test_list_voices_returns_empty_on_connect_error(self):
+        """Voicevox に接続できない場合は空リストを返す"""
+        import httpx
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(
+            side_effect=httpx.ConnectError("Connection refused")
+        )
+
+        with patch("app.external.voicevox_provider.httpx.AsyncClient", return_value=mock_client):
+            result = await provider.list_voices()
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_list_voices_skips_styles_without_id(self):
+        """id が None のスタイルはスキップされる"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+
+        mock_speakers = [
+            {
+                "name": "テストキャラ",
+                "styles": [
+                    {"id": None, "name": "不明"},  # id なし → スキップ
+                    {"id": 5, "name": "ノーマル"},
+                ],
+            },
+        ]
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json = MagicMock(return_value=mock_speakers)
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("app.external.voicevox_provider.httpx.AsyncClient", return_value=mock_client):
+            result = await provider.list_voices()
+
+        assert len(result) == 1
+        assert result[0]["voice_id"] == "5"
+
+
+class TestVoicevoxCheckStatusAndGetAudioUrl:
+    """check_status / get_audio_url のテスト"""
+
+    @pytest.mark.asyncio
+    async def test_check_status_returns_completed(self):
+        """check_status は常に completed を返す"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+        status = await provider.check_status("https://r2.example.com/tts/abc.wav")
+
+        assert status.status == "completed"
+        assert status.audio_url == "https://r2.example.com/tts/abc.wav"
+
+    @pytest.mark.asyncio
+    async def test_get_audio_url_returns_task_id(self):
+        """get_audio_url は task_id をそのまま返す"""
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = VoicevoxProvider()
+        url = await provider.get_audio_url("https://r2.example.com/tts/abc.wav")
+
+        assert url == "https://r2.example.com/tts/abc.wav"
+
+
+class TestGetTTSProviderFactory:
+    """get_tts_provider ファクトリー関数の Voicevox 対応テスト"""
+
+    def test_get_tts_provider_returns_voicevox(self):
+        """provider_name='voicevox' で VoicevoxProvider が返る"""
+        from app.external.tts_provider import get_tts_provider
+        from app.external.voicevox_provider import VoicevoxProvider
+
+        provider = get_tts_provider("voicevox")
+        assert isinstance(provider, VoicevoxProvider)
+
+    def test_get_tts_provider_unknown_falls_back_to_elevenlabs(self):
+        """未知のプロバイダー名は ElevenLabsProvider にフォールバックする"""
+        from app.external.tts_provider import get_tts_provider
+        from app.external.elevenlabs_provider import ElevenLabsProvider
+
+        provider = get_tts_provider("unknown_provider_xyz")
+        assert isinstance(provider, ElevenLabsProvider)
+
+    def test_get_tts_provider_unknown_logs_warning(self, caplog):
+        """未知のプロバイダー名使用時に WARNING ログが出る"""
+        from app.external.tts_provider import get_tts_provider
+
+        with caplog.at_level(logging.WARNING, logger="app.external.tts_provider"):
+            get_tts_provider("unknown_provider_xyz")
+
+        assert any("unknown_provider_xyz" in r.message for r in caplog.records)
