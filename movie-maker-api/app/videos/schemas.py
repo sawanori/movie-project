@@ -394,7 +394,7 @@ class StoryVideoResponse(BaseModel):
 
 class TranslateStoryPromptRequest(BaseModel):
     """シーン動画用の日本語→英語翻訳リクエスト"""
-    description_ja: str = Field(..., min_length=1, max_length=500, description="日本語のシーン説明")
+    description_ja: str = Field(..., min_length=1, max_length=5000, description="日本語のシーン説明")
     video_provider: VideoProvider = Field(
         default=VideoProvider.RUNWAY,
         description="動画生成プロバイダー（テンプレート選択用）"
