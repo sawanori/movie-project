@@ -22,6 +22,7 @@ import type {
   OmniReferenceNodeData,
 } from '@/lib/types/node-editor';
 import { HANDLE_IDS } from '@/lib/types/node-editor';
+import { compactOmniReferences } from './omni-reference-compact';
 
 /**
  * ノードグラフからAPIリクエストパラメータに変換
@@ -383,15 +384,10 @@ export function graphToStoryVideoCreate(
         if (!omniData.consentAccepted) {
           throw new Error('著作権同意が必要です');
         }
-        const imgIds = omniData.imageSlots
-          .filter((s): s is typeof s & { assetId: string } => !!s.assetId)
-          .map((s) => s.assetId);
-        const vidIds = omniData.videoSlots
-          .filter((s): s is typeof s & { assetId: string } => !!s.assetId)
-          .map((s) => s.assetId);
-        const audIds = omniData.audioSlots
-          .filter((s): s is typeof s & { assetId: string } => !!s.assetId)
-          .map((s) => s.assetId);
+        const compacted = compactOmniReferences(omniData);
+        const imgIds = compacted.imageUrls.map((s) => s.assetId);
+        const vidIds = compacted.videoUrls.map((s) => s.assetId);
+        const audIds = compacted.audioUrls.map((s) => s.assetId);
         if (imgIds.length) request.image_reference_asset_ids = imgIds;
         if (vidIds.length) request.video_reference_asset_ids = vidIds;
         if (audIds.length) request.audio_reference_asset_ids = audIds;

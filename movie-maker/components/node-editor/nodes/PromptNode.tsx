@@ -13,6 +13,8 @@ import {
 import type { PromptNodeData, SubjectType, DialogueNodeData } from '@/lib/types/node-editor';
 import { videosApi } from '@/lib/api/client';
 import { emitNodeDataUpdate } from '../utils/emit-node-data';
+import { useReferenceAutocomplete } from '../hooks/useReferenceAutocomplete';
+import { ReferenceMentionPopup } from '../components/ReferenceMentionPopup';
 
 interface PromptNodeProps extends NodeProps {
   data: PromptNodeData;
@@ -31,8 +33,18 @@ export function PromptNode({ data, selected, id }: PromptNodeProps) {
   const [pendingDialogue, setPendingDialogue] = useState<string | null>(null);
   // N1 対応: dismissed ハッシュは useRef 管理 (依存配列に含めず useEffect 再走を防ぐ)
   const dismissedDialogueHashRef = useRef<string | null>(null);
+  // textarea ref (autocomplete 用の anchor)
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { getNodes } = useReactFlow();
+
+  // @ メンション autocomplete (Seedance @image/@video/@audio 参照入力支援)
+  const autocomplete = useReferenceAutocomplete({
+    promptNodeId: id,
+    textareaRef,
+    value: localPrompt,
+    onChange: setLocalPrompt,
+  });
 
   // N3 対応: セリフ正規化 (空白/改行を統一して同一性判定)
   const normalizeDialogue = useCallback(
@@ -173,11 +185,28 @@ export function PromptNode({ data, selected, id }: PromptNodeProps) {
       <div className="mb-3">
         <label className={nodeLabelClassName}>プロンプト（日本語）</label>
         <textarea
+          ref={textareaRef}
           placeholder="動画の内容を日本語で入力"
           value={localPrompt ?? ''}
-          onChange={(e) => setLocalPrompt(e.target.value)}
+          onChange={autocomplete.handlers.onTextareaChange}
+          onKeyDown={autocomplete.handlers.onTextareaKeyDown}
+          onCompositionStart={autocomplete.handlers.onCompositionStart}
+          onCompositionEnd={autocomplete.handlers.onCompositionEnd}
+          onBlur={autocomplete.handlers.onTextareaBlur}
+          {...autocomplete.textareaAriaProps}
           className={`${nodeInputClassName} min-h-[80px] resize-none`}
         />
+        {autocomplete.isOpen && (
+          <ReferenceMentionPopup
+            candidates={autocomplete.candidates}
+            emptyReason={autocomplete.emptyReason}
+            highlightedIndex={autocomplete.highlightedIndex}
+            listboxId={autocomplete.listboxId}
+            onSelect={autocomplete.handlers.onPopupSelect}
+            onClose={autocomplete.handlers.onPopupClose}
+            anchorRef={textareaRef}
+          />
+        )}
       </div>
 
       {/* 翻訳結果表示 */}
