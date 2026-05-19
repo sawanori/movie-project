@@ -84,6 +84,9 @@ movie-maker-api/
 | GET | `/api/v1/videos/{id}/status` | 生成進捗取得 |
 | DELETE | `/api/v1/videos/{id}` | 動画削除 |
 | POST | `/api/v1/videos/upload-image` | 画像アップロード |
+| POST | `/api/v1/videos/upload-omni-video-reference` | Seedance omni_reference 用 動画アップロード (TTL 72h) |
+| POST | `/api/v1/videos/upload-omni-audio-reference` | Seedance omni_reference 用 音声アップロード (TTL 72h) |
+| POST | `/api/v1/videos/upload-omni-image-reference` | Seedance omni_reference 用 画像アップロード (TTL 72h) |
 | GET | `/api/v1/templates` | テンプレート一覧 |
 | GET | `/api/v1/templates/{id}` | テンプレート詳細 |
 | GET | `/api/v1/templates/bgm/list` | BGM一覧 |
@@ -103,6 +106,32 @@ See `../docs/` for full project specifications (Japanese):
 - `../docs/plan.md` - API design, DB schema
 - `../docs/workbook.md` - Development tickets (BE-001 to BE-015)
 - `../docs/best-practices.md` - FastAPI/Next.js ベストプラクティス
+- `../docs/features/seedance-omni-reference.md` - Seedance 2.0 omni_reference 機能仕様
+- `../docs/runbooks/omni-reference-operations.md` - omni_reference 運用ランブック (GC バッチ / R2 Custom Domain)
+
+## Omni Reference (Seedance 2.0) 運用
+
+### R2 Custom Domain 必須 (本番)
+本番では `R2_PUBLIC_URL` に Cloudflare R2 Custom Domain を設定必須
+(omni-references/ への公開 URL 安定化のため)。`r2.dev` は開発のみ。
+
+### r2_key 規約
+- 形式: `omni-references/{user_id}/{uuid}.{ext}`
+- 既存 `videos/` `bgm/` `images/` prefix と重複しない
+- 動画は `r2.upload_user_video(key=...)`、audio/image は `r2.upload_with_key(...)` を使用
+- `upload_video`/`upload_audio`/`upload_image` は内部で prefix 結合するため
+  omni-references 用途では **使用禁止**
+
+### RLS パターン (3 重防御)
+- `omni_reference_assets`: **SELECT only policy のみ** 作成
+- INSERT/UPDATE/DELETE は **service-role キー経由のみ** (RLS bypass)
+- CHECK 制約 `r2_key LIKE 'omni-references/%'` で外部 URL 注入防止
+- API 型は UUID のみ受付 (外部 URL を直接渡せない)
+
+### GC バッチ
+- 関数: `app.tasks.gc_omni_assets.gc_expired_omni_assets`
+- Railway scheduled job 日次実行推奨 (cron `0 18 * * *` = JST 03:00)
+- 72h TTL、`expires_at < now` を R2 + DB から削除
 
 
 <claude-mem-context>

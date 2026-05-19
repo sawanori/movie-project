@@ -9,6 +9,7 @@ import type {
   ProviderNodeData,
   KlingElementsNodeData,
   ActTwoNodeData,
+  OmniReferenceNodeData,
 } from '@/lib/types/node-editor';
 import { HANDLE_IDS } from '@/lib/types/node-editor';
 
@@ -270,11 +271,35 @@ export function useWorkflowValidation(
       }
     }
 
+    // 10. consent_required error: OmniReferenceNode が ProviderNode に接続済かつ
+    //     consentAccepted=false → 著作権同意が必要 (Generate 不可)
+    const omniNodes = nodes.filter(
+      (n) => (n.data as WorkflowNodeData).type === 'omniReference',
+    );
+    let hasConsentError = false;
+    for (const omniNode of omniNodes) {
+      const omniData = omniNode.data as OmniReferenceNodeData;
+      const isConnected = edges.some(
+        (e) =>
+          e.source === omniNode.id &&
+          e.sourceHandle === HANDLE_IDS.OMNI_REFERENCE_OUTPUT,
+      );
+      if (isConnected && !omniData.consentAccepted) {
+        errors.push({
+          type: 'consent_required',
+          nodeId: omniNode.id,
+          message: '著作権同意が必要です（OmniReferenceNode）',
+        });
+        hasConsentError = true;
+      }
+    }
+
     // 生成可能かどうかの判定（致命的なエラーがないか）
     const canGenerate =
       !!imageInputResult?.data.imageUrl &&
       !!(promptResult?.data.englishPrompt || promptResult?.data.japanesePrompt) &&
-      !!generateResult;
+      !!generateResult &&
+      !hasConsentError;
 
     return {
       errors,

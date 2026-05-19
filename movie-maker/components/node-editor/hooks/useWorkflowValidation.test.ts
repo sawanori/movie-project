@@ -10,6 +10,7 @@ import type {
   GenerateNodeData,
   KlingElementsNodeData,
   ActTwoNodeData,
+  OmniReferenceNodeData,
 } from '@/lib/types/node-editor';
 import { HANDLE_IDS } from '@/lib/types/node-editor';
 
@@ -267,6 +268,108 @@ describe('useWorkflowValidation', () => {
 
     const { result } = renderHook(() => useWorkflowValidation(nodes, []));
     expect(result.current.warnings.some(w => w.type === 'unused_image_input')).toBe(false);
+  });
+
+  // ========== OmniReference consent_required テスト (M-2) ==========
+
+  function createOmniReferenceNode(opts: {
+    id?: string;
+    consentAccepted?: boolean;
+  } = {}): WorkflowNode {
+    return {
+      id: opts.id ?? 'omni-1',
+      type: 'omniReference',
+      position: { x: 0, y: 0 },
+      data: {
+        type: 'omniReference',
+        isValid: true,
+        imageSlots: [],
+        videoSlots: [
+          { assetId: null, mediaType: 'video' },
+          { assetId: null, mediaType: 'video' },
+          { assetId: null, mediaType: 'video' },
+        ],
+        audioSlots: [
+          { assetId: null, mediaType: 'audio' },
+          { assetId: null, mediaType: 'audio' },
+          { assetId: null, mediaType: 'audio' },
+        ],
+        consentAccepted: opts.consentAccepted ?? false,
+      } satisfies OmniReferenceNodeData,
+    };
+  }
+
+  it('V-1: OmniReferenceNode 接続済 + consent=false → consent_required error 発生 + canGenerate=false', () => {
+    const provId = 'prov-seedance';
+    const omniId = 'omni-1';
+
+    const nodes: WorkflowNode[] = [
+      createProviderNode({ id: provId, provider: 'piapi_kling' }),
+      createOmniReferenceNode({ id: omniId, consentAccepted: false }),
+      createGenerateNode(),
+      createImageInputNode({ imageUrl: 'https://example.com/img.jpg' }),
+      createPromptNode({ englishPrompt: 'test' }),
+    ];
+    const edges: Edge[] = [
+      {
+        id: 'edge-omni',
+        source: omniId,
+        target: provId,
+        sourceHandle: HANDLE_IDS.OMNI_REFERENCE_OUTPUT,
+        targetHandle: HANDLE_IDS.OMNI_REFERENCE_INPUT,
+      },
+    ];
+
+    const { result } = renderHook(() => useWorkflowValidation(nodes, edges));
+    const consentErr = result.current.errors.find(
+      (e) => e.type === 'consent_required',
+    );
+    expect(consentErr).toBeDefined();
+    expect(consentErr?.nodeId).toBe(omniId);
+    expect(consentErr?.message).toContain('著作権同意');
+    expect(result.current.canGenerate).toBe(false);
+  });
+
+  it('V-2: OmniReferenceNode 接続済 + consent=true → consent_required error なし', () => {
+    const provId = 'prov-seedance';
+    const omniId = 'omni-1';
+
+    const nodes: WorkflowNode[] = [
+      createProviderNode({ id: provId, provider: 'piapi_kling' }),
+      createOmniReferenceNode({ id: omniId, consentAccepted: true }),
+      createGenerateNode(),
+      createImageInputNode({ imageUrl: 'https://example.com/img.jpg' }),
+      createPromptNode({ englishPrompt: 'test' }),
+    ];
+    const edges: Edge[] = [
+      {
+        id: 'edge-omni',
+        source: omniId,
+        target: provId,
+        sourceHandle: HANDLE_IDS.OMNI_REFERENCE_OUTPUT,
+        targetHandle: HANDLE_IDS.OMNI_REFERENCE_INPUT,
+      },
+    ];
+
+    const { result } = renderHook(() => useWorkflowValidation(nodes, edges));
+    expect(result.current.errors.some((e) => e.type === 'consent_required')).toBe(
+      false,
+    );
+  });
+
+  it('V-3: OmniReferenceNode 未接続 → consent 状態問わず consent_required error なし', () => {
+    const nodes: WorkflowNode[] = [
+      createProviderNode({ provider: 'piapi_kling' }),
+      createOmniReferenceNode({ consentAccepted: false }),
+      createGenerateNode(),
+      createImageInputNode({ imageUrl: 'https://example.com/img.jpg' }),
+      createPromptNode({ englishPrompt: 'test' }),
+    ];
+
+    const { result } = renderHook(() => useWorkflowValidation(nodes, []));
+    expect(result.current.errors.some((e) => e.type === 'consent_required')).toBe(
+      false,
+    );
   });
 
   it('ケース4: KlingElements (画像あり) + ImageInput (画像あり) + Runway Provider → unused_image_input warning なし', () => {

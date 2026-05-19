@@ -12,7 +12,6 @@ import asyncio
 import logging
 import os
 import tempfile
-from typing import Optional
 
 from app.core.supabase import get_supabase
 from app.external.video_provider import get_video_provider, VideoGenerationStatus
@@ -65,7 +64,7 @@ def _build_video_prompt(story_text: str, camera_work: str | None = None) -> str:
     # Runway API制限: 1000文字
     if len(full_prompt) > 1000:
         full_prompt = full_prompt[:997] + "..."
-        logger.warning(f"Prompt truncated to 1000 chars")
+        logger.warning("Prompt truncated to 1000 chars")
 
     return full_prompt
 
@@ -120,6 +119,11 @@ async def process_story_video(video_id: str, video_provider_name: str = None, el
         seedance_seed = video_data.get("seedance_seed")
         seedance_resolution = video_data.get("seedance_resolution")
         seedance_camera_fixed = video_data.get("seedance_camera_fixed")
+
+        # Seedance omni-reference snapshot URL (v3 §6.5)
+        image_reference_urls = video_data.get("image_reference_urls") or []
+        video_reference_urls = video_data.get("video_reference_urls") or []
+        audio_reference_urls = video_data.get("audio_reference_urls") or []
 
         # プロバイダーを決定（引数 > DB > デフォルト）
         provider_name = video_provider_name or video_data.get("video_provider") or "runway"
@@ -211,14 +215,41 @@ async def process_story_video(video_id: str, video_provider_name: str = None, el
             elif provider_name == "seedance" and seedance_duration:
                 effective_duration = seedance_duration
 
-            task_id = await provider.generate_video(
-                image_url=image_url,
-                prompt=video_prompt,
-                duration=effective_duration,
-                aspect_ratio=aspect_ratio,
-                camera_work=camera_work,
-                **extra_params,
+            # Seedance omni-reference 分岐 (v3 §6.5)
+            # snapshot URL のいずれかが非空なら omni 経路へ。
+            # base image_url を image_urls の先頭に統合 (順序保持)。
+            use_seedance_omni = (
+                provider_name == "seedance"
+                and (image_reference_urls or video_reference_urls or audio_reference_urls)
             )
+            if use_seedance_omni:
+                all_image_urls = (
+                    ([image_url] if image_url else []) + image_reference_urls
+                )
+                logger.info(
+                    f"Seedance omni-reference: image_urls={len(all_image_urls)}, "
+                    f"video_urls={len(video_reference_urls)}, "
+                    f"audio_urls={len(audio_reference_urls)}, mode={seedance_mode}"
+                )
+                task_id = await provider.generate_video_with_omni_references(
+                    prompt=video_prompt,
+                    duration=effective_duration,
+                    aspect_ratio=aspect_ratio,
+                    mode=seedance_mode,
+                    image_urls=all_image_urls,
+                    video_urls=video_reference_urls,
+                    audio_urls=audio_reference_urls,
+                    resolution=seedance_resolution,
+                )
+            else:
+                task_id = await provider.generate_video(
+                    image_url=image_url,
+                    prompt=video_prompt,
+                    duration=effective_duration,
+                    aspect_ratio=aspect_ratio,
+                    camera_work=camera_work,
+                    **extra_params,
+                )
 
         if not task_id:
             raise Exception(f"{provider.provider_name} task creation failed")

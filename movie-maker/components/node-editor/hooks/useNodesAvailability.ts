@@ -21,7 +21,7 @@ const PROVIDER_SPECIFIC_NODES: Record<VideoProvider, NodeType[]> = {
   veo: [],
   domoai: [],
   hailuo: ['hailuoEndFrame'],
-  seedance: [],
+  seedance: ['omniReference'],
 };
 
 /**
@@ -93,6 +93,7 @@ export function useNodesAvailability({
       'klingCameraControl',
       'actTwo',
       'hailuoEndFrame',
+      'omniReference',
     ];
 
     const availableNodes = allNodeTypes.filter(isNodeAvailable);

@@ -361,6 +361,18 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
         );
       })}
 
+      {/* Seedance Omni Reference 入力ハンドル (seedance のみ表示) */}
+      {data.provider === 'seedance' && (
+        <Handle
+          type="target"
+          position={Position.Left}
+          id={HANDLE_IDS.OMNI_REFERENCE_INPUT}
+          className={inputHandleClassName}
+          style={{ top: '95%' }}
+          title="Omni Reference (Seedance 専用)"
+        />
+      )}
+
       {/* 出力ハンドル */}
       <Handle
         type="source"

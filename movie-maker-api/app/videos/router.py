@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import Optional
 from datetime import datetime
+import asyncio
 import logging
 import uuid
 import time
@@ -71,6 +72,8 @@ from app.videos.schemas import (
     ExtractFrameRequest, ExtractFrameResponse,
     # Trim Video 用
     TrimVideoRequest, TrimVideoResponse,
+    # Seedance Omni Reference 用 (T1-3)
+    OmniReferenceAssetResponse,
 )
 from app.videos import service
 from app.videos.service import (
@@ -82,6 +85,7 @@ from app.videos.service import (
     get_image_dimensions,
 )
 from app.external.r2 import upload_image, upload_audio, upload_video, download_file, delete_file, get_r2_client, get_public_url
+from app.external import r2  # T1-4 omni reference upload で使用 (r2.upload_with_key)
 from app.services.topaz_service import get_topaz_service
 from app.external.gemini_client import suggest_stories_from_image, generate_4scene_storyboard, generate_story_frame_image, generate_ad_script, convert_to_flux_json_prompt
 from app.tasks import start_video_processing, start_story_processing, start_concat_processing
@@ -3750,6 +3754,107 @@ async def translate_story_prompt_endpoint(
         )
 
 
+# ===========================================================================
+# T1-7: Seedance Omni Reference asset_id 解決ヘルパー
+#
+# v3 計画書 §6.4 (Router 側) に基づく asset_id → URL 解決 + 検証。
+# - cross-user 拒否 (B-35)
+# - expires_at < now 拒否 (B-36)
+# - media_type 不一致拒否 (B-36b)
+# - 存在しない asset_id 拒否
+# - 入力順序を保持した (public_url, duration_seconds) タプルリストを返却
+#
+# audio 合計時間検証 (B-43, NEW-C-3) は呼出側 (create_story_video) で実施
+# (asset 解決後でしか合計 duration が判明しないため)。
+# ===========================================================================
+
+# PiAPI 公式: audio_urls の合計 duration は 15s まで (各個別ではなく合計)
+MAX_AUDIO_TOTAL_SECONDS = 15.0
+# image_urls の上限 (base image_url + image_reference_asset_ids 合算)
+MAX_IMAGE_TOTAL_COUNT = 9
+
+
+async def resolve_asset_ids(
+    asset_ids: list,
+    user_id: str,
+    media_type: str,
+) -> list[tuple[str, Optional[float]]]:
+    """omni_reference_assets テーブルから asset_id を public_url に解決する。
+
+    v3 §6.4 / T1-7。
+
+    Args:
+        asset_ids: 解決対象の UUID リスト (Pydantic 経由で UUID 型)。
+        user_id: 認証ユーザー ID (str 化済)。
+        media_type: 'image' | 'video' | 'audio'。
+
+    Returns:
+        list of (public_url, duration_seconds) - 入力順序保持
+
+    Raises:
+        HTTPException(422): cross-user / TTL 切れ / media_type 不一致 / 不存在
+    """
+    if not asset_ids:
+        return []
+
+    from dateutil.parser import parse as _parse_dt
+
+    sb = get_supabase()  # service-role (RLS bypass)
+    id_strs = [str(aid) for aid in asset_ids]
+    response = (
+        sb.table("omni_reference_assets")
+        .select("id,public_url,user_id,expires_at,media_type,duration_seconds")
+        .in_("id", id_strs)
+        .execute()
+    )
+    rows = response.data or []
+    rows_by_id = {row["id"]: row for row in rows}
+
+    # 比較用に offset-naive UTC 化 (DB 値は ISO8601 with tz)
+    now_utc = datetime.utcnow()
+
+    resolved: list[tuple[str, Optional[float]]] = []
+    for aid in asset_ids:
+        aid_str = str(aid)
+        row = rows_by_id.get(aid_str)
+        if row is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"asset_id {aid} not found",
+            )
+        # cross-user 拒否 (詳細リーク防止のため "not found" 文言)
+        if str(row.get("user_id")) != str(user_id):
+            raise HTTPException(
+                status_code=422,
+                detail=f"asset_id {aid} は他ユーザーのリソース",
+            )
+        if row.get("media_type") != media_type:
+            raise HTTPException(
+                status_code=422,
+                detail=f"asset_id {aid} は media_type 不一致",
+            )
+        # expires_at 比較 (tz-aware → naive UTC へ変換)
+        expires_raw = row.get("expires_at")
+        if expires_raw:
+            try:
+                expires_dt = _parse_dt(expires_raw)
+                if expires_dt.tzinfo is not None:
+                    expires_dt = expires_dt.replace(tzinfo=None)
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"asset_id {aid} の expires_at が不正: {exc}",
+                ) from exc
+            if expires_dt < now_utc:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"asset_id {aid} は期限切れ",
+                )
+        resolved.append((row["public_url"], row.get("duration_seconds")))
+
+    return resolved
+
+
 @router.post("/story", response_model=StoryVideoResponse, status_code=status.HTTP_201_CREATED)
 async def create_story_video(
     request: StoryVideoCreate,
@@ -3773,6 +3878,47 @@ async def create_story_video(
         request.seedance_resolution,
         settings.PIAPI_SEEDANCE_TASK_TYPE,
     )
+
+    # ============================================================
+    # T1-7: Seedance omni_reference asset_id 解決 (v3 §6.4)
+    # - cross-user / TTL / media_type 不一致を 422 で拒否
+    # - audio 合計 ≤15s 検証 (B-43, NEW-C-3)
+    # - image 合計 (base + ref) ≤9 再検証 (v3)
+    # 解決済 URL は video_generations 行に snapshot 保存し、
+    # asset 削除後も生成履歴が壊れないようにする。
+    # ============================================================
+    image_resolved = await resolve_asset_ids(
+        request.image_reference_asset_ids or [], user_id, "image",
+    )
+    video_resolved = await resolve_asset_ids(
+        request.video_reference_asset_ids or [], user_id, "video",
+    )
+    audio_resolved = await resolve_asset_ids(
+        request.audio_reference_asset_ids or [], user_id, "audio",
+    )
+
+    # v3 NEW-C-3 / H-2 解消: audio 合計時間検証 (asset 解決後でしか不可)
+    audio_total = sum((d or 0.0) for _, d in audio_resolved)
+    if audio_total > MAX_AUDIO_TOTAL_SECONDS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"audio 参照の合計時間 {audio_total:.1f}s が上限 "
+                f"{MAX_AUDIO_TOTAL_SECONDS}s を超過 (PiAPI 公式仕様)"
+            ),
+        )
+
+    # v3: image 合計再検証 (Pydantic max=8 を通過後、base image_url を加味)
+    base_image_count = 1 if request.image_url else 0
+    if base_image_count + len(image_resolved) > MAX_IMAGE_TOTAL_COUNT:
+        raise HTTPException(
+            status_code=422,
+            detail=f"image_urls 合計は {MAX_IMAGE_TOTAL_COUNT} 個まで",
+        )
+
+    image_reference_urls_snapshot = [u for u, _ in image_resolved] or None
+    video_reference_urls_snapshot = [u for u, _ in video_resolved] or None
+    audio_reference_urls_snapshot = [u for u, _ in audio_resolved] or None
 
     # オーバーレイ設定を辞書に変換
     overlay_text = None
@@ -3825,6 +3971,12 @@ async def create_story_video(
         "seedance_seed": request.seedance_seed,
         "seedance_resolution": request.seedance_resolution,
         "seedance_camera_fixed": request.seedance_camera_fixed,
+        # T1-7: Seedance omni_reference snapshot (JSONB columns)。
+        # Pydantic 経由で *_reference_asset_ids が未指定の場合は None のまま保存し、
+        # 既存 i2v 経路の後方互換を完全維持する。
+        "image_reference_urls": image_reference_urls_snapshot,
+        "video_reference_urls": video_reference_urls_snapshot,
+        "audio_reference_urls": audio_reference_urls_snapshot,
     }
 
     # Kling Elements用の画像URLリストを取得
@@ -5959,3 +6111,271 @@ async def extract_frame(
                     _os.rmdir(tmp_dir_path)
                 except OSError:
                     pass
+
+
+# ===========================================================================
+# T1-4: Seedance Omni Reference Upload API (video / audio / image)
+#
+# v3 計画書 §6.3 に基づく 3 endpoint。
+#  - multipart upload + consent_accepted Form field
+#  - Content-Type / file size / duration を validate
+#  - R2 へ `omni-references/{user_id}/{uuid}.{ext}` で配置 (r2.upload_with_key)
+#  - omni_reference_assets テーブルに service-role キーで INSERT
+#  - レスポンス: OmniReferenceAssetResponse (T1-3 で定義済)
+#
+# 注意 (二重 prefix bug 回避):
+#   r2.upload_video / upload_audio / upload_image は内部で prefix を hardcode
+#   するため使用しない。必ず r2.upload_with_key(content, key, content_type) を
+#   使い、key を呼出側で構築する。
+# ===========================================================================
+
+_OMNI_MAX_VIDEO_SIZE = 50 * 1024 * 1024  # 50MB
+_OMNI_MAX_AUDIO_SIZE = 10 * 1024 * 1024  # 10MB
+_OMNI_MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
+_OMNI_MAX_VIDEO_DURATION = 15.4  # seconds (Seedance Pro 上限)
+_OMNI_MAX_AUDIO_DURATION_EACH = 15.0  # 単体上限 (合計検証は T1-7 Router 側)
+
+_OMNI_ALLOWED_VIDEO_CT = {"video/mp4", "video/quicktime"}
+_OMNI_ALLOWED_AUDIO_CT = {"audio/mpeg", "audio/wav"}
+_OMNI_ALLOWED_IMAGE_CT = {"image/jpeg", "image/png", "image/webp"}
+
+_OMNI_VIDEO_EXT = {"video/mp4": "mp4", "video/quicktime": "mov"}
+_OMNI_AUDIO_EXT = {"audio/mpeg": "mp3", "audio/wav": "wav"}
+_OMNI_IMAGE_EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+
+
+async def _probe_upload_duration(content: bytes) -> Optional[float]:
+    """ffprobe で in-memory bytes の duration (秒) を取得。
+
+    既存 ffmpeg_service の ffprobe 呼出パターン (l.994-1017) と同じ
+    `format=duration` 抽出を採用。tmpfile に書き出して ffprobe を実行する。
+
+    Returns:
+        float: duration in seconds, or None if probing failed.
+    """
+    tmp_path: Optional[str] = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".upload") as tf:
+            tf.write(content)
+            tmp_path = tf.name
+
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            tmp_path,
+        ]
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _stderr = await process.communicate()
+        if process.returncode == 0 and stdout:
+            try:
+                return float(stdout.decode().strip())
+            except ValueError:
+                return None
+        return None
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"omni-reference ffprobe failed: {exc}")
+        return None
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+def _build_omni_key(user_id: str, asset_id: uuid.UUID, ext: str) -> str:
+    """omni-references R2 key を構築。"""
+    return f"omni-references/{user_id}/{asset_id}.{ext}"
+
+
+def _omni_response_from_row(row: dict) -> OmniReferenceAssetResponse:
+    """DB INSERT 結果から OmniReferenceAssetResponse を組み立てる。"""
+    return OmniReferenceAssetResponse(
+        id=row["id"],
+        url=row["public_url"],
+        media_type=row["media_type"],
+        duration_seconds=row.get("duration_seconds"),
+        content_type=row["content_type"],
+        file_size_bytes=row["file_size_bytes"],
+        expires_at=row["expires_at"],
+    )
+
+
+@router.post(
+    "/upload-omni-video-reference",
+    status_code=200,
+    response_model=OmniReferenceAssetResponse,
+)
+async def upload_omni_video_reference(
+    file: UploadFile = File(...),
+    consent_accepted: bool = Form(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Seedance omni_reference 用 動画 (MP4/MOV、≤15.4s、≤50MB) をアップロード。"""
+    if not consent_accepted:
+        raise HTTPException(status_code=422, detail="著作権同意が必要です")
+    if file.content_type not in _OMNI_ALLOWED_VIDEO_CT:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Content-Type 不正 (許可: {sorted(_OMNI_ALLOWED_VIDEO_CT)})",
+        )
+
+    content = await file.read()
+    if len(content) > _OMNI_MAX_VIDEO_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"ファイルサイズが大きすぎます (上限: {_OMNI_MAX_VIDEO_SIZE // (1024*1024)}MB)",
+        )
+
+    duration = await _probe_upload_duration(content)
+    if duration is None:
+        raise HTTPException(status_code=422, detail="動画 duration を取得できませんでした")
+    if duration > _OMNI_MAX_VIDEO_DURATION:
+        raise HTTPException(
+            status_code=422,
+            detail=f"動画 duration は {_OMNI_MAX_VIDEO_DURATION}s 以下である必要があります (実測: {duration:.2f}s)",
+        )
+
+    user_id = current_user["user_id"]
+    asset_id = uuid.uuid4()
+    ext = _OMNI_VIDEO_EXT[file.content_type]
+    key = _build_omni_key(user_id, asset_id, ext)
+    public_url = await r2.upload_with_key(content, key, file.content_type)
+
+    sb = get_supabase()
+    insert_payload = {
+        "id": str(asset_id),
+        "user_id": str(user_id),
+        "r2_key": key,
+        "public_url": public_url,
+        "media_type": "video",
+        "content_type": file.content_type,
+        "duration_seconds": float(duration),
+        "file_size_bytes": len(content),
+        "consent_accepted": True,
+    }
+    result = sb.table("omni_reference_assets").insert(insert_payload).execute()
+    if not result.data:
+        raise HTTPException(status_code=500, detail="omni_reference asset INSERT に失敗しました")
+    return _omni_response_from_row(result.data[0])
+
+
+@router.post(
+    "/upload-omni-audio-reference",
+    status_code=200,
+    response_model=OmniReferenceAssetResponse,
+)
+async def upload_omni_audio_reference(
+    file: UploadFile = File(...),
+    consent_accepted: bool = Form(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Seedance omni_reference 用 音声 (MP3/WAV、単体 ≤15s、≤10MB) をアップロード。
+
+    合計時間 (≤15s) 検証は Router (T1-7) 側で実施する。ここでは単体 duration のみ。
+    """
+    if not consent_accepted:
+        raise HTTPException(status_code=422, detail="著作権同意が必要です")
+    if file.content_type not in _OMNI_ALLOWED_AUDIO_CT:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Content-Type 不正 (許可: {sorted(_OMNI_ALLOWED_AUDIO_CT)})",
+        )
+
+    content = await file.read()
+    if len(content) > _OMNI_MAX_AUDIO_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"ファイルサイズが大きすぎます (上限: {_OMNI_MAX_AUDIO_SIZE // (1024*1024)}MB)",
+        )
+
+    duration = await _probe_upload_duration(content)
+    if duration is None:
+        raise HTTPException(status_code=422, detail="音声 duration を取得できませんでした")
+    if duration > _OMNI_MAX_AUDIO_DURATION_EACH:
+        raise HTTPException(
+            status_code=422,
+            detail=f"音声 duration は単体で {_OMNI_MAX_AUDIO_DURATION_EACH}s 以下である必要があります (実測: {duration:.2f}s)",
+        )
+
+    user_id = current_user["user_id"]
+    asset_id = uuid.uuid4()
+    ext = _OMNI_AUDIO_EXT[file.content_type]
+    key = _build_omni_key(user_id, asset_id, ext)
+    public_url = await r2.upload_with_key(content, key, file.content_type)
+
+    sb = get_supabase()
+    insert_payload = {
+        "id": str(asset_id),
+        "user_id": str(user_id),
+        "r2_key": key,
+        "public_url": public_url,
+        "media_type": "audio",
+        "content_type": file.content_type,
+        "duration_seconds": float(duration),
+        "file_size_bytes": len(content),
+        "consent_accepted": True,
+    }
+    result = sb.table("omni_reference_assets").insert(insert_payload).execute()
+    if not result.data:
+        raise HTTPException(status_code=500, detail="omni_reference asset INSERT に失敗しました")
+    return _omni_response_from_row(result.data[0])
+
+
+@router.post(
+    "/upload-omni-image-reference",
+    status_code=200,
+    response_model=OmniReferenceAssetResponse,
+)
+async def upload_omni_image_reference(
+    file: UploadFile = File(...),
+    consent_accepted: bool = Form(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Seedance omni_reference 用 画像 (JPEG/PNG/WEBP、≤10MB) をアップロード。
+
+    image は duration を持たないため `duration_seconds=None` で記録する。
+    """
+    if not consent_accepted:
+        raise HTTPException(status_code=422, detail="著作権同意が必要です")
+    if file.content_type not in _OMNI_ALLOWED_IMAGE_CT:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Content-Type 不正 (許可: {sorted(_OMNI_ALLOWED_IMAGE_CT)})",
+        )
+
+    content = await file.read()
+    if len(content) > _OMNI_MAX_IMAGE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"ファイルサイズが大きすぎます (上限: {_OMNI_MAX_IMAGE_SIZE // (1024*1024)}MB)",
+        )
+
+    user_id = current_user["user_id"]
+    asset_id = uuid.uuid4()
+    ext = _OMNI_IMAGE_EXT[file.content_type]
+    key = _build_omni_key(user_id, asset_id, ext)
+    public_url = await r2.upload_with_key(content, key, file.content_type)
+
+    sb = get_supabase()
+    insert_payload = {
+        "id": str(asset_id),
+        "user_id": str(user_id),
+        "r2_key": key,
+        "public_url": public_url,
+        "media_type": "image",
+        "content_type": file.content_type,
+        "duration_seconds": None,
+        "file_size_bytes": len(content),
+        "consent_accepted": True,
+    }
+    result = sb.table("omni_reference_assets").insert(insert_payload).execute()
+    if not result.data:
+        raise HTTPException(status_code=500, detail="omni_reference asset INSERT に失敗しました")
+    return _omni_response_from_row(result.data[0])

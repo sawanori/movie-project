@@ -121,6 +121,14 @@ const NODE_ITEMS: NodePaletteItem[] = [
     category: 'provider-specific',
     availableFor: ['hailuo'],
   },
+  {
+    type: 'omniReference',
+    label: 'Seedance Omni Reference',
+    description: '動画/音声/画像を参照素材として使用 (omni_reference モード)',
+    icon: 'layers',
+    category: 'provider-specific',
+    availableFor: ['seedance'],
+  },
   // 後処理
   {
     type: 'bgm',

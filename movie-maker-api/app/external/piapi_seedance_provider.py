@@ -9,9 +9,7 @@ VideoProviderInterface を実装。
   - prompt / duration (4-15秒、1秒刻み) / aspect_ratio / resolution
   - seedance_mode (pro/fast)、generate_audio (BGM)、seed (再現性)、camerafixed
   - 1080p は -vip task_type 必須 (router で 422 reject)
-未対応:
-  - video_references / audio_references / parent_task_id (omni-reference モード)
-  - last_frame_url (first-last-frames モード)
+  - omni_reference (image_urls / video_urls / audio_urls) -- VIP モデル必須
 
 API: POST/GET https://api.piapi.ai/api/v1/task
 """
@@ -34,6 +32,13 @@ PIAPI_BASE_URL = "https://api.piapi.ai/api/v1"
 
 DURATION_MIN = 4
 DURATION_MAX = 15
+
+# Omni reference 上限 (v3 §6.2)
+MAX_IMAGE_URLS = 9
+MAX_VIDEO_URLS = 3
+MAX_AUDIO_URLS = 3
+MAX_VIDEO_TOTAL_SECONDS = 15.4
+MAX_AUDIO_TOTAL_SECONDS = 15.0  # v3: PiAPI 公式 spec (合計)
 
 
 def _map_error_message(error: str) -> str:
@@ -96,6 +101,39 @@ class PiAPISeedanceProvider(VideoProviderInterface):
             "x-api-key": self.api_key,
             "Content-Type": "application/json",
         }
+
+    async def _post_task(self, payload: dict) -> str:
+        """
+        PiAPI /task に POST し task_id を返す共通ヘルパー。
+
+        Rule of Three に従い、generate_video / generate_video_from_text /
+        generate_video_with_omni_references で共通化された
+        `httpx POST → task_id 抽出 → エラーマッピング` フロー。
+
+        Raises:
+            VideoProviderError: HTTP エラー or 想定外例外
+        """
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{PIAPI_BASE_URL}/task",
+                    headers=self._get_headers(),
+                    json=payload,
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+                data = response.json()
+                task_id = data["data"]["task_id"]
+                logger.info(f"Seedance task created: {task_id}")
+                return task_id
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Seedance HTTP error: {e.response.status_code} - {e.response.text}")
+            raise VideoProviderError(f"Seedance API エラー: {e.response.status_code}")
+        except VideoProviderError:
+            raise
+        except Exception as e:
+            logger.exception(f"Seedance _post_task failed: {e}")
+            raise VideoProviderError(f"動画生成に失敗しました: {str(e)}")
 
     async def generate_video(
         self,
@@ -172,28 +210,7 @@ class PiAPISeedanceProvider(VideoProviderInterface):
             "config": {"service_mode": "public"},
         }
 
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{PIAPI_BASE_URL}/task",
-                    headers=self._get_headers(),
-                    json=payload,
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-                data = response.json()
-                task_id = data["data"]["task_id"]
-                logger.info(f"Seedance task created: {task_id}")
-                return task_id
-
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Seedance HTTP error: {e.response.status_code} - {e.response.text}")
-            raise VideoProviderError(f"Seedance API エラー: {e.response.status_code}")
-        except VideoProviderError:
-            raise
-        except Exception as e:
-            logger.exception(f"Seedance generate_video failed: {e}")
-            raise VideoProviderError(f"動画生成に失敗しました: {str(e)}")
+        return await self._post_task(payload)
 
     async def generate_video_from_text(
         self,
@@ -258,28 +275,104 @@ class PiAPISeedanceProvider(VideoProviderInterface):
             "config": {"service_mode": "public"},
         }
 
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{PIAPI_BASE_URL}/task",
-                    headers=self._get_headers(),
-                    json=payload,
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-                data = response.json()
-                task_id = data["data"]["task_id"]
-                logger.info(f"Seedance T2V task created: {task_id}")
-                return task_id
+        return await self._post_task(payload)
 
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Seedance T2V HTTP error: {e.response.status_code} - {e.response.text}")
-            raise VideoProviderError(f"Seedance API エラー: {e.response.status_code}")
-        except VideoProviderError:
-            raise
-        except Exception as e:
-            logger.exception(f"Seedance generate_video_from_text failed: {e}")
-            raise VideoProviderError(f"動画生成に失敗しました: {str(e)}")
+    async def generate_video_with_omni_references(
+        self,
+        prompt: str,
+        duration: int = 5,
+        aspect_ratio: str = "9:16",
+        mode: Optional[str] = None,
+        image_urls: Optional[list[str]] = None,
+        video_urls: Optional[list[str]] = None,
+        audio_urls: Optional[list[str]] = None,
+        resolution: Optional[str] = None,
+    ) -> str:
+        """
+        Seedance omni-reference 生成 (v3 §6.2)
+
+        既存 task_type をそのまま使用し、input.{image_urls, video_urls, audio_urls}
+        を構築して送信する。`input.mode` は送信しない (preview 系統不要)。
+
+        Args:
+            prompt: 動画生成プロンプト (最大 4000 文字)
+            duration: 動画長さ (秒)。整数 4-15。
+            aspect_ratio: アスペクト比
+            mode: モデルモード ('pro' | 'fast' | None)
+            image_urls: 参照画像 URL (最大 9)
+            video_urls: 参照動画 URL (最大 3)
+            audio_urls: 参照音声 URL (最大 3)
+            resolution: Optional[str] 出力解像度 ('480p' | '720p' | '1080p')。
+                None の場合は env (self.resolution) を fallback として使用。
+
+        Returns:
+            str: task_id
+
+        Raises:
+            VideoProviderError: VIP 非対応 / 上限超過 / audio 単独 / 全 0
+            ValueError: resolution=1080p かつ 非 VIP task_type (omni 自体が VIP 必須なので通常 raise されない)
+        """
+        task_type = self._resolve_task_type(mode)
+        if not task_type.endswith("-vip"):
+            raise VideoProviderError(
+                "omni_reference 用途は VIP モデル必須です "
+                "(PIAPI_SEEDANCE_TASK_TYPE に -vip suffix 必須)"
+            )
+
+        image_urls = image_urls or []
+        video_urls = video_urls or []
+        audio_urls = audio_urls or []
+
+        if len(image_urls) > MAX_IMAGE_URLS:
+            raise VideoProviderError(f"image_urls は最大 {MAX_IMAGE_URLS} 個")
+        if len(video_urls) > MAX_VIDEO_URLS:
+            raise VideoProviderError(f"video_urls は最大 {MAX_VIDEO_URLS} 個")
+        if len(audio_urls) > MAX_AUDIO_URLS:
+            raise VideoProviderError(f"audio_urls は最大 {MAX_AUDIO_URLS} 個")
+
+        # 防御コード (Router で事前検証済)
+        if not image_urls and not video_urls and audio_urls:
+            raise VideoProviderError(
+                "audio_urls 単独不可。image_urls か video_urls が必要 (防御)"
+            )
+        if not image_urls and not video_urls and not audio_urls:
+            raise VideoProviderError("参照素材を 1 つ以上指定 (防御)")
+
+        # resolution: UI 指定 > env (フォールバック)
+        # generate_video / generate_video_from_text と同じパターン
+        effective_resolution = resolution or self.resolution
+
+        input_payload: dict = {
+            "prompt": prompt[:4000],
+            "duration": int(duration),
+            "aspect_ratio": aspect_ratio,
+        }
+
+        if task_type.endswith("-vip"):
+            input_payload["resolution"] = effective_resolution
+        elif effective_resolution == '1080p':
+            # 非 VIP env で 1080p が来た場合は例外
+            # (omni は VIP 必須なので上の guard で raise されるが safety net として保持)
+            raise ValueError(
+                "resolution=1080p requires VIP plan. "
+                "Either change resolution to 480p/720p or set PIAPI_SEEDANCE_TASK_TYPE to a -vip variant."
+            )
+
+        if image_urls:
+            input_payload["image_urls"] = image_urls
+        if video_urls:
+            input_payload["video_urls"] = video_urls
+        if audio_urls:
+            input_payload["audio_urls"] = audio_urls
+        # input.mode は送信しない (preview 系統不要)
+
+        payload = {
+            "model": "seedance",
+            "task_type": task_type,
+            "input": input_payload,
+            "config": {"service_mode": "public"},
+        }
+        return await self._post_task(payload)
 
     async def check_status(self, task_id: str) -> VideoStatus:
         """

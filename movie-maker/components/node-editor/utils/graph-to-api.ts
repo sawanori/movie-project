@@ -19,6 +19,7 @@ import type {
   OverlayNodeData,
   StoryVideoCreateRequest,
   GenerateNodeData,
+  OmniReferenceNodeData,
 } from '@/lib/types/node-editor';
 import { HANDLE_IDS } from '@/lib/types/node-editor';
 
@@ -361,6 +362,40 @@ export function graphToStoryVideoCreate(
     }
     if (provider.seedanceCameraFixed !== undefined) {
       request.seedance_camera_fixed = provider.seedanceCameraFixed;
+    }
+
+    // Omni Reference (v3 §6.10):
+    // OmniReferenceNode が ProviderNode の OMNI_REFERENCE_INPUT に接続されている場合のみ反映。
+    // 未接続なら一切のリクエスト変更を行わず、既存挙動を完全維持する。
+    if (providerNode) {
+      const omniNode = nodes.find((n) => {
+        const data = n.data as WorkflowNodeData;
+        if (data.type !== 'omniReference') return false;
+        return edges.some(
+          (e) =>
+            e.source === n.id &&
+            e.target === providerNode.id &&
+            e.targetHandle === HANDLE_IDS.OMNI_REFERENCE_INPUT
+        );
+      });
+      if (omniNode) {
+        const omniData = omniNode.data as OmniReferenceNodeData;
+        if (!omniData.consentAccepted) {
+          throw new Error('著作権同意が必要です');
+        }
+        const imgIds = omniData.imageSlots
+          .filter((s): s is typeof s & { assetId: string } => !!s.assetId)
+          .map((s) => s.assetId);
+        const vidIds = omniData.videoSlots
+          .filter((s): s is typeof s & { assetId: string } => !!s.assetId)
+          .map((s) => s.assetId);
+        const audIds = omniData.audioSlots
+          .filter((s): s is typeof s & { assetId: string } => !!s.assetId)
+          .map((s) => s.assetId);
+        if (imgIds.length) request.image_reference_asset_ids = imgIds;
+        if (vidIds.length) request.video_reference_asset_ids = vidIds;
+        if (audIds.length) request.audio_reference_asset_ids = audIds;
+      }
     }
   }
 

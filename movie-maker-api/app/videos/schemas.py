@@ -2,6 +2,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator, validat
 from datetime import datetime
 from enum import Enum
 from typing import Self, Optional, Literal
+from uuid import UUID
+import re
 
 
 class VideoStatus(str, Enum):
@@ -351,6 +353,25 @@ class StoryVideoCreate(BaseModel):
     source_video_url: Optional[str] = Field(None, description="V2V参照動画URL")
     subject_type: Optional[str] = Field("person", description="被写体タイプ: 'person', 'animal', 'object', etc.")
 
+    # Seedance omni_reference 用フィールド (v3 仕様)
+    image_reference_asset_ids: Optional[list[UUID]] = Field(
+        default=None,
+        max_length=8,
+        description="omni_reference 用追加画像参照の asset_id。"
+                    "最大 8 個 (base image_url と合算で PiAPI 上限 9 に収まる)。"
+                    "外部 URL 直接受付不可 (アップロード API 経由必須)"
+    )
+    video_reference_asset_ids: Optional[list[UUID]] = Field(
+        default=None,
+        max_length=3,
+        description="omni_reference 用動画参照の asset_id。最大 3 個、合計 ≤15.4s"
+    )
+    audio_reference_asset_ids: Optional[list[UUID]] = Field(
+        default=None,
+        max_length=3,
+        description="omni_reference 用音声参照の asset_id。最大 3 個、合計 ≤15s (PiAPI 公式)"
+    )
+
     @field_validator('veo_duration')
     @classmethod
     def validate_veo_duration_discrete(cls, v: Optional[int]) -> Optional[int]:
@@ -403,6 +424,76 @@ class StoryVideoCreate(BaseModel):
             if self.video_provider and self.video_provider != VideoProvider.PIAPI_KLING:
                 raise ValueError("kling_duration はKlingプロバイダーのみ対応しています")
         return self
+
+    @model_validator(mode='after')
+    def validate_omni_references(self) -> Self:
+        """Seedance omni_reference cross-validation (v3 §6.4)
+
+        - *_reference_asset_ids は video_provider=seedance (or None) 専用
+        - base image_url + image_reference_asset_ids 合算 ≤ 9 (PiAPI 上限)
+        - 個別上限は Field(max_length=...) で担保 (image=8, video=3, audio=3)
+        - 「合計 1-12」検証は仕様未存在のため作らない (v3 で撤去)
+        - audio 単独不可は構造的不可 (image_url は必須) → 防御コードのみ
+        - プロンプト内 @image{N} / @video{N} / @audio{N} の N が対応 count を超えないこと
+        """
+        has_video_refs = bool(self.video_reference_asset_ids)
+        has_audio_refs = bool(self.audio_reference_asset_ids)
+        has_image_refs = bool(self.image_reference_asset_ids)
+        if not (has_video_refs or has_audio_refs or has_image_refs):
+            return self
+
+        if self.video_provider not in (None, VideoProvider.SEEDANCE):
+            raise ValueError(
+                "*_reference_asset_ids は video_provider=seedance でのみ利用可能"
+            )
+
+        base_image_count = 1 if self.image_url else 0
+        image_refs_count = len(self.image_reference_asset_ids or [])
+        image_count = base_image_count + image_refs_count
+        video_count = len(self.video_reference_asset_ids or [])
+        audio_count = len(self.audio_reference_asset_ids or [])
+
+        if image_count > 9:
+            raise ValueError(
+                f"image_urls 合計は 9 個まで "
+                f"(base image_url {base_image_count} + 追加 {image_refs_count})"
+            )
+
+        # 防御コード (構造的に到達不能: image_url が必須のため image_count >= 1)
+        if image_count == 0 and video_count == 0 and audio_count > 0:
+            raise ValueError(
+                "audio 単独不可。image または video を 1 つ以上指定 (防御)"
+            )
+
+        # プロンプト内 @tag{N} validate
+        text = self.story_text or ''
+        for tag, count in (
+            ('image', image_count),
+            ('video', video_count),
+            ('audio', audio_count),
+        ):
+            for match in re.finditer(rf'@{tag}(\d+)', text):
+                n = int(match.group(1))
+                if n < 1 or n > count:
+                    raise ValueError(
+                        f"プロンプト内の @{tag}{n} は範囲外 "
+                        f"(指定された {tag} 参照は {count} 個)"
+                    )
+        return self
+
+
+class OmniReferenceAssetResponse(BaseModel):
+    """Upload API レスポンス schema (omni_reference asset 登録結果)
+
+    v3 §6.4 / H-1 解消: T1-3 で一元定義し、T1-4 (Upload API) はこれを参照する。
+    """
+    id: UUID
+    url: str
+    media_type: Literal["video", "audio", "image"]
+    duration_seconds: Optional[float] = None
+    content_type: str
+    file_size_bytes: int
+    expires_at: datetime
 
 
 class StoryVideoResponse(BaseModel):

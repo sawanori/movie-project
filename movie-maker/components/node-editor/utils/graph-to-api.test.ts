@@ -12,6 +12,8 @@ import type {
   ProviderNodeData,
   GenerateNodeData,
   KlingElementsNodeData,
+  OmniReferenceNodeData,
+  OmniReferenceSlot,
 } from '@/lib/types/node-editor'
 import { HANDLE_IDS } from '@/lib/types/node-editor'
 
@@ -1246,5 +1248,244 @@ describe('graphToStoryVideoCreate - Seedance 詳細パラメータ', () => {
     const nodes = createSeedanceNodes({ seedanceCameraFixed: undefined });
     const result = graphToStoryVideoCreate(nodes, createBasicEdges());
     expect(result.seedance_camera_fixed).toBeUndefined();
+  });
+});
+
+// ========== Seedance Omni Reference graph-to-api テスト (v3 §15.2 F-7~F-11, F-16) ==========
+
+describe('graphToStoryVideoCreate - Seedance Omni Reference', () => {
+  const PROVIDER_ID = 'provider-seedance-omni';
+  const GENERATE_ID = 'generate-omni';
+  const OMNI_ID = 'omni-1';
+
+  function createSeedanceProviderNode(): WorkflowNode {
+    return {
+      id: PROVIDER_ID,
+      type: 'provider',
+      position: { x: 200, y: 0 },
+      data: {
+        type: 'provider',
+        isValid: true,
+        provider: 'seedance',
+        aspectRatio: '9:16',
+        duration: 5,
+      } satisfies ProviderNodeData,
+    };
+  }
+
+  function createOmniReferenceNode(opts: {
+    imageAssetIds?: (string | null)[];
+    videoAssetIds?: (string | null)[];
+    audioAssetIds?: (string | null)[];
+    consentAccepted?: boolean;
+  }): WorkflowNode {
+    const toImageSlots = (ids: (string | null)[]): OmniReferenceSlot[] =>
+      ids.map((assetId) => ({ assetId, mediaType: 'image' }));
+    const padTo3 = (ids: (string | null)[]): (string | null)[] => {
+      const padded: (string | null)[] = [...ids];
+      while (padded.length < 3) padded.push(null);
+      return padded.slice(0, 3);
+    };
+    const toVideoSlots = (ids: (string | null)[]) => {
+      const p = padTo3(ids);
+      return [
+        { assetId: p[0], mediaType: 'video' as const },
+        { assetId: p[1], mediaType: 'video' as const },
+        { assetId: p[2], mediaType: 'video' as const },
+      ] as [OmniReferenceSlot, OmniReferenceSlot, OmniReferenceSlot];
+    };
+    const toAudioSlots = (ids: (string | null)[]) => {
+      const p = padTo3(ids);
+      return [
+        { assetId: p[0], mediaType: 'audio' as const },
+        { assetId: p[1], mediaType: 'audio' as const },
+        { assetId: p[2], mediaType: 'audio' as const },
+      ] as [OmniReferenceSlot, OmniReferenceSlot, OmniReferenceSlot];
+    };
+
+    const imageIds = opts.imageAssetIds ?? Array<string | null>(8).fill(null);
+    const videoIds = opts.videoAssetIds ?? [null, null, null];
+    const audioIds = opts.audioAssetIds ?? [null, null, null];
+
+    return {
+      id: OMNI_ID,
+      type: 'omniReference',
+      position: { x: 0, y: 300 },
+      data: {
+        type: 'omniReference',
+        isValid: true,
+        imageSlots: toImageSlots(imageIds),
+        videoSlots: toVideoSlots(videoIds),
+        audioSlots: toAudioSlots(audioIds),
+        consentAccepted: opts.consentAccepted ?? true,
+      } satisfies OmniReferenceNodeData,
+    };
+  }
+
+  function createCoreEdges(): Edge[] {
+    return [
+      createEdgeWithHandles({
+        source: PROVIDER_ID,
+        target: GENERATE_ID,
+        targetHandle: HANDLE_IDS.CONFIG_INPUT,
+      }),
+    ];
+  }
+
+  function createOmniEdge(): Edge {
+    return createEdgeWithHandles({
+      source: OMNI_ID,
+      target: PROVIDER_ID,
+      targetHandle: HANDLE_IDS.OMNI_REFERENCE_INPUT,
+      sourceHandle: HANDLE_IDS.OMNI_REFERENCE_OUTPUT,
+    });
+  }
+
+  it('F-7: OmniReferenceNode 接続 + video slot 2 個 → request.video_reference_asset_ids に 2 件設定', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNodeWithId({}),
+      createPromptNodeWithId({}),
+      createSeedanceProviderNode(),
+      createGenerateNodeWithId({ id: GENERATE_ID }),
+      createOmniReferenceNode({
+        videoAssetIds: ['uuid-video-1', 'uuid-video-2', null],
+      }),
+    ];
+    const edges: Edge[] = [...createCoreEdges(), createOmniEdge()];
+
+    const result = graphToStoryVideoCreate(nodes, edges, GENERATE_ID);
+
+    expect(result.video_reference_asset_ids).toEqual(['uuid-video-1', 'uuid-video-2']);
+    expect(result.image_reference_asset_ids).toBeUndefined();
+    expect(result.audio_reference_asset_ids).toBeUndefined();
+  });
+
+  it('F-8: 全 slot 空 → request に *_reference_asset_ids 含まれない', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNodeWithId({}),
+      createPromptNodeWithId({}),
+      createSeedanceProviderNode(),
+      createGenerateNodeWithId({ id: GENERATE_ID }),
+      createOmniReferenceNode({}),
+    ];
+    const edges: Edge[] = [...createCoreEdges(), createOmniEdge()];
+
+    const result = graphToStoryVideoCreate(nodes, edges, GENERATE_ID);
+
+    expect(result.image_reference_asset_ids).toBeUndefined();
+    expect(result.video_reference_asset_ids).toBeUndefined();
+    expect(result.audio_reference_asset_ids).toBeUndefined();
+  });
+
+  it('F-9: OmniReferenceNode が ProviderNode に未接続 → request に含まれない', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNodeWithId({}),
+      createPromptNodeWithId({}),
+      createSeedanceProviderNode(),
+      createGenerateNodeWithId({ id: GENERATE_ID }),
+      createOmniReferenceNode({
+        imageAssetIds: ['uuid-img-1', null, null, null, null, null, null, null],
+        videoAssetIds: ['uuid-video-1', null, null],
+        audioAssetIds: ['uuid-audio-1', null, null],
+      }),
+    ];
+    const edges: Edge[] = createCoreEdges();
+
+    const result = graphToStoryVideoCreate(nodes, edges, GENERATE_ID);
+
+    expect(result.image_reference_asset_ids).toBeUndefined();
+    expect(result.video_reference_asset_ids).toBeUndefined();
+    expect(result.audio_reference_asset_ids).toBeUndefined();
+  });
+
+  it('F-10: provider=runway + OmniReferenceNode 接続あり → request に含まれない', () => {
+    const runwayProvider: WorkflowNode = {
+      id: PROVIDER_ID,
+      type: 'provider',
+      position: { x: 200, y: 0 },
+      data: {
+        type: 'provider',
+        isValid: true,
+        provider: 'runway',
+        aspectRatio: '9:16',
+        duration: null,
+      } satisfies ProviderNodeData,
+    };
+    const nodes: WorkflowNode[] = [
+      createImageInputNodeWithId({}),
+      createPromptNodeWithId({}),
+      runwayProvider,
+      createGenerateNodeWithId({ id: GENERATE_ID }),
+      createOmniReferenceNode({
+        videoAssetIds: ['uuid-video-1', null, null],
+      }),
+    ];
+    const edges: Edge[] = [...createCoreEdges(), createOmniEdge()];
+
+    const result = graphToStoryVideoCreate(nodes, edges, GENERATE_ID);
+
+    expect(result.video_provider).toBe('runway');
+    expect(result.image_reference_asset_ids).toBeUndefined();
+    expect(result.video_reference_asset_ids).toBeUndefined();
+    expect(result.audio_reference_asset_ids).toBeUndefined();
+  });
+
+  it('F-11: audio slot のみ埋まる → request.audio_reference_asset_ids 含まれる', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNodeWithId({}),
+      createPromptNodeWithId({}),
+      createSeedanceProviderNode(),
+      createGenerateNodeWithId({ id: GENERATE_ID }),
+      createOmniReferenceNode({
+        audioAssetIds: ['uuid-audio-1', 'uuid-audio-2', null],
+      }),
+    ];
+    const edges: Edge[] = [...createCoreEdges(), createOmniEdge()];
+
+    const result = graphToStoryVideoCreate(nodes, edges, GENERATE_ID);
+
+    expect(result.audio_reference_asset_ids).toEqual(['uuid-audio-1', 'uuid-audio-2']);
+    expect(result.image_reference_asset_ids).toBeUndefined();
+    expect(result.video_reference_asset_ids).toBeUndefined();
+    expect(result.image_url).toBe('https://example.com/image.jpg');
+  });
+
+  it('F-16: consentAccepted=false で OmniReferenceNode 接続済 → throw 著作権同意が必要です', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNodeWithId({}),
+      createPromptNodeWithId({}),
+      createSeedanceProviderNode(),
+      createGenerateNodeWithId({ id: GENERATE_ID }),
+      createOmniReferenceNode({
+        imageAssetIds: ['uuid-img-1', null, null, null, null, null, null, null],
+        consentAccepted: false,
+      }),
+    ];
+    const edges: Edge[] = [...createCoreEdges(), createOmniEdge()];
+
+    expect(() => graphToStoryVideoCreate(nodes, edges, GENERATE_ID)).toThrow(
+      '著作権同意が必要です'
+    );
+  });
+
+  it('image/video/audio 全 slot 埋まる → 3 種すべて request に設定される', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNodeWithId({}),
+      createPromptNodeWithId({}),
+      createSeedanceProviderNode(),
+      createGenerateNodeWithId({ id: GENERATE_ID }),
+      createOmniReferenceNode({
+        imageAssetIds: ['img-1', 'img-2', null, null, null, null, null, null],
+        videoAssetIds: ['vid-1', null, null],
+        audioAssetIds: ['aud-1', 'aud-2', 'aud-3'],
+      }),
+    ];
+    const edges: Edge[] = [...createCoreEdges(), createOmniEdge()];
+
+    const result = graphToStoryVideoCreate(nodes, edges, GENERATE_ID);
+
+    expect(result.image_reference_asset_ids).toEqual(['img-1', 'img-2']);
+    expect(result.video_reference_asset_ids).toEqual(['vid-1']);
+    expect(result.audio_reference_asset_ids).toEqual(['aud-1', 'aud-2', 'aud-3']);
   });
 });

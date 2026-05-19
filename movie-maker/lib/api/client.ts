@@ -163,6 +163,119 @@ export interface TranslateStoryPromptResponse {
   extracted_dialogue: string | null;
 }
 
+// ===== Story Video Create Request (Seedance Omni Reference 対応) =====
+// T2-10: H-4 解消のため Wave 7 単独で contract 確定
+export interface StoryVideoCreateRequest {
+  image_url: string;
+  story_text: string;
+  aspect_ratio?: '9:16' | '16:9';
+  video_provider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance';
+  bgm_track_id?: string;
+  custom_bgm_url?: string;
+  overlay?: {
+    text?: string;
+    position?: string;
+    font?: string;
+    color?: string;
+  };
+  camera_work?: string;
+  film_grain?: 'none' | 'light' | 'medium' | 'heavy';
+  use_lut?: boolean;
+  // Act-Two用パラメータ
+  use_act_two?: boolean;
+  motion_type?: string;
+  expression_intensity?: number;
+  body_control?: boolean;
+  // Kling AI用パラメータ
+  kling_mode?: 'std' | 'pro';
+  end_frame_image_url?: string;
+  element_images?: { image_url: string }[];
+  kling_duration?: 5 | 10;
+  // Seedance 2.0 パラメータ
+  seedance_duration?: number;
+  seedance_mode?: 'pro' | 'fast';
+  seedance_generate_audio?: boolean;
+  seedance_seed?: number;
+  seedance_resolution?: '480p' | '720p' | '1080p';
+  seedance_camera_fixed?: boolean | null;
+  // Veo 3 パラメータ
+  veo_duration?: number;
+  // Seedance Omni Reference 参照素材 (T2-10)
+  image_reference_asset_ids?: string[];  // UUID 文字列、max 8
+  video_reference_asset_ids?: string[];  // UUID 文字列、max 3
+  audio_reference_asset_ids?: string[];  // UUID 文字列、max 3
+}
+
+// ===== Omni Reference Upload (Seedance 1.0/2.0) =====
+// Backend `OmniReferenceAssetResponse` schema と完全一致 (T1-4)
+export interface OmniReferenceUploadResult {
+  id: string;
+  url: string;
+  media_type: 'video' | 'audio' | 'image';
+  duration_seconds: number | null;
+  content_type: string;
+  file_size_bytes: number;
+  expires_at: string;
+}
+
+// 別名 export (task md §AC 互換)
+export type OmniReferenceUploadResponse = OmniReferenceUploadResult;
+
+async function uploadOmniReference(
+  endpoint: 'video' | 'audio' | 'image',
+  file: File,
+  consentAccepted: boolean,
+): Promise<OmniReferenceUploadResult> {
+  const token = await getAuthToken();
+  if (!token) {
+    throw new Error('認証が必要です。ログインしてください。');
+  }
+
+  const form = new FormData();
+  form.append('file', file);
+  form.append('consent_accepted', String(consentAccepted));
+
+  const response = await fetch(
+    `${API_URL}/api/v1/videos/upload-omni-${endpoint}-reference`,
+    {
+      method: 'POST',
+      body: form,
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    const message =
+      typeof detail.detail === 'string'
+        ? detail.detail
+        : `Omni reference upload failed (${response.status})`;
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+export const uploadOmniVideoReference = (
+  file: File,
+  consentAccepted: boolean,
+): Promise<OmniReferenceUploadResult> =>
+  uploadOmniReference('video', file, consentAccepted);
+
+export const uploadOmniAudioReference = (
+  file: File,
+  consentAccepted: boolean,
+): Promise<OmniReferenceUploadResult> =>
+  uploadOmniReference('audio', file, consentAccepted);
+
+export const uploadOmniImageReference = (
+  file: File,
+  consentAccepted: boolean,
+): Promise<OmniReferenceUploadResult> =>
+  uploadOmniReference('image', file, consentAccepted);
+
 // Videos API
 export const videosApi = {
   create: (data: {
@@ -227,41 +340,9 @@ export const videosApi = {
       body: JSON.stringify(data),
     }),
 
-  // ストーリー動画を直接生成（Runway/Veo/DomoAI API使用）
-  createStoryVideo: (data: {
-    image_url: string;
-    story_text: string;
-    aspect_ratio?: '9:16' | '16:9';  // アスペクト比（デフォルト: 9:16 縦長）
-    video_provider?: 'runway' | 'veo' | 'domoai' | 'piapi_kling' | 'hailuo' | 'seedance';  // 動画生成プロバイダー（デフォルト: runway）
-    bgm_track_id?: string;
-    custom_bgm_url?: string;  // カスタムBGM（プリセットより優先）
-    overlay?: {
-      text?: string;
-      position?: string;
-      font?: string;
-      color?: string;
-    };
-    camera_work?: string;
-    film_grain?: 'none' | 'light' | 'medium' | 'heavy';
-    use_lut?: boolean;
-    // Act-Two用パラメータ
-    use_act_two?: boolean;
-    motion_type?: string;
-    expression_intensity?: number;
-    body_control?: boolean;
-    // Kling AI用パラメータ
-    kling_mode?: 'std' | 'pro';
-    end_frame_image_url?: string;  // 終了フレーム画像URL（Kling専用）
-    element_images?: { image_url: string }[];  // 一貫性向上用の追加画像（Kling専用、最大3枚）
-    kling_duration?: 5 | 10;  // Kling AI動画のduration（秒）
-    seedance_duration?: number;  // Seedance 2.0 動画のduration（秒）。4-15 の整数
-    seedance_mode?: 'pro' | 'fast';  // Seedance 速度モード（デフォルト: pro）
-    seedance_generate_audio?: boolean;  // Seedance BGM 自動生成 ON/OFF
-    seedance_seed?: number;  // Seedance 再現性シード値
-    seedance_resolution?: '480p' | '720p' | '1080p';  // Seedance 出力解像度
-    seedance_camera_fixed?: boolean | null;  // Seedance カメラ固定モード
-    veo_duration?: number;  // Veo 3 動画のduration（秒）。4 | 6 | 8 のいずれか
-  }) => fetchWithAuth("/api/v1/videos/story", { method: "POST", body: JSON.stringify(data) }),
+  // ストーリー動画を直接生成（Runway/Veo/DomoAI/Seedance API使用）
+  createStoryVideo: (data: StoryVideoCreateRequest) =>
+    fetchWithAuth("/api/v1/videos/story", { method: "POST", body: JSON.stringify(data) }),
 
   // BGM音源をアップロード
   uploadBgm: async (file: File): Promise<{ bgm_url: string; duration_seconds: number | null }> => {

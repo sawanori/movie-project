@@ -33,7 +33,9 @@ export type NodeType =
   | 'getVideoFrame'
   | 'trimVideo'
   | 'stitchVideos'
-  | 'stickyNote';
+  | 'stickyNote'
+  // Seedance Omni Reference (v3 §6.7)
+  | 'omniReference';
 
 // ========== サブジェクトタイプ ==========
 
@@ -251,6 +253,36 @@ export interface StickyNoteNodeData extends BaseNodeData {
   // isValid は常に true (バリデーション不要)
 }
 
+// ========== Seedance Omni Reference ノードデータ (v3 §6.7) ==========
+
+/**
+ * Omni Reference ノードの 1 つの参照スロット。
+ * mediaType により扱う媒体 (image/video/audio) を区別する。
+ */
+export interface OmniReferenceSlot {
+  assetId: string | null;
+  url?: string;
+  filename?: string;
+  durationSeconds?: number;
+  mediaType: 'image' | 'video' | 'audio';
+}
+
+/**
+ * Seedance Omni Reference ノード (Kling Elements 3.0 Omni とは別系統)。
+ * v3 仕様:
+ *  - imageSlots: 最大 8 枚 (base image_url と合算で 9 厳守)
+ *  - videoSlots: 3 枠固定
+ *  - audioSlots: 3 枠固定
+ *  - consentAccepted: 利用同意 (人物素材含む場合 true 必須)
+ */
+export interface OmniReferenceNodeData extends BaseNodeData {
+  type: 'omniReference';
+  imageSlots: OmniReferenceSlot[];
+  videoSlots: [OmniReferenceSlot, OmniReferenceSlot, OmniReferenceSlot];
+  audioSlots: [OmniReferenceSlot, OmniReferenceSlot, OmniReferenceSlot];
+  consentAccepted: boolean;
+}
+
 // ========== Union Type ==========
 
 export type WorkflowNodeData =
@@ -275,7 +307,8 @@ export type WorkflowNodeData =
   | GetVideoFrameNodeData
   | TrimVideoNodeData
   | StitchVideosNodeData
-  | StickyNoteNodeData;
+  | StickyNoteNodeData
+  | OmniReferenceNodeData;
 
 // ========== B2 解決: 動画出力共通インターフェース ==========
 
@@ -344,7 +377,8 @@ export interface ValidationError {
     | 'disconnected_optional'   // 設定ノードが ProviderNode に未接続 (新 Phase 1: warning)
     | 'ambiguous_provider'      // 複数 ProviderNode + CONFIG_INPUT 未接続 GenerateNode
     | 'multiple_provider_connection' // CONFIG_INPUT に複数 Provider 接続
-    | 'unused_image_input'; // KlingElements 使用中のため ImageInput が無視される (warning)
+    | 'unused_image_input' // KlingElements 使用中のため ImageInput が無視される (warning)
+    | 'consent_required'; // OmniReferenceNode 接続済 + consentAccepted=false (Generate 不可)
   nodeId?: string;
   message: string;
 }
@@ -545,9 +579,37 @@ export function createDefaultNodeData(type: NodeType): WorkflowNodeData {
         text: '',
         color: 'yellow',
       };
+    case 'omniReference':
+      return createOmniReferenceNodeData();
     default:
       throw new Error(`Unknown node type: ${type}`);
   }
+}
+
+/**
+ * Seedance Omni Reference ノードのデフォルトデータ生成。
+ * v3 §6.7: image 8 枠 / video 3 枠固定 / audio 3 枠固定。
+ */
+export function createOmniReferenceNodeData(): OmniReferenceNodeData {
+  return {
+    type: 'omniReference',
+    isValid: false,
+    imageSlots: Array.from({ length: 8 }, () => ({
+      assetId: null,
+      mediaType: 'image' as const,
+    })),
+    videoSlots: [
+      { assetId: null, mediaType: 'video' },
+      { assetId: null, mediaType: 'video' },
+      { assetId: null, mediaType: 'video' },
+    ],
+    audioSlots: [
+      { assetId: null, mediaType: 'audio' },
+      { assetId: null, mediaType: 'audio' },
+      { assetId: null, mediaType: 'audio' },
+    ],
+    consentAccepted: false,
+  };
 }
 
 // ========== ハンドルID定義 ==========
@@ -607,6 +669,9 @@ export const HANDLE_IDS = {
   KLING_CAMERA_CONTROL_INPUT: 'kling_camera_control_input',
   ACT_TWO_INPUT: 'act_two_input',
   HAILUO_END_FRAME_INPUT: 'hailuo_end_frame_input',
+  // Seedance Omni Reference (v3 §4.1)
+  OMNI_REFERENCE_OUTPUT: 'omni_reference',
+  OMNI_REFERENCE_INPUT: 'omni_reference_input',
 } as const;
 
 // ========== ノードカテゴリ定義 ==========
@@ -732,4 +797,8 @@ export interface StoryVideoCreateRequest {
   seedance_seed?: number;
   seedance_resolution?: '480p' | '720p' | '1080p';
   seedance_camera_fixed?: boolean | null;
+  // Seedance Omni Reference 参照素材 (v3 §6.10)
+  image_reference_asset_ids?: string[];  // UUID 文字列、max 8
+  video_reference_asset_ids?: string[];  // UUID 文字列、max 3
+  audio_reference_asset_ids?: string[];  // UUID 文字列、max 3
 }

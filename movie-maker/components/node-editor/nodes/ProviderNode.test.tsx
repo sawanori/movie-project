@@ -565,6 +565,57 @@ describe('ProviderNode - Seedance 詳細設定', () => {
     expect(screen.queryByText('⚠ 1080p (VIP)')).toBeNull();
   });
 
+  // F-12: provider=seedance のとき OMNI_REFERENCE_INPUT handle が表示される
+  it('F-12: provider=seedance のとき OMNI_REFERENCE_INPUT handle がレンダリングされる', () => {
+    const { container } = render(
+      <ProviderNode {...defaultProps} data={seedanceData} />
+    );
+
+    const omniHandle = container.querySelector(
+      `[data-handleid="${HANDLE_IDS.OMNI_REFERENCE_INPUT}"]`
+    );
+    expect(omniHandle).not.toBeNull();
+    expect(omniHandle?.getAttribute('data-type')).toBe('target');
+    expect(omniHandle?.getAttribute('data-position')).toBe('left');
+  });
+
+  // F-13: provider != seedance のとき OMNI_REFERENCE_INPUT handle は表示されない
+  it('F-13: provider=runway のとき OMNI_REFERENCE_INPUT handle が表示されない', () => {
+    const runwayData: ProviderNodeData = {
+      type: 'provider',
+      isValid: true,
+      provider: 'runway',
+      aspectRatio: '9:16',
+      duration: null,
+    };
+    const { container } = render(
+      <ProviderNode {...defaultProps} data={runwayData} />
+    );
+
+    const omniHandle = container.querySelector(
+      `[data-handleid="${HANDLE_IDS.OMNI_REFERENCE_INPUT}"]`
+    );
+    expect(omniHandle).toBeNull();
+  });
+
+  it('F-13: provider=piapi_kling のとき OMNI_REFERENCE_INPUT handle が表示されない', () => {
+    const klingData: ProviderNodeData = {
+      type: 'provider',
+      isValid: true,
+      provider: 'piapi_kling',
+      aspectRatio: '9:16',
+      duration: 5,
+    };
+    const { container } = render(
+      <ProviderNode {...defaultProps} data={klingData} />
+    );
+
+    const omniHandle = container.querySelector(
+      `[data-handleid="${HANDLE_IDS.OMNI_REFERENCE_INPUT}"]`
+    );
+    expect(omniHandle).toBeNull();
+  });
+
   // F-8: カメラ固定チェックボックス ON → seedanceCameraFixed=true
   it('F-8: カメラ固定チェックボックス ON → seedanceCameraFixed=true の nodeDataUpdate が発火される', () => {
     const eventSpy = vi.fn();

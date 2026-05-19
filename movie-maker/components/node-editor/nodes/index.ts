@@ -22,3 +22,6 @@ export { OverlayNode } from './OverlayNode';
 
 // Phase 4: Dialogue ノード (Pipeline 型)
 export { DialogueNode } from './DialogueNode';
+
+// Seedance Omni Reference (v3 §6.8)
+export { OmniReferenceNode } from './OmniReferenceNode';

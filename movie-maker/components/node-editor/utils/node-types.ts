@@ -24,6 +24,8 @@ import { GetVideoFrameNode } from '../nodes/GetVideoFrameNode';
 import { TrimVideoNode } from '../nodes/TrimVideoNode';
 import { StitchVideosNode } from '../nodes/StitchVideosNode';
 import { StickyNoteNode } from '../nodes/StickyNoteNode';
+// Seedance Omni Reference (v3 §6.8)
+import { OmniReferenceNode } from '../nodes/OmniReferenceNode';
 
 /**
  * ノードタイプ登録
@@ -55,6 +57,8 @@ export const nodeTypes: NodeTypes = {
   trimVideo: TrimVideoNode,
   stitchVideos: StitchVideosNode,
   stickyNote: StickyNoteNode,
+  // Seedance Omni Reference (v3 §6.8)
+  omniReference: OmniReferenceNode,
 };
 
 /**

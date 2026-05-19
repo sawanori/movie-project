@@ -26,6 +26,7 @@ import { NodePalette } from './NodePalette';
 import { nodeTypes, defaultEdgeOptions, fitViewOptions, connectionLineStyle } from './utils/node-types';
 import { createDefaultWorkflow } from './utils/default-workflow';
 import { graphToStoryVideoCreate, validateGraphForGeneration } from './utils/graph-to-api';
+import { isConnectionAllowed } from './utils/connection-guards';
 import { useWorkflowValidation } from './hooks/useWorkflowValidation';
 import { useWorkflowManager } from './hooks/useWorkflowManager';
 import { WorkflowToolbar, SaveWorkflowModal, WorkflowList } from './WorkflowManager';
@@ -242,27 +243,16 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
   /**
    * ProviderNode の各 target Handle に対し、互換性のある source ノードタイプのみ接続を許可する。
    * それ以外の既存 Handle (CONFIG_INPUT 等) はこのガードの対象外。
+   *
+   * 加えて OmniReference → ProviderNode 接続では、
+   *  - provider != seedance の ProviderNode への接続を拒否
+   *  - 同 ProviderNode に既存 OmniReference 接続がある場合は拒否 (1 対 1 制約)
    */
   const isValidConnection = useCallback(
     (connection: Edge | Connection): boolean => {
-      const HANDLE_TO_NODE_TYPE: Partial<Record<string, WorkflowNodeData['type']>> = {
-        [HANDLE_IDS.KLING_MODE_INPUT]: 'klingMode',
-        [HANDLE_IDS.KLING_ELEMENTS_INPUT]: 'klingElements',
-        [HANDLE_IDS.KLING_END_FRAME_INPUT]: 'klingEndFrame',
-        [HANDLE_IDS.KLING_CAMERA_CONTROL_INPUT]: 'klingCameraControl',
-        [HANDLE_IDS.ACT_TWO_INPUT]: 'actTwo',
-        [HANDLE_IDS.HAILUO_END_FRAME_INPUT]: 'hailuoEndFrame',
-      };
-
-      const expectedType = HANDLE_TO_NODE_TYPE[connection.targetHandle ?? ''];
-      // 対象外の Handle (CONFIG_INPUT 等) は常に true
-      if (!expectedType) return true;
-
-      const sourceNode = nodes.find((n) => n.id === connection.source);
-      if (!sourceNode) return false;
-      return (sourceNode.data as WorkflowNodeData).type === expectedType;
+      return isConnectionAllowed(connection, nodes, edges);
     },
-    [nodes]
+    [nodes, edges]
   );
 
   // ノード変更時に未保存フラグを立てる
@@ -880,12 +870,19 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
     // N2 対応: 依存配列は setNodes のみ (関数形式 setter で nodes 依存を排除)
   }, [setNodes]);
 
-  // 接続処理
+  // 接続処理 (isValidConnection を通った接続のみここに来るが、念のため guard)
   const onConnect = useCallback(
     (params: Connection) => {
+      if (!isConnectionAllowed(params, nodes, edges)) {
+        console.warn(
+          '[NodeEditor] 接続が拒否されました (provider 不一致 or 1 対 1 制約違反):',
+          params,
+        );
+        return;
+      }
       setEdges((eds) => addEdge({ ...params, animated: true }, eds));
     },
-    [setEdges]
+    [setEdges, nodes, edges]
   );
 
   // ドラッグ&ドロップ

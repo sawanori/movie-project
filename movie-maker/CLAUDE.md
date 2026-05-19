@@ -29,6 +29,26 @@ npm run dev -- --turbo
 - **Linting**: ESLint 9 flat config (`eslint.config.mjs`) with Next.js core-web-vitals + TypeScript rules
 - **Path Alias**: `@/*` maps to project root
 
+## CRITICAL: globals.css のルール
+
+**`app/globals.css` に `@source` ディレクティブを絶対に追加しないこと。**
+
+Tailwind CSS v4 では `@import "tailwindcss"` の1行だけで全てのソースファイルが自動検出される。
+`@source` を追加するとCSSの適用が壊れ、UIが崩壊する。
+
+```css
+/* 正しい（これだけでOK） */
+@import "tailwindcss";
+
+/* 禁止（UIが壊れる） */
+@import "tailwindcss";
+@source "../app";        /* ← 追加禁止 */
+@source "../components"; /* ← 追加禁止 */
+@source "../lib";        /* ← 追加禁止 */
+```
+
+ビルドエラーが出ても `@source` で解決しようとしないこと。
+
 ## Architecture
 
 This is the **frontend repository**. The backend lives in a separate repository.
@@ -46,6 +66,29 @@ This is the **frontend repository**. The backend lives in a separate repository.
 - Video Processing: FFmpeg
 - Payments: Polar
 
+## OmniReferenceNode (Seedance 2.0)
+
+Node Editor の `components/node-editor/nodes/OmniReferenceNode.tsx` で提供される
+Seedance 専用の参照素材ノード。
+
+### UI 操作手順
+1. NodePalette から "Omni Reference" をキャンバスにドロップ
+2. 著作権同意 checkbox を ON にする (これが無いと upload 不可)
+3. video / audio / image slot に該当ファイルを drop
+4. video 合計 ≤ 15.4s, audio 合計 ≤ 15.0s 内に収める
+5. ProviderNode (Seedance) の `OMNI_REFERENCE_INPUT` handle に接続
+6. Generate 実行
+
+### 制限事項
+- **Seedance Provider 専用**
+- image: 最大 8 個 (base image_url と合算で PiAPI 上限 9)
+- video: 最大 3 個、合計 ≤ 15.4s
+- audio: 最大 3 個、**合計** ≤ 15.0s (PiAPI 公式 spec)
+- アップロード TTL: 72h (自動 GC)
+- プロンプト @構文 (`@image1` `@video1` `@audio1`) で参照位置指定可
+
+詳細は `../docs/features/seedance-omni-reference.md` を参照。
+
 ## Documentation
 
 All detailed specifications are in `../docs/` (parent directory, Japanese):
@@ -53,6 +96,7 @@ All detailed specifications are in `../docs/` (parent directory, Japanese):
 - `../docs/plan.md` - Technical specifications, DB schema, API design
 - `../docs/workbook.md` - 46 development tickets organized by phase
 - `../docs/progress.md` - Task progress dashboard
+- `../docs/features/seedance-omni-reference.md` - Seedance 2.0 omni_reference 機能仕様
 
 The project uses a multi-AI development workflow. Tickets are organized into 7 phases with dependencies tracked between tasks.
 

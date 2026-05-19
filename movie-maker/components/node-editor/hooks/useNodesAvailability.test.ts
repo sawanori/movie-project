@@ -95,4 +95,34 @@ describe('useNodesAvailability', () => {
     expect(result.current.availableNodes).toContain('klingCameraControl')
     expect(result.current.unavailableNodes).not.toContain('klingCameraControl')
   })
+
+  it('omniReference is available only when seedance is selected', () => {
+    const { result: seedanceResult } = renderHook(() =>
+      useNodesAvailability({ selectedProvider: 'seedance', subjectType: null })
+    )
+    expect(seedanceResult.current.isNodeAvailable('omniReference')).toBe(true)
+
+    const { result: noProviderResult } = renderHook(() =>
+      useNodesAvailability({ selectedProvider: null, subjectType: null })
+    )
+    expect(noProviderResult.current.isNodeAvailable('omniReference')).toBe(false)
+
+    const { result: runwayResult } = renderHook(() =>
+      useNodesAvailability({ selectedProvider: 'runway', subjectType: null })
+    )
+    expect(runwayResult.current.isNodeAvailable('omniReference')).toBe(false)
+
+    const { result: klingResult } = renderHook(() =>
+      useNodesAvailability({ selectedProvider: 'piapi_kling', subjectType: null })
+    )
+    expect(klingResult.current.isNodeAvailable('omniReference')).toBe(false)
+  })
+
+  it('omniReference appears in availableNodes for seedance but not in unavailableNodes', () => {
+    const { result } = renderHook(() =>
+      useNodesAvailability({ selectedProvider: 'seedance', subjectType: null })
+    )
+    expect(result.current.availableNodes).toContain('omniReference')
+    expect(result.current.unavailableNodes).not.toContain('omniReference')
+  })
 })

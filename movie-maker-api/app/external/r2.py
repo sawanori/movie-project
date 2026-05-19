@@ -279,5 +279,35 @@ async def upload_user_video(file_content: bytes, key: str, content_type: str) ->
     return get_public_url(key)
 
 
+async def upload_with_key(
+    file_content: bytes,
+    key: str,
+    content_type: str,
+) -> str:
+    """汎用 R2 アップロード: key を直接指定 (prefix 結合なし)
+
+    既存 upload_video/upload_audio/upload_image は filename を内部で
+    videos/bgm/images prefix と結合するため、omni-references/ など
+    任意 prefix を使いたいケースでは本関数を使用する。
+
+    Args:
+        file_content: ファイル本体
+        key: R2 オブジェクトキー (例: "omni-references/{user_id}/{uuid}.mp4")
+        content_type: MIME (例: "video/mp4", "audio/mpeg", "image/jpeg")
+
+    Returns:
+        str: 公開 URL (R2_PUBLIC_URL/{key} または .r2.dev/{key})
+    """
+    client = get_r2_client()
+    client.put_object(
+        Bucket=settings.R2_BUCKET_NAME,
+        Key=key,
+        Body=file_content,
+        ContentType=content_type,
+        CacheControl="public, max-age=31536000, immutable",
+    )
+    return get_public_url(key)
+
+
 # グローバルインスタンス
 r2_client = R2Client()
