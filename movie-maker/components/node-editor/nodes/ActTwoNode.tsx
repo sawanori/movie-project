@@ -12,6 +12,7 @@ import {
 } from './BaseNode';
 import { cn } from '@/lib/utils';
 import type { ActTwoNodeData, SubjectType } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 import { motionsApi } from '@/lib/api/client';
 import type { Motion } from '@/lib/api/client';
 
@@ -60,10 +61,7 @@ export function ActTwoNode({ data, selected, id }: ActTwoNodeProps) {
 
   const updateNodeData = useCallback(
     (updates: Partial<ActTwoNodeData>) => {
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<ActTwoNodeData>(id, updates);
     },
     [id]
   );

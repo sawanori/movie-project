@@ -7,6 +7,30 @@ const CURRENT_WORKFLOW_KEY = 'node-editor-current-workflow-id';
 const LEGACY_STORAGE_KEY = 'node-editor-workflow'; // 旧バージョンとの互換性
 const MAX_WORKFLOWS = 10; // ローカル保存の上限
 
+// ========== セキュリティ: OmniReference 同意フラグの永続化禁止 ==========
+
+/**
+ * OmniReferenceNode の consentAccepted フラグを強制的に false にリセットする。
+ *
+ * セキュリティ観点: 同意は永続化せず、保存/読み込みの都度ユーザーに再取得を要求する。
+ * これにより、他人のワークフローを共有・読込しても同意なしには素材アップロード不可となる。
+ *
+ * 保存時 (出力前): consentAccepted を false で書き出し、保存ペイロードに同意状態を残さない
+ * 読込時 (入力後): 保存値が true であっても false に強制復元
+ */
+export function resetOmniReferenceConsent(nodes: WorkflowNode[]): WorkflowNode[] {
+  return nodes.map((node) => {
+    if (node.data?.type !== 'omniReference') return node;
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        consentAccepted: false,
+      },
+    };
+  });
+}
+
 // ========== エラー型定義 ==========
 
 export type SaveResult =
@@ -72,7 +96,10 @@ export function getLocalWorkflow(id: string): SavedWorkflow | null {
     const data = localStorage.getItem(WORKFLOWS_KEY);
     if (!data) return null;
     const workflows: SavedWorkflow[] = JSON.parse(data);
-    return workflows.find((w) => w.id === id) || null;
+    const workflow = workflows.find((w) => w.id === id);
+    if (!workflow) return null;
+    // 読み込み時に OmniReference の同意フラグを強制リセット
+    return { ...workflow, nodes: resetOmniReferenceConsent(workflow.nodes) };
   } catch {
     return null;
   }
@@ -92,6 +119,9 @@ export function saveLocalWorkflow(
     const workflows = getAllLocalWorkflows();
     const now = new Date().toISOString();
 
+    // 保存時に OmniReference の同意フラグを永続化しない (常に false で書き出し)
+    const sanitizedNodes = resetOmniReferenceConsent(nodes);
+
     // 更新の場合
     if (id) {
       const index = workflows.findIndex((w) => w.id === id);
@@ -99,7 +129,7 @@ export function saveLocalWorkflow(
         workflows[index] = {
           ...workflows[index],
           name,
-          nodes,
+          nodes: sanitizedNodes,
           edges,
           updatedAt: now,
         };
@@ -112,7 +142,7 @@ export function saveLocalWorkflow(
     const newWorkflow: SavedWorkflow = {
       id: crypto.randomUUID(),
       name,
-      nodes,
+      nodes: sanitizedNodes,
       edges,
       createdAt: now,
       updatedAt: now,

@@ -13,6 +13,7 @@ import {
 } from './BaseNode'
 import type { TrimVideoNodeData } from '@/lib/types/node-editor'
 import { HANDLE_IDS } from '@/lib/types/node-editor'
+import { emitNodeDataUpdate } from '../utils/emit-node-data'
 
 type TrimVideoNodeProps = NodeProps & {
   data: TrimVideoNodeData
@@ -22,11 +23,7 @@ type TrimVideoNodeProps = NodeProps & {
 export function TrimVideoNode({ data, selected, id }: TrimVideoNodeProps) {
   const updateNodeData = useCallback(
     (updates: Partial<TrimVideoNodeData>) => {
-      window.dispatchEvent(
-        new CustomEvent('nodeDataUpdate', {
-          detail: { nodeId: id, updates },
-        })
-      )
+      emitNodeDataUpdate<TrimVideoNodeData>(id, updates)
     },
     [id]
   )

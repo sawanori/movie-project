@@ -225,6 +225,7 @@ async function uploadOmniReference(
   endpoint: 'video' | 'audio' | 'image',
   file: File,
   consentAccepted: boolean,
+  signal?: AbortSignal,
 ): Promise<OmniReferenceUploadResult> {
   const token = await getAuthToken();
   if (!token) {
@@ -243,6 +244,7 @@ async function uploadOmniReference(
       headers: {
         Authorization: `Bearer ${token}`,
       },
+      signal,
     },
   );
 
@@ -261,20 +263,62 @@ async function uploadOmniReference(
 export const uploadOmniVideoReference = (
   file: File,
   consentAccepted: boolean,
+  signal?: AbortSignal,
 ): Promise<OmniReferenceUploadResult> =>
-  uploadOmniReference('video', file, consentAccepted);
+  uploadOmniReference('video', file, consentAccepted, signal);
 
 export const uploadOmniAudioReference = (
   file: File,
   consentAccepted: boolean,
+  signal?: AbortSignal,
 ): Promise<OmniReferenceUploadResult> =>
-  uploadOmniReference('audio', file, consentAccepted);
+  uploadOmniReference('audio', file, consentAccepted, signal);
 
 export const uploadOmniImageReference = (
   file: File,
   consentAccepted: boolean,
+  signal?: AbortSignal,
 ): Promise<OmniReferenceUploadResult> =>
-  uploadOmniReference('image', file, consentAccepted);
+  uploadOmniReference('image', file, consentAccepted, signal);
+
+// ===== Omni Reference Limits (M-3) =====
+// Backend `GET /api/v1/videos/config/omni-reference-limits` レスポンス。
+// Provider 上限値 (image/video/audio スロット数・合計尺・file size 等) を
+// frontend がハードコードせず API から取得して描画ロジックに反映する。
+export interface OmniReferenceLimits {
+  max_image_urls: number;
+  max_video_urls: number;
+  max_audio_urls: number;
+  max_video_total_seconds: number;
+  max_audio_total_seconds: number;
+  max_image_reference_asset_ids: number;
+  upload_file_size_limits: { video: number; audio: number; image: number };
+  consent_required: boolean;
+  asset_ttl_seconds: number;
+}
+
+/**
+ * Omni Reference 制約値を取得する (認証不要)。
+ * Provider 上限値は頻繁に変わらないため hook 側で aggressively cache 推奨。
+ */
+export async function fetchOmniReferenceLimits(): Promise<OmniReferenceLimits> {
+  const response = await fetch(
+    `${API_URL}/api/v1/videos/config/omni-reference-limits`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Omni reference limits fetch failed (${response.status})`,
+    );
+  }
+
+  return response.json();
+}
 
 // Videos API
 export const videosApi = {

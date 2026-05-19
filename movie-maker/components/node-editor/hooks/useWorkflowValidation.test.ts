@@ -299,12 +299,12 @@ describe('useWorkflowValidation', () => {
     };
   }
 
-  it('V-1: OmniReferenceNode 接続済 + consent=false → consent_required error 発生 + canGenerate=false', () => {
+  it('V-1: OmniReferenceNode が seedance Provider の OMNI_REFERENCE_INPUT に接続済 + consent=false → consent_required error 発生 + canGenerate=false', () => {
     const provId = 'prov-seedance';
     const omniId = 'omni-1';
 
     const nodes: WorkflowNode[] = [
-      createProviderNode({ id: provId, provider: 'piapi_kling' }),
+      createProviderNode({ id: provId, provider: 'seedance' }),
       createOmniReferenceNode({ id: omniId, consentAccepted: false }),
       createGenerateNode(),
       createImageInputNode({ imageUrl: 'https://example.com/img.jpg' }),
@@ -330,12 +330,12 @@ describe('useWorkflowValidation', () => {
     expect(result.current.canGenerate).toBe(false);
   });
 
-  it('V-2: OmniReferenceNode 接続済 + consent=true → consent_required error なし', () => {
+  it('V-2: OmniReferenceNode が seedance Provider の OMNI_REFERENCE_INPUT に接続済 + consent=true → consent_required error なし', () => {
     const provId = 'prov-seedance';
     const omniId = 'omni-1';
 
     const nodes: WorkflowNode[] = [
-      createProviderNode({ id: provId, provider: 'piapi_kling' }),
+      createProviderNode({ id: provId, provider: 'seedance' }),
       createOmniReferenceNode({ id: omniId, consentAccepted: true }),
       createGenerateNode(),
       createImageInputNode({ imageUrl: 'https://example.com/img.jpg' }),
@@ -346,6 +346,87 @@ describe('useWorkflowValidation', () => {
         id: 'edge-omni',
         source: omniId,
         target: provId,
+        sourceHandle: HANDLE_IDS.OMNI_REFERENCE_OUTPUT,
+        targetHandle: HANDLE_IDS.OMNI_REFERENCE_INPUT,
+      },
+    ];
+
+    const { result } = renderHook(() => useWorkflowValidation(nodes, edges));
+    expect(result.current.errors.some((e) => e.type === 'consent_required')).toBe(
+      false,
+    );
+  });
+
+  it('V-4: OmniReferenceNode の出力 edge が seedance 以外の Provider (piapi_kling) に接続 + consent=false → consent_required 発火しない (誤接続 = 二重防御)', () => {
+    const provId = 'prov-kling';
+    const omniId = 'omni-1';
+
+    const nodes: WorkflowNode[] = [
+      createProviderNode({ id: provId, provider: 'piapi_kling' }),
+      createOmniReferenceNode({ id: omniId, consentAccepted: false }),
+      createGenerateNode(),
+      createImageInputNode({ imageUrl: 'https://example.com/img.jpg' }),
+      createPromptNode({ englishPrompt: 'test' }),
+    ];
+    const edges: Edge[] = [
+      {
+        id: 'edge-omni',
+        source: omniId,
+        target: provId,
+        sourceHandle: HANDLE_IDS.OMNI_REFERENCE_OUTPUT,
+        targetHandle: HANDLE_IDS.OMNI_REFERENCE_INPUT,
+      },
+    ];
+
+    const { result } = renderHook(() => useWorkflowValidation(nodes, edges));
+    expect(result.current.errors.some((e) => e.type === 'consent_required')).toBe(
+      false,
+    );
+  });
+
+  it('V-5: OmniReferenceNode の出力 edge が seedance Provider に接続されているが targetHandle が OMNI_REFERENCE_INPUT 以外 → consent_required 発火しない (残骸 edge)', () => {
+    const provId = 'prov-seedance';
+    const omniId = 'omni-1';
+
+    const nodes: WorkflowNode[] = [
+      createProviderNode({ id: provId, provider: 'seedance' }),
+      createOmniReferenceNode({ id: omniId, consentAccepted: false }),
+      createGenerateNode(),
+      createImageInputNode({ imageUrl: 'https://example.com/img.jpg' }),
+      createPromptNode({ englishPrompt: 'test' }),
+    ];
+    const edges: Edge[] = [
+      {
+        id: 'edge-omni-misrouted',
+        source: omniId,
+        target: provId,
+        sourceHandle: HANDLE_IDS.OMNI_REFERENCE_OUTPUT,
+        targetHandle: HANDLE_IDS.ACT_TWO_INPUT, // OMNI_REFERENCE_INPUT 以外
+      },
+    ];
+
+    const { result } = renderHook(() => useWorkflowValidation(nodes, edges));
+    expect(result.current.errors.some((e) => e.type === 'consent_required')).toBe(
+      false,
+    );
+  });
+
+  it('V-6: OmniReferenceNode の出力 edge の target が Provider ノード以外 (例: GenerateNode) → consent_required 発火しない', () => {
+    const genId = 'gen-1';
+    const omniId = 'omni-1';
+
+    const nodes: WorkflowNode[] = [
+      createProviderNode({ provider: 'seedance' }),
+      createOmniReferenceNode({ id: omniId, consentAccepted: false }),
+      createGenerateNode({ id: genId }),
+      createImageInputNode({ imageUrl: 'https://example.com/img.jpg' }),
+      createPromptNode({ englishPrompt: 'test' }),
+    ];
+    const edges: Edge[] = [
+      {
+        id: 'edge-omni-wrong-target',
+        source: omniId,
+        target: genId,
         sourceHandle: HANDLE_IDS.OMNI_REFERENCE_OUTPUT,
         targetHandle: HANDLE_IDS.OMNI_REFERENCE_INPUT,
       },

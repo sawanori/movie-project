@@ -9,6 +9,7 @@ import {
   getCurrentWorkflowId,
   setCurrentWorkflowId,
   migrateFromLegacyStorage,
+  resetOmniReferenceConsent,
 } from '../utils/workflow-storage';
 import { createDefaultWorkflow } from '../utils/default-workflow';
 import {
@@ -163,8 +164,8 @@ export function useWorkflowManager(
       try {
         const workflow = await workflowsApi.get(id);
 
-        // ノードとエッジを設定
-        setNodes(workflow.nodes as WorkflowNode[]);
+        // ノードとエッジを設定 (OmniReference の同意フラグはリロード時に強制リセット)
+        setNodes(resetOmniReferenceConsent(workflow.nodes as WorkflowNode[]));
         setEdges(workflow.edges as Edge[]);
 
         // 状態を更新
@@ -223,9 +224,11 @@ export function useWorkflowManager(
 
       setIsLoadingCloud(true);
       try {
+        // 保存時に OmniReference の同意フラグを永続化しない
+        const sanitizedNodes = resetOmniReferenceConsent(nodes);
         const workflow = await workflowsApi.create({
           name,
-          nodes: nodes as object[],
+          nodes: sanitizedNodes as object[],
           edges: edges as object[],
           is_public: isPublic,
         });
@@ -259,9 +262,11 @@ export function useWorkflowManager(
 
     setIsLoadingCloud(true);
     try {
+      // 保存時に OmniReference の同意フラグを永続化しない
+      const sanitizedNodes = resetOmniReferenceConsent(nodes);
       await workflowsApi.update(cloudWorkflowId, {
         name: currentWorkflowName,
-        nodes: nodes as object[],
+        nodes: sanitizedNodes as object[],
         edges: edges as object[],
       });
 

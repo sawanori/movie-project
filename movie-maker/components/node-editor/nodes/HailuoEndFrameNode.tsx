@@ -10,6 +10,7 @@ import {
 } from './BaseNode';
 import { cn } from '@/lib/utils';
 import type { HailuoEndFrameNodeData } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 import { videosApi } from '@/lib/api/client';
 
 interface HailuoEndFrameNodeProps extends NodeProps {
@@ -22,10 +23,7 @@ export function HailuoEndFrameNode({ data, selected, id }: HailuoEndFrameNodePro
 
   const updateNodeData = useCallback(
     (updates: Partial<HailuoEndFrameNodeData>) => {
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<HailuoEndFrameNodeData>(id, updates);
     },
     [id]
   );

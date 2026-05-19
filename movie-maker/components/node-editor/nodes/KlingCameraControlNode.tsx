@@ -5,6 +5,7 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Video, RotateCcw } from "lucide-react";
 import { BaseNode, outputHandleClassName } from "./BaseNode";
 import type { KlingCameraControlNodeData } from "@/lib/types/node-editor";
+import { emitNodeDataUpdate } from "../utils/emit-node-data";
 
 // 軸の定義
 const AXES = [
@@ -28,10 +29,7 @@ export const KlingCameraControlNode = memo(function KlingCameraControlNode({
 
   const updateNodeData = useCallback(
     (updates: Partial<KlingCameraControlNodeData>) => {
-      const event = new CustomEvent("nodeDataUpdate", {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<KlingCameraControlNodeData>(id, updates);
     },
     [id]
   );

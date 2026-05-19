@@ -27,6 +27,7 @@ import { nodeTypes, defaultEdgeOptions, fitViewOptions, connectionLineStyle } fr
 import { createDefaultWorkflow } from './utils/default-workflow';
 import { graphToStoryVideoCreate, validateGraphForGeneration } from './utils/graph-to-api';
 import { isConnectionAllowed } from './utils/connection-guards';
+import { emitNodeDataUpdate } from './utils/emit-node-data';
 import { useWorkflowValidation } from './hooks/useWorkflowValidation';
 import { useWorkflowManager } from './hooks/useWorkflowManager';
 import { WorkflowToolbar, SaveWorkflowModal, WorkflowList } from './WorkflowManager';
@@ -499,11 +500,7 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
       const { nodeId } = (e as CustomEvent<{ nodeId: string }>).detail;
 
       const dispatchUpdate = (updates: Partial<DialogueNodeData>) => {
-        window.dispatchEvent(
-          new CustomEvent('nodeDataUpdate', {
-            detail: { nodeId, updates },
-          })
-        );
+        emitNodeDataUpdate<DialogueNodeData>(nodeId, updates);
       };
 
       // 1. upstream edge を検索 (dialogue_video_input handle に繋がるエッジ)
@@ -617,11 +614,7 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
       const { nodeId } = (e as CustomEvent<{ nodeId: string }>).detail;
 
       const dispatchUpdate = (updates: Partial<GetVideoFrameNodeData>) => {
-        window.dispatchEvent(
-          new CustomEvent('nodeDataUpdate', {
-            detail: { nodeId, updates },
-          })
-        );
+        emitNodeDataUpdate<GetVideoFrameNodeData>(nodeId, updates);
       };
 
       // 1. upstream edge を検索 (get_video_frame_video_input handle に繋がるエッジ)
@@ -664,11 +657,7 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
       const { nodeId } = (e as CustomEvent<{ nodeId: string }>).detail;
 
       const dispatchUpdate = (updates: Partial<TrimVideoNodeData>) => {
-        window.dispatchEvent(
-          new CustomEvent('nodeDataUpdate', {
-            detail: { nodeId, updates },
-          })
-        );
+        emitNodeDataUpdate<TrimVideoNodeData>(nodeId, updates);
       };
 
       // 1. upstream edge を検索 (trim_video_input handle に繋がるエッジ)
@@ -725,11 +714,7 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
       const { nodeId } = (e as CustomEvent<{ nodeId: string }>).detail;
 
       const dispatchUpdate = (updates: Partial<StitchVideosNodeData>) => {
-        window.dispatchEvent(
-          new CustomEvent('nodeDataUpdate', {
-            detail: { nodeId, updates },
-          })
-        );
+        emitNodeDataUpdate<StitchVideosNodeData>(nodeId, updates);
       };
 
       // 1. このノードへの incoming edges から video URL を収集 (handleID でソート)

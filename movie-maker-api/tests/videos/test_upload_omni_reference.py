@@ -420,3 +420,232 @@ class TestImageUpload:
             data={"consent_accepted": "true"},
         )
         assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# H-NEW-1: R2 orphan prevention — rollback on Supabase INSERT failure
+# ---------------------------------------------------------------------------
+
+class TestRollbackOnInsertFailure:
+    """Supabase INSERT 失敗時に R2 オブジェクトを delete_file で削除すること."""
+
+    def _setup_mocks(
+        self,
+        monkeypatch,
+        *,
+        endpoint_probe_return: float | None,
+        insert_exc: Exception,
+        delete_outcome: str = "ok",
+    ):
+        """共通: r2.upload_with_key / probe / supabase.insert / r2.delete_file をパッチ.
+
+        delete_outcome:
+          - "ok": delete_file returns True
+          - "false": delete_file returns False (rollback failure path)
+          - "raise": delete_file raises Exception (rollback failure path)
+        """
+        from app.videos import router as router_module
+
+        captured: dict = {"uploaded_keys": [], "deleted_keys": []}
+
+        async def _fake_probe(_content: bytes) -> float | None:
+            return endpoint_probe_return
+
+        async def _fake_upload(_content: bytes, key: str, _ct: str) -> str:
+            captured["uploaded_keys"].append(key)
+            return f"https://cdn.example.com/{key}"
+
+        async def _fake_delete(key: str) -> bool:
+            captured["deleted_keys"].append(key)
+            if delete_outcome == "raise":
+                raise RuntimeError("simulated R2 delete error")
+            return delete_outcome == "ok"
+
+        sb_mock = MagicMock()
+        # insert(...).execute() raises insert_exc
+        execute_mock = MagicMock()
+        execute_mock.execute.side_effect = insert_exc
+        sb_mock.table.return_value.insert.return_value = execute_mock
+
+        monkeypatch.setattr(router_module, "_probe_upload_duration", _fake_probe)
+        monkeypatch.setattr(router_module.r2, "upload_with_key", _fake_upload)
+        monkeypatch.setattr(router_module.r2, "delete_file", _fake_delete)
+        monkeypatch.setattr(router_module, "get_supabase", lambda: sb_mock)
+        return captured
+
+    def test_video_insert_failure_triggers_r2_delete(
+        self, auth_client, monkeypatch, caplog
+    ):
+        import logging as _logging
+
+        captured = self._setup_mocks(
+            monkeypatch,
+            endpoint_probe_return=5.0,
+            insert_exc=RuntimeError("DB down"),
+            delete_outcome="ok",
+        )
+
+        with caplog.at_level(_logging.WARNING, logger="app.videos.router"):
+            response = auth_client.post(
+                "/api/v1/videos/upload-omni-video-reference",
+                files={"file": ("clip.mp4", b"\x00" * 1024, "video/mp4")},
+                data={"consent_accepted": "true"},
+            )
+
+        assert response.status_code == 500
+        assert "アップロード保存に失敗" in response.json()["detail"]
+        # R2 delete was called with the uploaded key
+        assert len(captured["uploaded_keys"]) == 1
+        assert captured["deleted_keys"] == captured["uploaded_keys"]
+        # warning log present
+        warning_msgs = [
+            r.getMessage() for r in caplog.records if r.levelno == _logging.WARNING
+        ]
+        assert any("R2 rolled back" in m for m in warning_msgs), warning_msgs
+
+    def test_audio_insert_failure_triggers_r2_delete(
+        self, auth_client, monkeypatch, caplog
+    ):
+        import logging as _logging
+
+        captured = self._setup_mocks(
+            monkeypatch,
+            endpoint_probe_return=10.0,
+            insert_exc=RuntimeError("DB down"),
+            delete_outcome="ok",
+        )
+
+        with caplog.at_level(_logging.WARNING, logger="app.videos.router"):
+            response = auth_client.post(
+                "/api/v1/videos/upload-omni-audio-reference",
+                files={"file": ("voice.mp3", b"\x00" * 1024, "audio/mpeg")},
+                data={"consent_accepted": "true"},
+            )
+
+        assert response.status_code == 500
+        assert captured["deleted_keys"] == captured["uploaded_keys"]
+        assert len(captured["deleted_keys"]) == 1
+        warning_msgs = [
+            r.getMessage() for r in caplog.records if r.levelno == _logging.WARNING
+        ]
+        assert any("R2 rolled back" in m for m in warning_msgs)
+
+    def test_image_insert_failure_triggers_r2_delete(
+        self, auth_client, monkeypatch, caplog
+    ):
+        import logging as _logging
+
+        captured = self._setup_mocks(
+            monkeypatch,
+            endpoint_probe_return=None,  # image doesn't probe
+            insert_exc=RuntimeError("DB down"),
+            delete_outcome="ok",
+        )
+
+        with caplog.at_level(_logging.WARNING, logger="app.videos.router"):
+            response = auth_client.post(
+                "/api/v1/videos/upload-omni-image-reference",
+                files={"file": ("photo.jpg", b"\xff\xd8\xff" + b"\x00" * 512, "image/jpeg")},
+                data={"consent_accepted": "true"},
+            )
+
+        assert response.status_code == 500
+        assert captured["deleted_keys"] == captured["uploaded_keys"]
+        assert len(captured["deleted_keys"]) == 1
+
+    def test_empty_insert_result_also_triggers_rollback(
+        self, auth_client, monkeypatch
+    ):
+        """`result.data` が空のケースも rollback されること."""
+        from app.videos import router as router_module
+
+        captured: dict = {"uploaded_keys": [], "deleted_keys": []}
+
+        async def _fake_probe(_content: bytes) -> float:
+            return 5.0
+
+        async def _fake_upload(_content: bytes, key: str, _ct: str) -> str:
+            captured["uploaded_keys"].append(key)
+            return f"https://cdn.example.com/{key}"
+
+        async def _fake_delete(key: str) -> bool:
+            captured["deleted_keys"].append(key)
+            return True
+
+        sb_mock = MagicMock()
+        sb_mock.table.return_value.insert.return_value.execute.return_value = MagicMock(
+            data=[]
+        )
+
+        monkeypatch.setattr(router_module, "_probe_upload_duration", _fake_probe)
+        monkeypatch.setattr(router_module.r2, "upload_with_key", _fake_upload)
+        monkeypatch.setattr(router_module.r2, "delete_file", _fake_delete)
+        monkeypatch.setattr(router_module, "get_supabase", lambda: sb_mock)
+
+        response = auth_client.post(
+            "/api/v1/videos/upload-omni-video-reference",
+            files={"file": ("clip.mp4", b"\x00" * 1024, "video/mp4")},
+            data={"consent_accepted": "true"},
+        )
+
+        assert response.status_code == 500
+        assert captured["deleted_keys"] == captured["uploaded_keys"]
+        assert len(captured["deleted_keys"]) == 1
+
+    def test_rollback_delete_raises_logs_error_and_returns_500(
+        self, auth_client, monkeypatch, caplog
+    ):
+        """R2 delete_file が例外を投げても 500 を返し、error ログを残すこと."""
+        import logging as _logging
+
+        captured = self._setup_mocks(
+            monkeypatch,
+            endpoint_probe_return=5.0,
+            insert_exc=RuntimeError("DB down"),
+            delete_outcome="raise",
+        )
+
+        with caplog.at_level(_logging.ERROR, logger="app.videos.router"):
+            response = auth_client.post(
+                "/api/v1/videos/upload-omni-video-reference",
+                files={"file": ("clip.mp4", b"\x00" * 1024, "video/mp4")},
+                data={"consent_accepted": "true"},
+            )
+
+        # original error → still 500
+        assert response.status_code == 500
+        assert "アップロード保存に失敗" in response.json()["detail"]
+        # delete was attempted with the uploaded key
+        assert captured["deleted_keys"] == captured["uploaded_keys"]
+        # error log present mentioning orphan
+        error_msgs = [
+            r.getMessage() for r in caplog.records if r.levelno == _logging.ERROR
+        ]
+        assert any("orphan" in m for m in error_msgs), error_msgs
+
+    def test_rollback_delete_returns_false_logs_error(
+        self, auth_client, monkeypatch, caplog
+    ):
+        """R2 delete_file が False (ClientError 内部キャッチ) の場合も error ログ."""
+        import logging as _logging
+
+        captured = self._setup_mocks(
+            monkeypatch,
+            endpoint_probe_return=5.0,
+            insert_exc=RuntimeError("DB down"),
+            delete_outcome="false",
+        )
+
+        with caplog.at_level(_logging.ERROR, logger="app.videos.router"):
+            response = auth_client.post(
+                "/api/v1/videos/upload-omni-video-reference",
+                files={"file": ("clip.mp4", b"\x00" * 1024, "video/mp4")},
+                data={"consent_accepted": "true"},
+            )
+
+        assert response.status_code == 500
+        assert captured["deleted_keys"] == captured["uploaded_keys"]
+        error_msgs = [
+            r.getMessage() for r in caplog.records if r.levelno == _logging.ERROR
+        ]
+        assert any("orphan" in m for m in error_msgs), error_msgs

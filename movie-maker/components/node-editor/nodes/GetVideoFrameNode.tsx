@@ -13,6 +13,7 @@ import {
 } from './BaseNode';
 import type { GetVideoFrameNodeData } from '@/lib/types/node-editor';
 import { HANDLE_IDS } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 
 type GetVideoFrameNodeProps = NodeProps & {
   data: GetVideoFrameNodeData;
@@ -22,11 +23,7 @@ type GetVideoFrameNodeProps = NodeProps & {
 export function GetVideoFrameNode({ data, selected, id }: GetVideoFrameNodeProps) {
   const updateNodeData = useCallback(
     (updates: Partial<GetVideoFrameNodeData>) => {
-      window.dispatchEvent(
-        new CustomEvent('nodeDataUpdate', {
-          detail: { nodeId: id, updates },
-        })
-      );
+      emitNodeDataUpdate<GetVideoFrameNodeData>(id, updates);
     },
     [id]
   );

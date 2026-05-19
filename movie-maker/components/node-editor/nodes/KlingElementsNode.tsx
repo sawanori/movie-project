@@ -15,6 +15,7 @@ import type {
   WorkflowNode,
 } from '@/lib/types/node-editor';
 import { videosApi } from '@/lib/api/client';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 
 interface KlingElementsNodeProps extends NodeProps {
   data: KlingElementsNodeData;
@@ -28,10 +29,7 @@ export function KlingElementsNode({ data, selected, id }: KlingElementsNodeProps
 
   const updateNodeData = useCallback(
     (updates: Partial<KlingElementsNodeData>) => {
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<KlingElementsNodeData>(id, updates);
     },
     [id]
   );

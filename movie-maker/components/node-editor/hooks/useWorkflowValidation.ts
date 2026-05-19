@@ -271,20 +271,26 @@ export function useWorkflowValidation(
       }
     }
 
-    // 10. consent_required error: OmniReferenceNode が ProviderNode に接続済かつ
-    //     consentAccepted=false → 著作権同意が必要 (Generate 不可)
+    // 10. consent_required error: OmniReferenceNode が seedance Provider の
+    //     OMNI_REFERENCE_INPUT に接続済かつ consentAccepted=false の場合に発火
+    //     (Generate 不可)。誤接続 (他 Provider, 他 Handle, 残骸 edge) では発火しない。
     const omniNodes = nodes.filter(
       (n) => (n.data as WorkflowNodeData).type === 'omniReference',
     );
     let hasConsentError = false;
     for (const omniNode of omniNodes) {
       const omniData = omniNode.data as OmniReferenceNodeData;
-      const isConnected = edges.some(
-        (e) =>
-          e.source === omniNode.id &&
-          e.sourceHandle === HANDLE_IDS.OMNI_REFERENCE_OUTPUT,
-      );
-      if (isConnected && !omniData.consentAccepted) {
+      const isConnectedToSeedanceOmniInput = edges.some((e) => {
+        if (e.source !== omniNode.id) return false;
+        if (e.sourceHandle !== HANDLE_IDS.OMNI_REFERENCE_OUTPUT) return false;
+        if (e.targetHandle !== HANDLE_IDS.OMNI_REFERENCE_INPUT) return false;
+        const targetNode = nodes.find((n) => n.id === e.target);
+        if (!targetNode) return false;
+        const targetData = targetNode.data as WorkflowNodeData;
+        if (targetData.type !== 'provider') return false;
+        return (targetData as ProviderNodeData).provider === 'seedance';
+      });
+      if (isConnectedToSeedanceOmniInput && !omniData.consentAccepted) {
         errors.push({
           type: 'consent_required',
           nodeId: omniNode.id,

@@ -10,6 +10,7 @@ import {
 } from './BaseNode';
 import { cn } from '@/lib/utils';
 import type { KlingEndFrameNodeData } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 import { videosApi } from '@/lib/api/client';
 
 interface KlingEndFrameNodeProps extends NodeProps {
@@ -22,10 +23,7 @@ export function KlingEndFrameNode({ data, selected, id }: KlingEndFrameNodeProps
 
   const updateNodeData = useCallback(
     (updates: Partial<KlingEndFrameNodeData>) => {
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<KlingEndFrameNodeData>(id, updates);
     },
     [id]
   );

@@ -11,6 +11,7 @@ import {
 } from './BaseNode';
 import { cn } from '@/lib/utils';
 import type { BGMNodeData } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 import { templatesApi, BGMTrack } from '@/lib/api/client';
 
 interface BGMNodeProps extends NodeProps {
@@ -40,10 +41,7 @@ export function BGMNode({ data, selected, id }: BGMNodeProps) {
 
   const updateNodeData = useCallback(
     (updates: Partial<BGMNodeData>) => {
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<BGMNodeData>(id, updates);
     },
     [id]
   );

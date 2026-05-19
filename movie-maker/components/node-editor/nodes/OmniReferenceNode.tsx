@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import { Layers, Upload, X, Loader2, Film, Music, Image as ImageIcon } from 'lucide-react';
 import { useDropzone, type Accept } from 'react-dropzone';
@@ -20,9 +20,11 @@ import {
   uploadOmniImageReference,
   type OmniReferenceUploadResult,
 } from '@/lib/api/client';
-
-const MAX_VIDEO_TOTAL_SECONDS = 15.4;
-const MAX_AUDIO_TOTAL_SECONDS = 15.0;
+import {
+  useOmniReferenceLimits,
+  OMNI_REFERENCE_LIMITS_FALLBACK,
+} from '@/components/node-editor/hooks/useOmniReferenceLimits';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 
 type MediaKind = 'video' | 'audio' | 'image';
 
@@ -39,19 +41,16 @@ const ACCEPT_MAP: Record<MediaKind, Accept> = {
 
 const UPLOAD_FN: Record<
   MediaKind,
-  (file: File, consentAccepted: boolean) => Promise<OmniReferenceUploadResult>
+  (
+    file: File,
+    consentAccepted: boolean,
+    signal?: AbortSignal,
+  ) => Promise<OmniReferenceUploadResult>
 > = {
   video: uploadOmniVideoReference,
   audio: uploadOmniAudioReference,
   image: uploadOmniImageReference,
 };
-
-function emitNodeDataUpdate(nodeId: string, updates: Partial<OmniReferenceNodeData>): void {
-  const event = new CustomEvent('nodeDataUpdate', {
-    detail: { nodeId, updates },
-  });
-  window.dispatchEvent(event);
-}
 
 interface SlotDropzoneProps {
   nodeId: string;
@@ -62,6 +61,12 @@ interface SlotDropzoneProps {
   onSlotChange: (index: number, slot: OmniReferenceSlot) => void;
 }
 
+const MEDIA_KIND_LABEL_JA: Record<MediaKind, string> = {
+  video: '動画',
+  audio: '音声',
+  image: '画像',
+};
+
 function SlotDropzone({
   slot,
   mediaType,
@@ -71,13 +76,16 @@ function SlotDropzone({
 }: SlotDropzoneProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const handleUpload = useCallback(
     async (file: File) => {
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
       setIsUploading(true);
       setErrorMessage(null);
       try {
-        const result = await UPLOAD_FN[mediaType](file, consentAccepted);
+        const result = await UPLOAD_FN[mediaType](file, consentAccepted, controller.signal);
         onSlotChange(index, {
           assetId: result.id,
           url: result.url,
@@ -86,15 +94,31 @@ function SlotDropzone({
           mediaType,
         });
       } catch (err) {
+        if (controller.signal.aborted) {
+          // キャンセル時はエラーメッセージを設定しない (slot は初期状態のまま)
+          return;
+        }
         setErrorMessage(
           err instanceof Error ? err.message : `${mediaType} のアップロードに失敗しました`,
         );
       } finally {
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+        }
         setIsUploading(false);
       }
     },
     [mediaType, consentAccepted, index, onSlotChange],
   );
+
+  const handleCancel = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsUploading(false);
+    setErrorMessage(null);
+  }, []);
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
@@ -123,6 +147,8 @@ function SlotDropzone({
     mediaType === 'video' ? Film : mediaType === 'audio' ? Music : ImageIcon;
 
   const hasAsset = slot.assetId !== null;
+  const mediaLabelJa = MEDIA_KIND_LABEL_JA[mediaType];
+  const dropzoneAriaLabel = `${mediaLabelJa}参照 ${index + 1} をアップロード`;
 
   return (
     <div
@@ -162,6 +188,8 @@ function SlotDropzone({
         <div
           {...getRootProps()}
           data-testid={`omni-dropzone-${mediaType}-${index}`}
+          role="button"
+          aria-label={dropzoneAriaLabel}
           className={cn(
             'border border-dashed rounded flex flex-col items-center justify-center cursor-pointer p-2 text-center min-h-[56px]',
             isDragActive
@@ -172,7 +200,21 @@ function SlotDropzone({
         >
           <input {...getInputProps()} aria-label={`${mediaType} スロット ${index + 1} ファイル選択`} />
           {isUploading ? (
-            <Loader2 className="w-4 h-4 text-[#fce300] animate-spin" />
+            <>
+              <Loader2 className="w-4 h-4 text-[#fce300] animate-spin" />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCancel();
+                }}
+                aria-label={`${mediaType} スロット ${index + 1} アップロードをキャンセル`}
+                data-testid={`omni-slot-${mediaType}-${index}-cancel`}
+                className="mt-1 text-[10px] text-red-400 hover:text-red-300 underline pointer-events-auto"
+              >
+                キャンセル
+              </button>
+            </>
           ) : (
             <>
               <Upload className="w-4 h-4 text-gray-500 mb-1" />
@@ -231,10 +273,67 @@ function ProgressBar({ value, max, label, testId }: ProgressBarProps) {
   );
 }
 
+interface ImageDetailsSectionProps {
+  imageFilled: number;
+  imageSlots: OmniReferenceNodeData['imageSlots'];
+  consentAccepted: boolean;
+  nodeId: string;
+  maxImageSlots: number;
+  onSlotChange: (index: number, slot: OmniReferenceSlot) => void;
+}
+
+function ImageDetailsSection({
+  imageFilled,
+  imageSlots,
+  consentAccepted,
+  nodeId,
+  maxImageSlots,
+  onSlotChange,
+}: ImageDetailsSectionProps) {
+  const [isOpen, setIsOpen] = useState(true);
+  return (
+    <details
+      className="mt-3"
+      data-testid="omni-image-details"
+      open={isOpen}
+      onToggle={(e) => setIsOpen((e.currentTarget as HTMLDetailsElement).open)}
+    >
+      <summary
+        className="text-xs text-gray-300 font-medium cursor-pointer flex items-center gap-1"
+        aria-expanded={isOpen ? 'true' : 'false'}
+        data-testid="omni-image-details-summary"
+      >
+        <ImageIcon className="w-3 h-3" />
+        Image ({imageFilled}/{maxImageSlots})
+      </summary>
+      <div className="grid grid-cols-4 gap-1.5 mt-2">
+        {imageSlots.map((slot, i) => (
+          <SlotDropzone
+            key={`image-${i}`}
+            nodeId={nodeId}
+            slot={slot}
+            mediaType="image"
+            index={i}
+            consentAccepted={consentAccepted}
+            onSlotChange={onSlotChange}
+          />
+        ))}
+      </div>
+    </details>
+  );
+}
+
 export function OmniReferenceNode({ data, selected, id }: OmniReferenceNodeProps) {
+  // 制約値は API から取得 (取得前/失敗時は fallback)。
+  const { data: limitsData } = useOmniReferenceLimits();
+  const limits = limitsData ?? OMNI_REFERENCE_LIMITS_FALLBACK;
+  const maxVideoTotalSeconds = limits.max_video_total_seconds;
+  const maxAudioTotalSeconds = limits.max_audio_total_seconds;
+  const maxImageSlots = limits.max_image_reference_asset_ids;
+
   const updateNodeData = useCallback(
     (updates: Partial<OmniReferenceNodeData>) => {
-      emitNodeDataUpdate(id, updates);
+      emitNodeDataUpdate<OmniReferenceNodeData>(id, updates);
     },
     [id],
   );
@@ -340,7 +439,7 @@ export function OmniReferenceNode({ data, selected, id }: OmniReferenceNodeProps
         </div>
         <ProgressBar
           value={videoTotal}
-          max={MAX_VIDEO_TOTAL_SECONDS}
+          max={maxVideoTotalSeconds}
           label="video 合計"
           testId="omni-video-progress"
         />
@@ -367,32 +466,21 @@ export function OmniReferenceNode({ data, selected, id }: OmniReferenceNodeProps
         </div>
         <ProgressBar
           value={audioTotal}
-          max={MAX_AUDIO_TOTAL_SECONDS}
+          max={maxAudioTotalSeconds}
           label="audio 合計 (PiAPI 上限)"
           testId="omni-audio-progress"
         />
       </section>
 
-      {/* Image セクション (折り畳み) */}
-      <details className="mt-3" data-testid="omni-image-details">
-        <summary className="text-xs text-gray-300 font-medium cursor-pointer flex items-center gap-1">
-          <ImageIcon className="w-3 h-3" />
-          Image ({imageFilled}/8)
-        </summary>
-        <div className="grid grid-cols-4 gap-1.5 mt-2">
-          {data.imageSlots.map((slot, i) => (
-            <SlotDropzone
-              key={`image-${i}`}
-              nodeId={id}
-              slot={slot}
-              mediaType="image"
-              index={i}
-              consentAccepted={data.consentAccepted}
-              onSlotChange={updateImageSlot}
-            />
-          ))}
-        </div>
-      </details>
+      {/* Image セクション (折り畳み、初期 open) */}
+      <ImageDetailsSection
+        imageFilled={imageFilled}
+        imageSlots={data.imageSlots}
+        consentAccepted={data.consentAccepted}
+        nodeId={id}
+        maxImageSlots={maxImageSlots}
+        onSlotChange={updateImageSlot}
+      />
 
       <Handle
         type="source"

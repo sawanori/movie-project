@@ -17,6 +17,7 @@ import {
 } from './BaseNode';
 import { cn } from '@/lib/utils';
 import type { DialogueNodeData } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 import { ttsApi, type VoiceInfo } from '@/lib/api/client';
 
 type DialogueNodeProps = NodeProps & {
@@ -47,11 +48,7 @@ export function DialogueNode({ data, selected, id }: DialogueNodeProps) {
 
   const updateNodeData = useCallback(
     (updates: Partial<DialogueNodeData>) => {
-      window.dispatchEvent(
-        new CustomEvent('nodeDataUpdate', {
-          detail: { nodeId: id, updates },
-        })
-      );
+      emitNodeDataUpdate<DialogueNodeData>(id, updates);
     },
     [id]
   );

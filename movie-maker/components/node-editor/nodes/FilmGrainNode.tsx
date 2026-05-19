@@ -9,6 +9,7 @@ import {
 } from './BaseNode';
 import { cn } from '@/lib/utils';
 import type { FilmGrainNodeData } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 
 interface FilmGrainNodeProps extends NodeProps {
   data: FilmGrainNodeData;
@@ -27,10 +28,7 @@ const GRAIN_OPTIONS: { value: FilmGrainLevel; label: string; description: string
 export function FilmGrainNode({ data, selected, id }: FilmGrainNodeProps) {
   const updateNodeData = useCallback(
     (updates: Partial<FilmGrainNodeData>) => {
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<FilmGrainNodeData>(id, updates);
     },
     [id]
   );

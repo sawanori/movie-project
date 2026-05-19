@@ -2212,3 +2212,23 @@ class TrimVideoResponse(BaseModel):
     """動画トリムレスポンス"""
     output_video_url: str = Field(..., description="トリム済み動画のURL")
     duration_seconds: float = Field(..., description="トリム済み動画の長さ（秒）")
+
+
+# ---------------------------------------------------------------------------
+# M-3: omni_reference 数値定数の Backend/Frontend 共通化
+# ---------------------------------------------------------------------------
+class OmniReferenceLimitsResponse(BaseModel):
+    """GET /api/v1/videos/config/omni-reference-limits レスポンス
+
+    Backend が source of truth として omni_reference の制約値を Frontend に配信する。
+    Frontend は起動時にこのエンドポイントから値を取得し、UI バリデーションに使用する。
+    """
+    max_image_urls: int = Field(..., description="image_urls 最大数")
+    max_video_urls: int = Field(..., description="video_urls 最大数")
+    max_audio_urls: int = Field(..., description="audio_urls 最大数")
+    max_video_total_seconds: float = Field(..., description="video 合計時間上限 (秒)")
+    max_audio_total_seconds: float = Field(..., description="audio 合計時間上限 (秒)")
+    max_image_reference_asset_ids: int = Field(..., description="image_reference_asset_ids Field max_length")
+    upload_file_size_limits: dict[str, int] = Field(..., description="media_type 別ファイルサイズ上限 (bytes)")
+    consent_required: bool = Field(..., description="アップロード時に同意取得が必須か")
+    asset_ttl_seconds: int = Field(..., description="omni_reference_assets の TTL (秒)")

@@ -10,8 +10,9 @@ import {
   nodeSelectClassName,
   nodeLabelClassName,
 } from './BaseNode';
-import type { PromptNodeData, SubjectType } from '@/lib/types/node-editor';
+import type { PromptNodeData, SubjectType, DialogueNodeData } from '@/lib/types/node-editor';
 import { videosApi } from '@/lib/api/client';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 
 interface PromptNodeProps extends NodeProps {
   data: PromptNodeData;
@@ -41,10 +42,7 @@ export function PromptNode({ data, selected, id }: PromptNodeProps) {
 
   const updateNodeData = useCallback(
     (updates: Partial<PromptNodeData>) => {
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<PromptNodeData>(id, updates);
     },
     [id]
   );
@@ -124,10 +122,7 @@ export function PromptNode({ data, selected, id }: PromptNodeProps) {
       console.warn('複数の DialogueNode が見つかりました。最初の 1 個に転記します。');
     }
 
-    const updateEvent = new CustomEvent('nodeDataUpdate', {
-      detail: { nodeId: dialogueNodes[0].id, updates: { text: dialogueText } },
-    });
-    window.dispatchEvent(updateEvent);
+    emitNodeDataUpdate<DialogueNodeData>(dialogueNodes[0].id, { text: dialogueText });
 
     dismissedDialogueHashRef.current = normalizeDialogue(dialogueText);
     setPendingDialogue(null);

@@ -11,6 +11,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { GenerateNodeData } from '@/lib/types/node-editor';
 import { HANDLE_IDS } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 
 interface GenerateNodeProps extends NodeProps {
   data: GenerateNodeData;
@@ -20,10 +21,7 @@ interface GenerateNodeProps extends NodeProps {
 export function GenerateNode({ data, selected, id }: GenerateNodeProps) {
   const updateNodeData = useCallback(
     (updates: Partial<GenerateNodeData>) => {
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<GenerateNodeData>(id, updates);
     },
     [id]
   );

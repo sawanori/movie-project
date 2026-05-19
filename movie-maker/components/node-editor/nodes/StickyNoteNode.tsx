@@ -5,6 +5,7 @@ import { type NodeProps } from '@xyflow/react'
 import { StickyNote } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { StickyNoteNodeData } from '@/lib/types/node-editor'
+import { emitNodeDataUpdate } from '../utils/emit-node-data'
 
 type StickyNoteNodeProps = NodeProps & {
   data: StickyNoteNodeData
@@ -22,7 +23,7 @@ export function StickyNoteNode({ data, selected, id }: StickyNoteNodeProps) {
 
   const updateNodeData = useCallback(
     (updates: Partial<StickyNoteNodeData>) => {
-      window.dispatchEvent(new CustomEvent('nodeDataUpdate', { detail: { nodeId: id, updates } }))
+      emitNodeDataUpdate<StickyNoteNodeData>(id, updates)
     },
     [id]
   )

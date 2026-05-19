@@ -15,6 +15,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { VideoInputNodeData } from '@/lib/types/node-editor';
 import { HANDLE_IDS } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 import { userVideosApi, type UserVideo } from '@/lib/api/client';
 
 // ===== Constants =====
@@ -145,10 +146,7 @@ export function VideoInputNode({ data, selected, id }: VideoInputNodeProps) {
 
   const updateNodeData = useCallback(
     (updates: Partial<VideoInputNodeData>) => {
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<VideoInputNodeData>(id, updates);
     },
     [id]
   );

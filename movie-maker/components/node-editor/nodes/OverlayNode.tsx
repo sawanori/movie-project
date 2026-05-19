@@ -11,6 +11,7 @@ import {
   nodeLabelClassName,
 } from './BaseNode';
 import type { OverlayNodeData } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 
 interface OverlayNodeProps extends NodeProps {
   data: OverlayNodeData;
@@ -43,10 +44,7 @@ const COLOR_OPTIONS: { value: string; label: string }[] = [
 export function OverlayNode({ data, selected, id }: OverlayNodeProps) {
   const updateNodeData = useCallback(
     (updates: Partial<OverlayNodeData>) => {
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<OverlayNodeData>(id, updates);
     },
     [id]
   );

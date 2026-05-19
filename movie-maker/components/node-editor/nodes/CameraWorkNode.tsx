@@ -10,6 +10,7 @@ import {
 } from './BaseNode';
 import { cn } from '@/lib/utils';
 import type { CameraWorkNodeData, VideoProvider } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 
 interface CameraWorkNodeProps extends NodeProps {
   data: CameraWorkNodeData;
@@ -78,10 +79,7 @@ export function CameraWorkNode({ data, selected, id }: CameraWorkNodeProps) {
 
   const updateNodeData = useCallback(
     (updates: Partial<CameraWorkNodeData>) => {
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<CameraWorkNodeData>(id, updates);
     },
     [id]
   );

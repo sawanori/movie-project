@@ -76,13 +76,55 @@ vi.mock('@/lib/api/client', () => ({
   uploadOmniImageReference: vi.fn(),
 }))
 
+// ========== Omni Reference Limits hook モック ==========
+// API 取得は別 hook test で検証。コンポーネント単体テストでは
+// 既存定数 (video=15.4s, audio=15.0s, image=8) と一致する mock を返す。
+vi.mock('@/components/node-editor/hooks/useOmniReferenceLimits', () => ({
+  useOmniReferenceLimits: () => ({
+    data: {
+      max_image_urls: 9,
+      max_video_urls: 3,
+      max_audio_urls: 3,
+      max_video_total_seconds: 15.4,
+      max_audio_total_seconds: 15.0,
+      max_image_reference_asset_ids: 8,
+      upload_file_size_limits: {
+        video: 52_428_800,
+        audio: 10_485_760,
+        image: 10_485_760,
+      },
+      consent_required: true,
+      asset_ttl_seconds: 259_200,
+    },
+    isLoading: false,
+    error: null,
+  }),
+  OMNI_REFERENCE_LIMITS_FALLBACK: {
+    max_image_urls: 9,
+    max_video_urls: 3,
+    max_audio_urls: 3,
+    max_video_total_seconds: 15.4,
+    max_audio_total_seconds: 15.0,
+    max_image_reference_asset_ids: 8,
+    upload_file_size_limits: {
+      video: 52_428_800,
+      audio: 10_485_760,
+      image: 10_485_760,
+    },
+    consent_required: true,
+    asset_ttl_seconds: 259_200,
+  },
+}))
+
 import {
   uploadOmniVideoReference,
   uploadOmniAudioReference,
+  uploadOmniImageReference,
 } from '@/lib/api/client'
 
 const mockUploadVideo = vi.mocked(uploadOmniVideoReference)
 const mockUploadAudio = vi.mocked(uploadOmniAudioReference)
+const mockUploadImage = vi.mocked(uploadOmniImageReference)
 
 // ========== テストヘルパー ==========
 const defaultProps = {
@@ -158,7 +200,11 @@ describe('OmniReferenceNode', () => {
       await waitFor(() => {
         expect(mockUploadVideo).toHaveBeenCalledTimes(1)
       })
-      expect(mockUploadVideo).toHaveBeenCalledWith(file, true)
+      expect(mockUploadVideo).toHaveBeenCalledWith(
+        file,
+        true,
+        expect.any(AbortSignal),
+      )
     })
   })
 
@@ -392,4 +438,153 @@ describe('OmniReferenceNode', () => {
     })
   })
 
+  // ========== L-1: アップロード中のキャンセル UI ==========
+  describe('L-1: アップロード中のキャンセル UI', () => {
+    it('アップロード中に「キャンセル」ボタンが表示される', async () => {
+      // resolve しない Promise を返して "uploading" 状態を維持
+      let resolveUpload: (value: never) => void = () => {}
+      mockUploadVideo.mockImplementationOnce(
+        () =>
+          new Promise(() => {
+            // 永続的に pending
+            resolveUpload = (() => {}) as never
+          }),
+      )
+
+      renderNode({ consentAccepted: true })
+
+      const fileInput = screen.getByLabelText(
+        'video スロット 1 ファイル選択',
+      ) as HTMLInputElement
+      const file = makeFile('test.mp4', 'video/mp4')
+      fireEvent.change(fileInput, { target: { files: [file] } })
+
+      const cancelBtn = await screen.findByTestId(
+        'omni-slot-video-0-cancel',
+      )
+      expect(cancelBtn).toBeDefined()
+      expect(cancelBtn.getAttribute('aria-label')).toBe(
+        'video スロット 1 アップロードをキャンセル',
+      )
+      // resolveUpload を参照だけして lint 警告回避
+      void resolveUpload
+    })
+
+    it('キャンセルボタン押下で AbortController.abort() が呼ばれ uploading 状態が解除される', async () => {
+      // AbortSignal を捕捉するために spy つきの実装に差し替える
+      let receivedSignal: AbortSignal | undefined
+      mockUploadImage.mockImplementationOnce(
+        (_file, _consent, signal) =>
+          new Promise((_resolve, reject) => {
+            receivedSignal = signal
+            signal?.addEventListener('abort', () => {
+              reject(new DOMException('Aborted', 'AbortError'))
+            })
+          }),
+      )
+
+      renderNode({ consentAccepted: true })
+
+      const fileInput = screen.getByLabelText(
+        'image スロット 1 ファイル選択',
+      ) as HTMLInputElement
+      const file = makeFile('foo.png', 'image/png')
+      fireEvent.change(fileInput, { target: { files: [file] } })
+
+      const cancelBtn = await screen.findByTestId(
+        'omni-slot-image-0-cancel',
+      )
+
+      // signal が fetch に渡されたことを確認
+      await waitFor(() => {
+        expect(receivedSignal).toBeDefined()
+      })
+
+      fireEvent.click(cancelBtn)
+
+      // abort が呼ばれて signal.aborted=true になる
+      await waitFor(() => {
+        expect(receivedSignal?.aborted).toBe(true)
+      })
+
+      // uploading が解除されてキャンセルボタンが消える
+      await waitFor(() => {
+        expect(
+          screen.queryByTestId('omni-slot-image-0-cancel'),
+        ).toBeNull()
+      })
+
+      // エラーメッセージは表示されない (キャンセルは正常系扱い)
+      expect(
+        screen.queryByTestId('omni-slot-image-0-error'),
+      ).toBeNull()
+    })
+  })
+
+  // ========== L-2: image セクション 初期 open + 件数バッジ ==========
+  describe('L-2: image セクション 初期 open + 件数バッジ', () => {
+    it('details が初期表示で open になっている', () => {
+      renderNode()
+      const details = screen.getByTestId(
+        'omni-image-details',
+      ) as HTMLDetailsElement
+      expect(details.open).toBe(true)
+    })
+
+    it('件数バッジが "Image (n/8)" 形式で表示される (n=filled スロット数)', () => {
+      renderNode({
+        imageSlots: [
+          {
+            assetId: 'a',
+            mediaType: 'image',
+            filename: 'a.png',
+          },
+          {
+            assetId: 'b',
+            mediaType: 'image',
+            filename: 'b.png',
+          },
+          {
+            assetId: 'c',
+            mediaType: 'image',
+            filename: 'c.png',
+          },
+          { assetId: null, mediaType: 'image' },
+          { assetId: null, mediaType: 'image' },
+          { assetId: null, mediaType: 'image' },
+          { assetId: null, mediaType: 'image' },
+          { assetId: null, mediaType: 'image' },
+        ],
+      })
+      const summary = screen.getByTestId('omni-image-details-summary')
+      expect(summary.textContent).toContain('Image (3/8)')
+    })
+  })
+
+  // ========== L-3: A11y 改善 ==========
+  describe('L-3: A11y 改善', () => {
+    it('summary が aria-expanded="true" を持つ (初期 open)', () => {
+      renderNode()
+      const summary = screen.getByTestId('omni-image-details-summary')
+      expect(summary.getAttribute('aria-expanded')).toBe('true')
+    })
+
+    it('Dropzone に aria-label が設定されている', () => {
+      renderNode({ consentAccepted: true })
+      const videoDropzone = screen.getByTestId('omni-dropzone-video-0')
+      expect(videoDropzone.getAttribute('aria-label')).toBe(
+        '動画参照 1 をアップロード',
+      )
+
+      const audioDropzone = screen.getByTestId('omni-dropzone-audio-0')
+      expect(audioDropzone.getAttribute('aria-label')).toBe(
+        '音声参照 1 をアップロード',
+      )
+
+      const imageDropzone = screen.getByTestId('omni-dropzone-image-0')
+      expect(imageDropzone.getAttribute('aria-label')).toBe(
+        '画像参照 1 をアップロード',
+      )
+    })
+  })
 })

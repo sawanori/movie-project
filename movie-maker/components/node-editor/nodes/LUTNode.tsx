@@ -9,6 +9,7 @@ import {
 } from './BaseNode';
 import { cn } from '@/lib/utils';
 import type { LUTNodeData } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 
 interface LUTNodeProps extends NodeProps {
   data: LUTNodeData;
@@ -18,10 +19,7 @@ interface LUTNodeProps extends NodeProps {
 export function LUTNode({ data, selected, id }: LUTNodeProps) {
   const updateNodeData = useCallback(
     (updates: Partial<LUTNodeData>) => {
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<LUTNodeData>(id, updates);
     },
     [id]
   );

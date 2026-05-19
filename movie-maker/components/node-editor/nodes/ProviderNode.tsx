@@ -13,6 +13,7 @@ import {
 import { cn } from '@/lib/utils';
 import { HANDLE_IDS } from '@/lib/types/node-editor';
 import type { ProviderNodeData, VideoProvider } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 
 interface ProviderNodeProps extends NodeProps {
   data: ProviderNodeData;
@@ -62,10 +63,7 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
 
   const updateNodeData = useCallback(
     (updates: Partial<ProviderNodeData>) => {
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<ProviderNodeData>(id, updates);
     },
     [id]
   );

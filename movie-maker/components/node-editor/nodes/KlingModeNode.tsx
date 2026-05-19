@@ -9,6 +9,7 @@ import {
 } from './BaseNode';
 import { cn } from '@/lib/utils';
 import type { KlingModeNodeData } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 
 interface KlingModeNodeProps extends NodeProps {
   data: KlingModeNodeData;
@@ -23,10 +24,7 @@ const KLING_MODES: { value: 'std' | 'pro'; label: string; description: string }[
 export function KlingModeNode({ data, selected, id }: KlingModeNodeProps) {
   const updateNodeData = useCallback(
     (updates: Partial<KlingModeNodeData>) => {
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<KlingModeNodeData>(id, updates);
     },
     [id]
   );

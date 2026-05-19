@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from pathlib import Path
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 import logging
 import uuid
@@ -74,6 +74,8 @@ from app.videos.schemas import (
     TrimVideoRequest, TrimVideoResponse,
     # Seedance Omni Reference 用 (T1-3)
     OmniReferenceAssetResponse,
+    # Omni Reference Limits Config (M-3)
+    OmniReferenceLimitsResponse,
 )
 from app.videos import service
 from app.videos.service import (
@@ -3810,8 +3812,8 @@ async def resolve_asset_ids(
     rows = response.data or []
     rows_by_id = {row["id"]: row for row in rows}
 
-    # 比較用に offset-naive UTC 化 (DB 値は ISO8601 with tz)
-    now_utc = datetime.utcnow()
+    # 比較用に tz-aware UTC (DB 値は ISO8601 with tz)
+    now_utc = datetime.now(timezone.utc)
 
     resolved: list[tuple[str, Optional[float]]] = []
     for aid in asset_ids:
@@ -3833,13 +3835,13 @@ async def resolve_asset_ids(
                 status_code=422,
                 detail=f"asset_id {aid} は media_type 不一致",
             )
-        # expires_at 比較 (tz-aware → naive UTC へ変換)
+        # expires_at 比較 (tz-aware UTC のまま比較)
         expires_raw = row.get("expires_at")
         if expires_raw:
             try:
                 expires_dt = _parse_dt(expires_raw)
-                if expires_dt.tzinfo is not None:
-                    expires_dt = expires_dt.replace(tzinfo=None)
+                if expires_dt.tzinfo is None:
+                    expires_dt = expires_dt.replace(tzinfo=timezone.utc)
             except (ValueError, TypeError) as exc:
                 raise HTTPException(
                     status_code=422,
@@ -6194,6 +6196,35 @@ def _build_omni_key(user_id: str, asset_id: uuid.UUID, ext: str) -> str:
     return f"omni-references/{user_id}/{asset_id}.{ext}"
 
 
+async def _rollback_omni_r2_object(key: str, insert_err: Exception) -> None:
+    """omni_reference の DB INSERT 失敗時に R2 オブジェクトを削除する.
+
+    rollback 自体が失敗した場合は **R2 に孤児が残る** ため error ログを残す.
+    呼び出し側はこの関数の戻り後に HTTPException(500) を raise する想定。
+    """
+    try:
+        deleted = await r2.delete_file(key)
+        if deleted:
+            logger.warning(
+                "omni_reference DB INSERT failed, R2 rolled back: key=%s, err=%r",
+                key,
+                insert_err,
+            )
+        else:
+            logger.error(
+                "omni_reference rollback FAILED (delete_file returned False), orphan: key=%s, insert_err=%r",
+                key,
+                insert_err,
+            )
+    except Exception as rollback_err:
+        logger.error(
+            "omni_reference rollback FAILED, orphan: key=%s, insert_err=%r, rollback_err=%r",
+            key,
+            insert_err,
+            rollback_err,
+        )
+
+
 def _omni_response_from_row(row: dict) -> OmniReferenceAssetResponse:
     """DB INSERT 結果から OmniReferenceAssetResponse を組み立てる。"""
     return OmniReferenceAssetResponse(
@@ -6204,6 +6235,40 @@ def _omni_response_from_row(row: dict) -> OmniReferenceAssetResponse:
         content_type=row["content_type"],
         file_size_bytes=row["file_size_bytes"],
         expires_at=row["expires_at"],
+    )
+
+
+@router.get(
+    "/config/omni-reference-limits",
+    response_model=OmniReferenceLimitsResponse,
+)
+async def get_omni_reference_limits() -> OmniReferenceLimitsResponse:
+    """omni_reference の制約値 (上限/TTL/同意要否) を Frontend へ配信。
+
+    M-3: Backend を source of truth として Frontend と数値定数を共有する。
+    認証は不要 (UI 表示に必要な静的設定値のみ)。
+
+    Note:
+        値は本 router 内 (`_OMNI_MAX_*`, `MAX_AUDIO_TOTAL_SECONDS`,
+        `MAX_IMAGE_TOTAL_COUNT`) および `app/external/piapi_seedance_provider.py`
+        の `MAX_*` 定数と整合させること。
+        `max_image_reference_asset_ids` は base image_url 1 個 +
+        image_reference_asset_ids 8 個 = 計 9 個 (`MAX_IMAGE_TOTAL_COUNT`) を意図する。
+    """
+    return OmniReferenceLimitsResponse(
+        max_image_urls=MAX_IMAGE_TOTAL_COUNT,
+        max_video_urls=3,
+        max_audio_urls=3,
+        max_video_total_seconds=_OMNI_MAX_VIDEO_DURATION,
+        max_audio_total_seconds=MAX_AUDIO_TOTAL_SECONDS,
+        max_image_reference_asset_ids=MAX_IMAGE_TOTAL_COUNT - 1,
+        upload_file_size_limits={
+            "video": _OMNI_MAX_VIDEO_SIZE,
+            "audio": _OMNI_MAX_AUDIO_SIZE,
+            "image": _OMNI_MAX_IMAGE_SIZE,
+        },
+        consent_required=True,
+        asset_ttl_seconds=72 * 3600,
     )
 
 
@@ -6248,22 +6313,27 @@ async def upload_omni_video_reference(
     key = _build_omni_key(user_id, asset_id, ext)
     public_url = await r2.upload_with_key(content, key, file.content_type)
 
-    sb = get_supabase()
-    insert_payload = {
-        "id": str(asset_id),
-        "user_id": str(user_id),
-        "r2_key": key,
-        "public_url": public_url,
-        "media_type": "video",
-        "content_type": file.content_type,
-        "duration_seconds": float(duration),
-        "file_size_bytes": len(content),
-        "consent_accepted": True,
-    }
-    result = sb.table("omni_reference_assets").insert(insert_payload).execute()
-    if not result.data:
-        raise HTTPException(status_code=500, detail="omni_reference asset INSERT に失敗しました")
-    return _omni_response_from_row(result.data[0])
+    try:
+        sb = get_supabase()
+        insert_payload = {
+            "id": str(asset_id),
+            "user_id": str(user_id),
+            "r2_key": key,
+            "public_url": public_url,
+            "media_type": "video",
+            "content_type": file.content_type,
+            "duration_seconds": float(duration),
+            "file_size_bytes": len(content),
+            "consent_accepted": True,
+        }
+        result = sb.table("omni_reference_assets").insert(insert_payload).execute()
+        if not result.data:
+            raise RuntimeError("omni_reference asset INSERT に失敗しました")
+        row = result.data[0]
+    except Exception as insert_err:
+        await _rollback_omni_r2_object(key, insert_err)
+        raise HTTPException(status_code=500, detail="アップロード保存に失敗しました")
+    return _omni_response_from_row(row)
 
 
 @router.post(
@@ -6310,22 +6380,27 @@ async def upload_omni_audio_reference(
     key = _build_omni_key(user_id, asset_id, ext)
     public_url = await r2.upload_with_key(content, key, file.content_type)
 
-    sb = get_supabase()
-    insert_payload = {
-        "id": str(asset_id),
-        "user_id": str(user_id),
-        "r2_key": key,
-        "public_url": public_url,
-        "media_type": "audio",
-        "content_type": file.content_type,
-        "duration_seconds": float(duration),
-        "file_size_bytes": len(content),
-        "consent_accepted": True,
-    }
-    result = sb.table("omni_reference_assets").insert(insert_payload).execute()
-    if not result.data:
-        raise HTTPException(status_code=500, detail="omni_reference asset INSERT に失敗しました")
-    return _omni_response_from_row(result.data[0])
+    try:
+        sb = get_supabase()
+        insert_payload = {
+            "id": str(asset_id),
+            "user_id": str(user_id),
+            "r2_key": key,
+            "public_url": public_url,
+            "media_type": "audio",
+            "content_type": file.content_type,
+            "duration_seconds": float(duration),
+            "file_size_bytes": len(content),
+            "consent_accepted": True,
+        }
+        result = sb.table("omni_reference_assets").insert(insert_payload).execute()
+        if not result.data:
+            raise RuntimeError("omni_reference asset INSERT に失敗しました")
+        row = result.data[0]
+    except Exception as insert_err:
+        await _rollback_omni_r2_object(key, insert_err)
+        raise HTTPException(status_code=500, detail="アップロード保存に失敗しました")
+    return _omni_response_from_row(row)
 
 
 @router.post(
@@ -6363,19 +6438,24 @@ async def upload_omni_image_reference(
     key = _build_omni_key(user_id, asset_id, ext)
     public_url = await r2.upload_with_key(content, key, file.content_type)
 
-    sb = get_supabase()
-    insert_payload = {
-        "id": str(asset_id),
-        "user_id": str(user_id),
-        "r2_key": key,
-        "public_url": public_url,
-        "media_type": "image",
-        "content_type": file.content_type,
-        "duration_seconds": None,
-        "file_size_bytes": len(content),
-        "consent_accepted": True,
-    }
-    result = sb.table("omni_reference_assets").insert(insert_payload).execute()
-    if not result.data:
-        raise HTTPException(status_code=500, detail="omni_reference asset INSERT に失敗しました")
-    return _omni_response_from_row(result.data[0])
+    try:
+        sb = get_supabase()
+        insert_payload = {
+            "id": str(asset_id),
+            "user_id": str(user_id),
+            "r2_key": key,
+            "public_url": public_url,
+            "media_type": "image",
+            "content_type": file.content_type,
+            "duration_seconds": None,
+            "file_size_bytes": len(content),
+            "consent_accepted": True,
+        }
+        result = sb.table("omni_reference_assets").insert(insert_payload).execute()
+        if not result.data:
+            raise RuntimeError("omni_reference asset INSERT に失敗しました")
+        row = result.data[0]
+    except Exception as insert_err:
+        await _rollback_omni_r2_object(key, insert_err)
+        raise HTTPException(status_code=500, detail="アップロード保存に失敗しました")
+    return _omni_response_from_row(row)

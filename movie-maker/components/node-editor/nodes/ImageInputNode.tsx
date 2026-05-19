@@ -13,6 +13,7 @@ import {
 } from './BaseNode';
 import { cn } from '@/lib/utils';
 import type { ImageInputNodeData } from '@/lib/types/node-editor';
+import { emitNodeDataUpdate } from '../utils/emit-node-data';
 import { videosApi, libraryApi, type LibraryImage, type Screenshot } from '@/lib/api/client';
 
 type ImageInputMode = 'upload' | 'url';
@@ -40,10 +41,7 @@ export function ImageInputNode({ data, selected, id }: ImageInputNodeProps) {
   const updateNodeData = useCallback(
     (updates: Partial<ImageInputNodeData>) => {
       // React Flow のノードデータ更新は親コンポーネントで処理
-      const event = new CustomEvent('nodeDataUpdate', {
-        detail: { nodeId: id, updates },
-      });
-      window.dispatchEvent(event);
+      emitNodeDataUpdate<ImageInputNodeData>(id, updates);
     },
     [id]
   );
