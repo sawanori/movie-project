@@ -80,6 +80,13 @@ export default function StoryGeneratePage() {
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9'>('9:16');
   const [videoProvider, setVideoProvider] = useState<VideoProvider>('runway');
   const [klingMode, setKlingMode] = useState<'std' | 'pro'>('std');
+  const [klingDuration, setKlingDuration] = useState<5 | 10>(5);
+  // Seedance 2.0 パラメータ
+  const [seedanceMode, setSeedanceMode] = useState<'pro' | 'fast'>('pro');
+  const [seedanceDuration, setSeedanceDuration] = useState<number>(5);
+  const [seedanceResolution, setSeedanceResolution] = useState<'480p' | '720p' | '1080p'>('720p');
+  const [seedanceGenerateAudio, setSeedanceGenerateAudio] = useState(false);
+  const [seedanceCameraFixed, setSeedanceCameraFixed] = useState(false);
   // Kling Elements: 一貫性向上用の追加画像
   const [elementImages, setElementImages] = useState<string[]>([]);
   // 終了フレーム画像（Kling専用）
@@ -435,11 +442,18 @@ export default function StoryGeneratePage() {
         body_control: (subjectType === 'person' || subjectType === 'animation') && useActTwo ? bodyControl : undefined,
         // Kling AI用パラメータ
         kling_mode: videoProvider === 'piapi_kling' ? klingMode : undefined,
+        kling_duration: videoProvider === 'piapi_kling' ? klingDuration : undefined,
         end_frame_image_url: videoProvider === 'piapi_kling' ? (endFrameImageUrl || undefined) : undefined,
         // Kling Elements: 一貫性向上用の追加画像
         element_images: videoProvider === 'piapi_kling' && elementImages.length > 0
           ? elementImages.map(url => ({ image_url: url }))
           : undefined,
+        // Seedance 2.0用パラメータ
+        seedance_mode: videoProvider === 'seedance' ? seedanceMode : undefined,
+        seedance_duration: videoProvider === 'seedance' ? seedanceDuration : undefined,
+        seedance_resolution: videoProvider === 'seedance' ? seedanceResolution : undefined,
+        seedance_generate_audio: videoProvider === 'seedance' ? seedanceGenerateAudio : undefined,
+        seedance_camera_fixed: videoProvider === 'seedance' ? seedanceCameraFixed : undefined,
       });
 
       router.push(`/generate/${videoRes.id}`);
@@ -1190,7 +1204,151 @@ export default function StoryGeneratePage() {
                       <span className="text-xs text-[#fce300] font-medium">選択中</span>
                     )}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => handleProviderChange('seedance')}
+                    className={cn(
+                      "flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-colors min-w-[120px]",
+                      videoProvider === 'seedance'
+                        ? "border-[#fce300] bg-[#fce300]/10"
+                        : "border-[#404040] hover:border-[#505050]"
+                    )}
+                  >
+                    <div className="text-center">
+                      <p className="text-sm font-medium text-white">Seedance 2.0</p>
+                      <p className="text-xs text-gray-500">音声生成・最大15秒</p>
+                    </div>
+                    {videoProvider === 'seedance' && (
+                      <span className="text-xs text-[#fce300] font-medium">選択中</span>
+                    )}
+                  </button>
                 </div>
+
+                {/* Seedance 2.0 オプション（Seedance選択時のみ表示） */}
+                {videoProvider === 'seedance' && (
+                  <div className="mt-4 space-y-4 rounded-lg border border-[#404040] bg-[#1a1a1a] p-4">
+                    {/* モード選択 */}
+                    <div>
+                      <label className="mb-2 block text-center text-xs font-medium text-gray-400">
+                        モード
+                      </label>
+                      <div className="flex gap-3 justify-center">
+                        <button
+                          type="button"
+                          onClick={() => setSeedanceMode('pro')}
+                          className={cn(
+                            "flex-1 max-w-[140px] rounded-md border px-3 py-2 text-sm transition-all",
+                            seedanceMode === 'pro'
+                              ? "border-[#fce300] bg-[#fce300]/10 text-[#fce300]"
+                              : "border-[#404040] text-gray-400 hover:border-[#505050]"
+                          )}
+                        >
+                          <div className="font-medium">Pro</div>
+                          <div className="text-xs opacity-70">高品質</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSeedanceMode('fast')}
+                          className={cn(
+                            "flex-1 max-w-[140px] rounded-md border px-3 py-2 text-sm transition-all",
+                            seedanceMode === 'fast'
+                              ? "border-[#fce300] bg-[#fce300]/10 text-[#fce300]"
+                              : "border-[#404040] text-gray-400 hover:border-[#505050]"
+                          )}
+                        >
+                          <div className="font-medium">Fast</div>
+                          <div className="text-xs opacity-70">高速・低コスト</div>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 尺（duration）選択 */}
+                    <div>
+                      <label className="mb-2 block text-center text-xs font-medium text-gray-400">
+                        尺: {seedanceDuration}秒
+                      </label>
+                      <input
+                        type="range"
+                        min={4}
+                        max={15}
+                        step={1}
+                        value={seedanceDuration}
+                        onChange={(e) => setSeedanceDuration(parseInt(e.target.value, 10))}
+                        className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-[#404040]"
+                      />
+                      <div className="mt-1 flex justify-between text-xs text-gray-500">
+                        <span>4秒</span>
+                        <span>15秒</span>
+                      </div>
+                      {seedanceDuration > 10 && (
+                        <p className="mt-1 text-center text-[11px] text-amber-400">
+                          ※ 10秒超は VIP プランが必要です
+                        </p>
+                      )}
+                    </div>
+
+                    {/* 解像度選択 */}
+                    <div>
+                      <label className="mb-2 block text-center text-xs font-medium text-gray-400">
+                        解像度
+                      </label>
+                      <div className="flex gap-2 justify-center">
+                        {(['480p', '720p', '1080p'] as const).map((res) => (
+                          <button
+                            key={res}
+                            type="button"
+                            onClick={() => setSeedanceResolution(res)}
+                            className={cn(
+                              "flex-1 max-w-[100px] rounded-md border px-3 py-2 text-sm transition-all",
+                              seedanceResolution === res
+                                ? "border-[#fce300] bg-[#fce300]/10 text-[#fce300]"
+                                : "border-[#404040] text-gray-400 hover:border-[#505050]"
+                            )}
+                          >
+                            <div className="font-medium">{res}</div>
+                          </button>
+                        ))}
+                      </div>
+                      {seedanceResolution === '1080p' && (
+                        <p className="mt-1 text-center text-[11px] text-amber-400">
+                          ※ 1080p は VIP プランが必要です
+                        </p>
+                      )}
+                    </div>
+
+                    {/* トグル: BGM自動生成 / カメラ固定 */}
+                    <div className="space-y-3 border-t border-[#404040] pt-3">
+                      <label className="flex cursor-pointer items-center justify-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={seedanceGenerateAudio}
+                          onChange={(e) => setSeedanceGenerateAudio(e.target.checked)}
+                          className="h-5 w-5 rounded border-[#404040] bg-[#1a1a1a] text-[#fce300] focus:ring-[#fce300]"
+                        />
+                        <div className="text-center">
+                          <span className="text-sm font-medium text-gray-300">BGM自動生成</span>
+                          <p className="text-xs text-gray-500">
+                            動画に合わせた音声をAIが自動生成
+                          </p>
+                        </div>
+                      </label>
+                      <label className="flex cursor-pointer items-center justify-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={seedanceCameraFixed}
+                          onChange={(e) => setSeedanceCameraFixed(e.target.checked)}
+                          className="h-5 w-5 rounded border-[#404040] bg-[#1a1a1a] text-[#fce300] focus:ring-[#fce300]"
+                        />
+                        <div className="text-center">
+                          <span className="text-sm font-medium text-gray-300">カメラ固定</span>
+                          <p className="text-xs text-gray-500">
+                            静物撮影など、カメラを動かさず固定
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
 
                 {/* Kling AI モード選択（Kling選択時のみ表示） */}
                 {videoProvider === 'piapi_kling' && (
@@ -1221,6 +1379,27 @@ export default function StoryGeneratePage() {
                       <div className="font-medium">Pro</div>
                       <div className="text-xs opacity-70">高品質</div>
                     </button>
+                  </div>
+                )}
+
+                {/* Kling Duration選択（Kling選択時のみ表示） */}
+                {videoProvider === 'piapi_kling' && (
+                  <div className="mt-3 flex gap-2 justify-center">
+                    {([5, 10] as const).map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setKlingDuration(d)}
+                        className={cn(
+                          "flex-1 max-w-[100px] rounded-md border px-3 py-2 text-sm transition-all",
+                          klingDuration === d
+                            ? "border-[#fce300] bg-[#fce300]/10 text-[#fce300]"
+                            : "border-[#404040] text-gray-400 hover:border-[#505050]"
+                        )}
+                      >
+                        <div className="font-medium">{d}秒</div>
+                      </button>
+                    ))}
                   </div>
                 )}
 
