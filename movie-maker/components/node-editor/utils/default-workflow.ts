@@ -34,14 +34,17 @@ export function createDefaultWorkflow(): { nodes: WorkflowNode[]; edges: Edge[] 
     },
     {
       id: 'cameraWork-1',
+      // ProviderNode は Seedance 対応で横幅が広がったため、十分な間隔を空けて
+      // CameraWork ノードが ProviderNode のボタンに重ならないようにする
+      // (重なると React Flow 上で pointer event を奪い、クリック不能になる)
       type: 'cameraWork',
-      position: { x: 350, y: 500 },
+      position: { x: 470, y: 500 },
       data: createData('cameraWork'),
     },
     {
       id: 'generate-1',
       type: 'generate',
-      position: { x: 650, y: 200 },
+      position: { x: 820, y: 200 },
       data: createData('generate'),
     },
   ];
