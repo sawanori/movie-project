@@ -115,8 +115,10 @@ class PiAPIKlingLipSyncProvider(LipSyncProviderInterface):
             raw_message = ""
             try:
                 body = e.response.json()
+                err = body.get("data", {}).get("error", {})
                 raw_message = (
-                    body.get("data", {}).get("error", {}).get("message")
+                    err.get("raw_message")
+                    or err.get("message")
                     or body.get("message")
                     or ""
                 )
@@ -187,8 +189,16 @@ class PiAPIKlingLipSyncProvider(LipSyncProviderInterface):
                     )
             elif internal_status == "failed":
                 error_data = data.get("error", {})
-                raw_error = error_data.get("message", "リップシンク生成に失敗しました")
-                logger.error(f"PiAPI Kling lip_sync task failed: {raw_error}")
+                # message は "task failed" のような汎用文言になりがちなので、
+                # 真因が入る raw_message を優先する
+                raw_error = (
+                    error_data.get("raw_message")
+                    or error_data.get("message")
+                    or "リップシンク生成に失敗しました"
+                )
+                logger.error(
+                    f"PiAPI Kling lip_sync task failed: {raw_error} (full error={error_data})"
+                )
                 error_message = self._humanize_error(raw_error)
 
             return LipSyncStatus(
@@ -264,6 +274,16 @@ class PiAPIKlingLipSyncProvider(LipSyncProviderInterface):
             return (
                 "PiAPI が Free（Hobbyist）プランのため、リップシンク（lip_sync）を実行できません。"
                 "PiAPI の有料プランにアップグレードしてください（https://piapi.ai の Pricing 参照）。"
+            )
+        if (
+            "upload_verify_timeout" in lowered
+            or "failed to upload video" in lowered
+            or ("upload" in lowered and "timeout" in lowered)
+        ):
+            return (
+                "Kling が動画の取得に失敗しました（タイムアウト）。"
+                "動画のサイズを小さく/短くするか、少し時間をおいて再試行してください。"
+                "（動画URLの読み込みが遅いと発生します）"
             )
         if "credit" in lowered or "balance" in lowered:
             return "PiAPIのクレジットが不足しています。"
