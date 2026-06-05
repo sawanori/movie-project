@@ -100,7 +100,7 @@ describe('LipSyncStudioPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'URLを入力' }))
 
-    const sourceInput = screen.getByPlaceholderText(/画像URL/i)
+    const sourceInput = screen.getByPlaceholderText(/動画URL/i)
     fireEvent.change(sourceInput, { target: { value: 'https://example.com/image.jpg' } })
 
     const uploadAudioButton = screen.getByText('Upload Audio')
@@ -133,7 +133,7 @@ describe('LipSyncStudioPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'URLを入力' }))
 
-    const sourceInput = screen.getByPlaceholderText(/画像URL/i)
+    const sourceInput = screen.getByPlaceholderText(/動画URL/i)
     fireEvent.change(sourceInput, { target: { value: 'https://example.com/image.jpg' } })
 
     const uploadAudioButton = screen.getByText('Upload Audio')
@@ -175,7 +175,7 @@ describe('LipSyncStudioPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'URLを入力' }))
 
-    const sourceInput = screen.getByPlaceholderText(/画像URL/i)
+    const sourceInput = screen.getByPlaceholderText(/動画URL/i)
     fireEvent.change(sourceInput, { target: { value: 'https://example.com/image.jpg' } })
 
     const uploadAudioButton = screen.getByText('Upload Audio')

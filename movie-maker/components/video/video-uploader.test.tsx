@@ -104,6 +104,21 @@ describe('VideoUploader', () => {
     expect(mockOnVideoUploaded).not.toHaveBeenCalled()
   })
 
+  it('rejects files with a non-video type and does not upload', async () => {
+    render(<VideoUploader onVideoUploaded={mockOnVideoUploaded} />)
+
+    const input = screen.getByTestId('video-file-input')
+    const imageFile = new File(['image data'], 'wrong.png', { type: 'image/png' })
+
+    fireEvent.change(input, { target: { files: [imageFile] } })
+
+    await waitFor(() => {
+      expect(screen.getByText(/動画ファイル（MP4 \/ WebM \/ MOV）を選択してください/i)).toBeDefined()
+    })
+    expect(lipSyncApi.uploadVideo).not.toHaveBeenCalled()
+    expect(mockOnVideoUploaded).not.toHaveBeenCalled()
+  })
+
   it('uploads a dropped file and calls onVideoUploaded', async () => {
     vi.mocked(lipSyncApi.uploadVideo).mockResolvedValue({
       video_url: 'https://example.com/dropped.mp4',

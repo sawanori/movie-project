@@ -21,6 +21,13 @@ export function VideoUploader({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const processFile = async (file: File) => {
+    // ドラッグ&ドロップは accept 属性のフィルタを通らないため、種別をクライアント側で検証する
+    const allowedTypes = ["video/mp4", "video/webm", "video/quicktime"]
+    if (!allowedTypes.includes(file.type)) {
+      setError("動画ファイル（MP4 / WebM / MOV）を選択してください。画像を使う場合は上部で「画像」を選んでください。")
+      return
+    }
+
     const maxBytes = maxSizeMB * 1024 * 1024
     if (file.size > maxBytes) {
       setError(`ファイルサイズが大きすぎます。${maxSizeMB}MB以下のファイルを選択してください。`)

@@ -21,6 +21,12 @@ export function AudioUploader({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const processFile = async (file: File) => {
+    // ドラッグ&ドロップは accept 属性のフィルタを通らないため、種別をクライアント側で検証する
+    if (!file.type.startsWith("audio/")) {
+      setError("音声ファイルを選択してください。")
+      return
+    }
+
     const maxBytes = maxSizeMB * 1024 * 1024
     if (file.size > maxBytes) {
       setError(`ファイルサイズが大きすぎます。${maxSizeMB}MB以下のファイルを選択してください。`)

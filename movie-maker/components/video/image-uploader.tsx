@@ -21,6 +21,13 @@ export function ImageUploader({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const processFile = async (file: File) => {
+    // ドラッグ&ドロップは accept 属性のフィルタを通らないため、種別をクライアント側で検証する
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"]
+    if (!allowedTypes.includes(file.type)) {
+      setError("画像ファイル（JPEG / PNG / WebP）を選択してください。動画を使う場合は上部で「動画」を選んでください。")
+      return
+    }
+
     const maxBytes = maxSizeMB * 1024 * 1024
     if (file.size > maxBytes) {
       setError(`ファイルサイズが大きすぎます。${maxSizeMB}MB以下のファイルを選択してください。`)

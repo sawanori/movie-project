@@ -13,7 +13,8 @@ type SourceTab = "upload" | "url"
 type AudioTab = "upload" | "tts"
 
 export default function LipSyncStudioPage() {
-  const [sourceType, setSourceType] = useState<SourceType>("image")
+  // 既定は「動画」: リップシンクの主目的は動画キャラクターの口を動かすことのため
+  const [sourceType, setSourceType] = useState<SourceType>("video")
   const [sourceTab, setSourceTab] = useState<SourceTab>("upload")
   const [sourceUrl, setSourceUrl] = useState("")
   const [audioUrl, setAudioUrl] = useState("")

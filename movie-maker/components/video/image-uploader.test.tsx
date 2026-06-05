@@ -100,6 +100,21 @@ describe('ImageUploader', () => {
     expect(mockOnImageUploaded).not.toHaveBeenCalled()
   })
 
+  it('rejects files with a non-image type and does not upload', async () => {
+    render(<ImageUploader onImageUploaded={mockOnImageUploaded} />)
+
+    const input = screen.getByTestId('image-file-input')
+    const videoFile = new File(['video data'], 'wrong.mp4', { type: 'video/mp4' })
+
+    fireEvent.change(input, { target: { files: [videoFile] } })
+
+    await waitFor(() => {
+      expect(screen.getByText(/画像ファイル（JPEG \/ PNG \/ WebP）を選択してください/i)).toBeDefined()
+    })
+    expect(videosApi.uploadImage).not.toHaveBeenCalled()
+    expect(mockOnImageUploaded).not.toHaveBeenCalled()
+  })
+
   it('uploads a dropped file and calls onImageUploaded', async () => {
     vi.mocked(videosApi.uploadImage).mockResolvedValue({
       image_url: 'https://example.com/dropped.png',

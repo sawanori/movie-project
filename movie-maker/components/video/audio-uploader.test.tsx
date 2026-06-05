@@ -109,6 +109,21 @@ describe('AudioUploader', () => {
     expect(mockOnAudioUploaded).not.toHaveBeenCalled()
   })
 
+  it('rejects files with a non-audio type and does not upload', async () => {
+    render(<AudioUploader onAudioUploaded={mockOnAudioUploaded} />)
+
+    const input = screen.getByTestId('audio-file-input')
+    const imageFile = new File(['image data'], 'wrong.png', { type: 'image/png' })
+
+    fireEvent.change(input, { target: { files: [imageFile] } })
+
+    await waitFor(() => {
+      expect(screen.getByText(/音声ファイルを選択してください/i)).toBeDefined()
+    })
+    expect(lipSyncApi.uploadAudio).not.toHaveBeenCalled()
+    expect(mockOnAudioUploaded).not.toHaveBeenCalled()
+  })
+
   it('uploads a dropped file and calls onAudioUploaded', async () => {
     vi.mocked(lipSyncApi.uploadAudio).mockResolvedValue({
       audio_url: 'https://example.com/dropped.mp3',
