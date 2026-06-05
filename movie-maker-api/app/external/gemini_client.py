@@ -195,7 +195,7 @@ async def _run_gemini_translation(system_prompt: str, user_input: str) -> str:
     client = get_gemini_client()
     response = await asyncio.to_thread(
         client.models.generate_content,
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=user_input,
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
@@ -253,7 +253,7 @@ async def _extract_prompt_components(description_ja: str) -> ExtractedComponents
     # 1. 正規表現で一次抽出 (AI を待たずに使える)
     regex_dialogue = _extract_dialogues_via_regex(description_ja)
 
-    # 2. AI による構造化抽出 (gemini-2.0-flash, temperature=0.3)
+    # 2. AI による構造化抽出 (gemini-2.5-flash, temperature=0.3)
     client = get_gemini_client()
     extraction_prompt = f"""\
 Extract structured information from this Japanese video prompt.
@@ -285,7 +285,7 @@ Example output:
         # N5 対応: Gemini SDK の非同期化 (asyncio.to_thread で event loop ブロック回避)
         response = await asyncio.to_thread(
             client.models.generate_content,
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=extraction_prompt,
             config=types.GenerateContentConfig(
                 temperature=0.3,
@@ -910,7 +910,7 @@ JSON配列形式で出力（説明や前置きは不要）:
 
         # Geminiに送信
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=[
                 types.Part.from_bytes(data=image_data, mime_type="image/jpeg"),
                 system_prompt
@@ -1014,7 +1014,7 @@ The subject's identity, appearance, and all visual elements are LOCKED and IMMUT
             image_data = img_response.content
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=[
                 types.Part.from_bytes(data=image_data, mime_type="image/jpeg"),
                 system_prompt
@@ -1121,7 +1121,7 @@ Output JSON only.
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=system_prompt,
             config=types.GenerateContentConfig(temperature=0.7)
         )
@@ -1388,7 +1388,7 @@ Output ONLY valid JSON. No explanations, no markdown code blocks.
 
         # Geminiに送信
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=[
                 types.Part.from_bytes(data=image_data, mime_type="image/jpeg"),
                 system_prompt
@@ -1625,7 +1625,7 @@ CRITICAL IMAGE FORMAT REQUIREMENT:
             contents.append(aspect_prompt)
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model="gemini-2.5-flash",
             contents=contents,
             config=types.GenerateContentConfig(
                 response_modalities=["image", "text"],
@@ -1808,7 +1808,7 @@ No additional explanations or quotes.
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=system_prompt,
             config=types.GenerateContentConfig(temperature=0.7)
         )
@@ -1922,7 +1922,7 @@ IMPORTANT:
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=system_prompt,
             config=types.GenerateContentConfig(temperature=0.7)
         )
@@ -2130,7 +2130,7 @@ async def generate_ad_script(
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=system_prompt,
             config=types.GenerateContentConfig(temperature=0.8)
         )
@@ -2285,7 +2285,7 @@ async def _translate_text_to_english(text: str) -> str:
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=f"Translate the following Japanese text to English. Return ONLY the English translation, nothing else:\n\n{text}",
             config=types.GenerateContentConfig(temperature=0.3)
         )
@@ -2610,7 +2610,7 @@ Output in JSON format:
         contents.append(user_prompt)
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
@@ -2831,7 +2831,7 @@ JSON形式で出力:
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=user_prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
@@ -2947,7 +2947,7 @@ Example output:
     try:
         # メインプロンプトの変換
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=f"{system_prompt}\n\nJapanese description to convert:\n{description_ja}",
             config=types.GenerateContentConfig(temperature=0.4)
         )
@@ -2975,7 +2975,7 @@ Example output:
         negative_prompt_en = None
         if negative_prompt_ja and negative_prompt_ja.strip():
             neg_response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-2.5-flash",
                 contents=(
                     "Translate the following Japanese negative prompt to English. "
                     "Return ONLY a comma-separated list of terms to avoid in image generation. "
