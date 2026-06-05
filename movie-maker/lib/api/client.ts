@@ -2223,6 +2223,15 @@ export const lipSyncApi = {
       body: formData,
       headers: {},
     }),
+
+  // 動画ファイルをR2にアップロード（リップシンクのソース動画用）
+  // /upload-video-raw は { video_url, thumbnail_url, duration } を返す
+  uploadVideo: (formData: FormData): Promise<{ video_url: string; thumbnail_url?: string; duration: number }> =>
+    fetchWithAuth('/api/v1/videos/upload-video-raw', {
+      method: 'POST',
+      body: formData,
+      headers: {},
+    }),
 };
 
 export const workflowsApi = {

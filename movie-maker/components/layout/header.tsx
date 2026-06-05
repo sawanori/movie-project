@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useAuth } from "@/components/providers/auth-provider";
 import { Button } from "@/components/ui/button";
-import { Video, Settings } from "lucide-react";
+import { Video, Settings, Mic } from "lucide-react";
 
 export function Header() {
   const { user, loading } = useAuth();
@@ -23,6 +23,15 @@ export function Header() {
 
           {/* Navigation Links */}
           <nav className="hidden items-center gap-1 md:flex">
+            {user && (
+              <Link
+                href="/generate/lip-sync"
+                className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-gray-400 hover:bg-[#333333] hover:text-white transition-colors"
+              >
+                <Mic className="h-4 w-4" />
+                リップシンク
+              </Link>
+            )}
             <Link
               href="/pricing"
               className="rounded-lg px-3 py-2 text-sm font-medium text-gray-400 hover:bg-[#333333] hover:text-white transition-colors"
