@@ -106,8 +106,8 @@ class Settings(BaseSettings):
     HEDRA_API_KEY: str = ""
 
     # LipSync Provider Settings
-    # "hedra" - Lip Sync 生成に使用するプロバイダー
-    LIP_SYNC_PROVIDER: str = "hedra"
+    # "hedra" | "piapi_kling" - Lip Sync 生成に使用するプロバイダー
+    LIP_SYNC_PROVIDER: str = "piapi_kling"
 
     # Backend API URL (for webhook callbacks from external services)
     BACKEND_URL: str = "http://localhost:8000"
