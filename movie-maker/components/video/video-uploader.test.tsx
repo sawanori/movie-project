@@ -29,7 +29,7 @@ describe('VideoUploader', () => {
 
   it('renders upload area', () => {
     render(<VideoUploader onVideoUploaded={mockOnVideoUploaded} />)
-    expect(screen.getByText(/動画ファイルをアップロード/i)).toBeDefined()
+    expect(screen.getByText(/動画ファイルをドラッグ&ドロップ \/ クリックして選択/i)).toBeDefined()
   })
 
   it('rejects files over max size', async () => {
@@ -102,5 +102,26 @@ describe('VideoUploader', () => {
       expect(screen.getByText(/アップロードに失敗しました/i)).toBeDefined()
     })
     expect(mockOnVideoUploaded).not.toHaveBeenCalled()
+  })
+
+  it('uploads a dropped file and calls onVideoUploaded', async () => {
+    vi.mocked(lipSyncApi.uploadVideo).mockResolvedValue({
+      video_url: 'https://example.com/dropped.mp4',
+      duration: 7.0,
+    })
+
+    render(<VideoUploader onVideoUploaded={mockOnVideoUploaded} />)
+
+    const dropZone = screen.getByRole('button')
+    const file = new File(['video data'], 'dropped.mp4', { type: 'video/mp4' })
+
+    fireEvent.drop(dropZone, { dataTransfer: { files: [file] } })
+
+    await waitFor(() => {
+      expect(mockOnVideoUploaded).toHaveBeenCalledWith(
+        'https://example.com/dropped.mp4',
+        7.0
+      )
+    })
   })
 })

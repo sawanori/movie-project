@@ -17,12 +17,10 @@ export function ImageUploader({
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [uploadedUrl, setUploadedUrl] = useState<string | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
+  const processFile = async (file: File) => {
     const maxBytes = maxSizeMB * 1024 * 1024
     if (file.size > maxBytes) {
       setError(`ファイルサイズが大きすぎます。${maxSizeMB}MB以下のファイルを選択してください。`)
@@ -43,6 +41,18 @@ export function ImageUploader({
     }
   }
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) processFile(file)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) processFile(file)
+  }
+
   const handleClickUploadArea = () => {
     fileInputRef.current?.click()
   }
@@ -54,9 +64,20 @@ export function ImageUploader({
         tabIndex={0}
         onClick={handleClickUploadArea}
         onKeyDown={(e) => e.key === "Enter" && handleClickUploadArea()}
-        className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-gray-600 rounded-lg cursor-pointer hover:border-blue-500 transition-colors"
+        onDragOver={(e) => {
+          e.preventDefault()
+          setIsDragging(true)
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault()
+          setIsDragging(false)
+        }}
+        onDrop={handleDrop}
+        className={`flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+          isDragging ? "border-blue-500 bg-blue-500/10" : "border-gray-600 hover:border-blue-500"
+        }`}
       >
-        <p className="text-sm text-gray-300">画像ファイルをアップロード</p>
+        <p className="text-sm text-gray-300">画像ファイルをドラッグ&ドロップ / クリックして選択</p>
         <p className="text-xs text-gray-500">JPEG / PNG / WebP · 最大 {maxSizeMB}MB</p>
         <input
           ref={fileInputRef}

@@ -29,7 +29,7 @@ describe('AudioUploader', () => {
 
   it('renders upload area', () => {
     render(<AudioUploader onAudioUploaded={mockOnAudioUploaded} />)
-    expect(screen.getByText(/音声ファイルをアップロード/i)).toBeDefined()
+    expect(screen.getByText(/音声ファイルをドラッグ&ドロップ \/ クリックして選択/i)).toBeDefined()
   })
 
   it('shows accepted file types', () => {
@@ -107,5 +107,26 @@ describe('AudioUploader', () => {
       expect(screen.getByText(/アップロードに失敗しました/i)).toBeDefined()
     })
     expect(mockOnAudioUploaded).not.toHaveBeenCalled()
+  })
+
+  it('uploads a dropped file and calls onAudioUploaded', async () => {
+    vi.mocked(lipSyncApi.uploadAudio).mockResolvedValue({
+      audio_url: 'https://example.com/dropped.mp3',
+      duration_seconds: 8.0,
+    })
+
+    render(<AudioUploader onAudioUploaded={mockOnAudioUploaded} />)
+
+    const dropZone = screen.getByRole('button')
+    const file = new File(['audio data'], 'dropped.mp3', { type: 'audio/mp3' })
+
+    fireEvent.drop(dropZone, { dataTransfer: { files: [file] } })
+
+    await waitFor(() => {
+      expect(mockOnAudioUploaded).toHaveBeenCalledWith(
+        'https://example.com/dropped.mp3',
+        8.0
+      )
+    })
   })
 })

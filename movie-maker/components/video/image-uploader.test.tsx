@@ -29,7 +29,7 @@ describe('ImageUploader', () => {
 
   it('renders upload area', () => {
     render(<ImageUploader onImageUploaded={mockOnImageUploaded} />)
-    expect(screen.getByText(/画像ファイルをアップロード/i)).toBeDefined()
+    expect(screen.getByText(/画像ファイルをドラッグ&ドロップ \/ クリックして選択/i)).toBeDefined()
   })
 
   it('rejects files over max size', async () => {
@@ -98,5 +98,22 @@ describe('ImageUploader', () => {
       expect(screen.getByText(/アップロードに失敗しました/i)).toBeDefined()
     })
     expect(mockOnImageUploaded).not.toHaveBeenCalled()
+  })
+
+  it('uploads a dropped file and calls onImageUploaded', async () => {
+    vi.mocked(videosApi.uploadImage).mockResolvedValue({
+      image_url: 'https://example.com/dropped.png',
+    })
+
+    render(<ImageUploader onImageUploaded={mockOnImageUploaded} />)
+
+    const dropZone = screen.getByRole('button')
+    const file = new File(['image data'], 'dropped.png', { type: 'image/png' })
+
+    fireEvent.drop(dropZone, { dataTransfer: { files: [file] } })
+
+    await waitFor(() => {
+      expect(mockOnImageUploaded).toHaveBeenCalledWith('https://example.com/dropped.png')
+    })
   })
 })
