@@ -1,0 +1,199 @@
+{
+  "feature": "piapi_kling_lipsync_provider",
+  "version": 1,
+  "tasks": [
+    {
+      "task_id": "task_001",
+      "title": "PiAPIKlingLipSyncProvider 実装 + ファクトリ登録",
+      "goal": "PiAPI Kling lip_sync タスクを使う LipSyncProviderInterface 実装を追加し、get_lip_sync_provider から 'piapi_kling' で取得できるようにする",
+      "scope": [
+        "app/external/piapi_kling_lipsync_provider.py の新規作成",
+        "app/external/lip_sync_provider.py の get_lip_sync_provider に 'piapi_kling' 分岐追加"
+      ],
+      "non_scope": [
+        "Hedra プロバイダーの削除",
+        "tts_text 等の TTS 直指定モード",
+        "DB マイグレーション"
+      ],
+      "files_to_read": [
+        "movie-maker-api/app/external/lip_sync_provider.py",
+        "movie-maker-api/app/external/hedra_provider.py",
+        "movie-maker-api/app/external/piapi_kling_provider.py"
+      ],
+      "files_to_create": [
+        "movie-maker-api/app/external/piapi_kling_lipsync_provider.py"
+      ],
+      "files_to_modify": [
+        "movie-maker-api/app/external/lip_sync_provider.py"
+      ],
+      "dependencies": [],
+      "implementation_steps": [
+        "PIAPI_BASE_URL='https://api.piapi.ai/api/v1' と _get_headers()（x-api-key + Content-Type）を定義（piapi_kling_provider.py に倣う）",
+        "__init__ で settings.PIAPI_API_KEY を取得し、未設定なら ValueError",
+        "provider_name property は 'piapi_kling' を返す",
+        "generate_lip_sync: source_url 空チェック→ValueError、source_type!='video' なら静止画非対応の日本語 ValueError、POST /task に {model:'kling', task_type:'lip_sync', input:{video_url:source_url, local_dubbing_url:audio_url}} を送信、data.task_id を返す",
+        "check_status: GET /task/{task_id}、data.status を小文字マッピング（completed/processing/pending/staged/failed→LipSyncStatus）、完了時 data.output から video_url を多パターン抽出、失敗時 data.error.message を日本語化して LipSyncStatus(error_message=...)",
+        "get_video_url: check_status が completed なら video_url を返し、それ以外は None",
+        "get_lip_sync_provider に 'piapi_kling' 分岐を追加（hedra 分岐は残す）"
+      ],
+      "done_definition": [
+        "get_lip_sync_provider('piapi_kling') が PiAPIKlingLipSyncProvider を返す",
+        "generate_lip_sync が正しい body で POST /task を呼び task_id を返す（モックで確認可能な実装）",
+        "source_type='image' で ValueError（静止画非対応メッセージ）",
+        "import エラーや構文エラーがない"
+      ],
+      "verify_commands": [
+        "pytest tests/external/test_piapi_kling_lipsync_provider.py -v"
+      ],
+      "risk_level": "medium"
+    },
+    {
+      "task_id": "task_002",
+      "title": "PiAPIKlingLipSyncProvider の単体テスト追加",
+      "goal": "新プロバイダーの主要メソッドとエラーハンドリングを httpx モックで検証する",
+      "scope": [
+        "tests/external/test_piapi_kling_lipsync_provider.py の新規作成"
+      ],
+      "non_scope": [
+        "実 PiAPI への通信",
+        "E2E テスト"
+      ],
+      "files_to_read": [
+        "movie-maker-api/tests/external/test_hedra_provider.py",
+        "movie-maker-api/tests/external/test_piapi_kling_provider.py",
+        "movie-maker-api/app/external/piapi_kling_lipsync_provider.py"
+      ],
+      "files_to_create": [
+        "movie-maker-api/tests/external/test_piapi_kling_lipsync_provider.py"
+      ],
+      "files_to_modify": [],
+      "dependencies": ["task_001"],
+      "implementation_steps": [
+        "autouse フィクスチャで settings.PIAPI_API_KEY を擬似値に固定（test_hedra_provider.py の手法に倣う）",
+        "provider_name='piapi_kling' を検証",
+        "generate_lip_sync(video): httpx.AsyncClient をモックし {data:{task_id:'...'}} を返す→task_id を検証、POST body に video_url/local_dubbing_url/task_type='lip_sync' が含まれることを確認",
+        "generate_lip_sync(image): source_type='image' で ValueError を検証",
+        "check_status: completed/processing/pending/failed 各レスポンスのマッピングと、completed 時の video_url 抽出を検証",
+        "check_status: 失敗レスポンスで error_message が設定されることを検証",
+        "get_video_url: completed→URL、未完了→None"
+      ],
+      "done_definition": [
+        "新テストファイルが全て pass する",
+        "generate/check_status/get_video_url/image非対応/APIエラー の各ケースを網羅"
+      ],
+      "verify_commands": [
+        "pytest tests/external/test_piapi_kling_lipsync_provider.py -v"
+      ],
+      "risk_level": "low"
+    },
+    {
+      "task_id": "task_003",
+      "title": "既定 provider を settings.LIP_SYNC_PROVIDER 由来にする",
+      "goal": "リップシンクスタジオ API と DialogueNode が、未指定時に設定値のプロバイダーを使うようにする",
+      "scope": [
+        "app/lip_sync/service.py の create_lip_sync_generation の provider 既定を settings.LIP_SYNC_PROVIDER 由来に変更",
+        "既存テストの追従修正（必要時）"
+      ],
+      "non_scope": [
+        "router / dialogue_processor の呼び出しシグネチャ大改修",
+        "新規 API パラメータの追加"
+      ],
+      "files_to_read": [
+        "movie-maker-api/app/lip_sync/service.py",
+        "movie-maker-api/app/lip_sync/router.py",
+        "movie-maker-api/app/tasks/dialogue_processor.py",
+        "movie-maker-api/app/core/config.py",
+        "movie-maker-api/tests/lip_sync/test_lip_sync_service.py"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "movie-maker-api/app/lip_sync/service.py",
+        "movie-maker-api/tests/lip_sync/test_lip_sync_service.py"
+      ],
+      "dependencies": ["task_001"],
+      "implementation_steps": [
+        "create_lip_sync_generation の provider 引数の既定を、関数内で settings.LIP_SYNC_PROVIDER を参照する形に変更（明示指定時はそれを優先）",
+        "router.py / dialogue_processor.py は未指定のままで設定値が反映されることを確認（必要なら明示的に settings.LIP_SYNC_PROVIDER を渡す）",
+        "provider='hedra' をハードコード前提にしている既存テストがあれば、設定値ベースに追従修正"
+      ],
+      "done_definition": [
+        "LIP_SYNC_PROVIDER 設定値に応じて lip_sync_generations.provider が決まる",
+        "既存の lip_sync サービステストが pass する"
+      ],
+      "verify_commands": [
+        "pytest tests/lip_sync -q",
+        "pytest tests/tasks/test_lip_sync_processor.py -q"
+      ],
+      "risk_level": "medium"
+    },
+    {
+      "task_id": "task_004",
+      "title": "設定切替（config 既定 + .env）と provider カラム制約確認",
+      "goal": "LIP_SYNC_PROVIDER を piapi_kling に切り替え、DB の provider カラムが値を許容することを確認する",
+      "scope": [
+        "app/core/config.py の LIP_SYNC_PROVIDER 既定を 'piapi_kling' に変更",
+        "movie-maker-api/.env の LIP_SYNC_PROVIDER=piapi_kling を設定",
+        "lip_sync_generations.provider の制約確認"
+      ],
+      "non_scope": [
+        "Hedra キー設定",
+        "他プロバイダー設定の変更"
+      ],
+      "files_to_read": [
+        "movie-maker-api/app/core/config.py",
+        "movie-maker-api/.env"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "movie-maker-api/app/core/config.py",
+        "movie-maker-api/.env"
+      ],
+      "dependencies": ["task_001", "task_003"],
+      "implementation_steps": [
+        "config.py の LIP_SYNC_PROVIDER 既定を 'piapi_kling' に変更",
+        ".env に LIP_SYNC_PROVIDER=piapi_kling を追記/設定",
+        "Supabase の lip_sync_generations.provider に CHECK 制約（許可値）があるか確認。あれば 'piapi_kling' を許可するマイグレーションを docs/migrations/ に追加し適用（その場合は計画を更新）"
+      ],
+      "done_definition": [
+        "設定が piapi_kling になっている",
+        "provider='piapi_kling' の insert が制約違反にならないことを確認（制約があれば緩和済み）"
+      ],
+      "verify_commands": [
+        "pytest tests/lip_sync -q"
+      ],
+      "risk_level": "low"
+    },
+    {
+      "task_id": "task_005",
+      "title": "回帰テスト（lip_sync 関連一式）",
+      "goal": "新プロバイダー追加と既定切替が既存機能を壊していないことを確認する",
+      "scope": [
+        "external / tasks / lip_sync のテスト実行と修正"
+      ],
+      "non_scope": [
+        "無関係なテストの修正",
+        "新機能追加"
+      ],
+      "files_to_read": [
+        "movie-maker-api/tests/external/test_hedra_provider.py",
+        "movie-maker-api/tests/tasks/test_lip_sync_processor.py",
+        "movie-maker-api/tests/lip_sync"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [],
+      "dependencies": ["task_001", "task_002", "task_003", "task_004"],
+      "implementation_steps": [
+        "pytest を external / tasks / lip_sync に対して実行",
+        "失敗があれば §15 Repair Loop に従い該当 task に紐づけて修正"
+      ],
+      "done_definition": [
+        "lip_sync 関連のテストが全て pass する",
+        "Hedra 既存テストも pass を維持"
+      ],
+      "verify_commands": [
+        "pytest tests/external tests/tasks/test_lip_sync_processor.py tests/lip_sync -q"
+      ],
+      "risk_level": "low"
+    }
+  ]
+}

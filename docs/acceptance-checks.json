@@ -1,0 +1,85 @@
+{
+  "feature": "piapi_kling_lipsync_provider",
+  "checks": [
+    {
+      "id": "check_001",
+      "target": "get_lip_sync_provider('piapi_kling')",
+      "rule": "ファクトリが PiAPIKlingLipSyncProvider インスタンスを返し、provider_name が 'piapi_kling' である",
+      "expected_result": "PiAPIKlingLipSyncProvider が返り、provider_name == 'piapi_kling'",
+      "manual_or_automated": "automated",
+      "verification_method": "pytest tests/external/test_piapi_kling_lipsync_provider.py"
+    },
+    {
+      "id": "check_002",
+      "target": "generate_lip_sync(video_url, audio_url, source_type='video')",
+      "rule": "POST https://api.piapi.ai/api/v1/task に model='kling', task_type='lip_sync', input.video_url=source_url, input.local_dubbing_url=audio_url を送り、data.task_id を返す",
+      "expected_result": "httpx モックで送信 body が一致し、戻り値が task_id 文字列",
+      "manual_or_automated": "automated",
+      "verification_method": "pytest（httpx.AsyncClient をモックし post 引数を検証）"
+    },
+    {
+      "id": "check_003",
+      "target": "generate_lip_sync(source_type='image')",
+      "rule": "静止画ソースは Kling lip_sync 非対応のため、分かりやすい日本語メッセージの ValueError を送出する",
+      "expected_result": "ValueError が送出され、メッセージに『動画』『静止画は非対応』に類する説明が含まれる",
+      "manual_or_automated": "automated",
+      "verification_method": "pytest（pytest.raises(ValueError)）"
+    },
+    {
+      "id": "check_004",
+      "target": "check_status のステータスマッピング",
+      "rule": "PiAPI の status（completed/processing/pending/staged/failed）を LipSyncStatus.status（completed/processing/pending/pending/failed）に正しく変換し、completed 時に output から video_url を抽出する",
+      "expected_result": "各ステータスで期待どおりの LipSyncStatus を返し、completed 時 video_url が非 None",
+      "manual_or_automated": "automated",
+      "verification_method": "pytest（各 status のモックレスポンス）"
+    },
+    {
+      "id": "check_005",
+      "target": "check_status の失敗・エラー処理",
+      "rule": "PiAPI が failed/エラーを返した場合、LipSyncStatus.status='failed' と日本語化された error_message を返す（credit/balance, rate/limit, timeout 等）",
+      "expected_result": "status=='failed' かつ error_message が設定される",
+      "manual_or_automated": "automated",
+      "verification_method": "pytest（失敗レスポンスのモック）"
+    },
+    {
+      "id": "check_006",
+      "target": "PIAPI_API_KEY 未設定時の初期化",
+      "rule": "PIAPI_API_KEY が空のときは生成前に明確な ValueError になる（Illegal header のような不明瞭エラーにしない）",
+      "expected_result": "ValueError が送出される",
+      "manual_or_automated": "automated",
+      "verification_method": "pytest（settings.PIAPI_API_KEY を '' にパッチ）"
+    },
+    {
+      "id": "check_007",
+      "target": "既定プロバイダー切替（LIP_SYNC_PROVIDER=piapi_kling）",
+      "rule": "リップシンクスタジオ API（/api/v1/lip-sync）と DialogueNode（use_lip_sync=True）で生成される lip_sync_generations レコードの provider が 'piapi_kling' になる",
+      "expected_result": "create_lip_sync_generation が provider='piapi_kling' を保存する",
+      "manual_or_automated": "automated",
+      "verification_method": "pytest tests/lip_sync（service の provider 既定検証）"
+    },
+    {
+      "id": "check_008",
+      "target": "メイン利用フロー（手動）",
+      "rule": "/generate/lip-sync で『動画』を選びキャラクター動画をアップロード→TTS でセリフ音声生成→リップシンク生成を実行すると、口が動いた動画が生成・表示される",
+      "expected_result": "ステータスが completed になり結果動画が再生できる（PiAPI 残高を消費）",
+      "manual_or_automated": "manual",
+      "verification_method": "ローカルで LIP_SYNC_PROVIDER=piapi_kling に設定しバックエンド再起動後、ブラウザで実行"
+    },
+    {
+      "id": "check_009",
+      "target": "回帰（Hedra 既存コード）",
+      "rule": "Hedra プロバイダーと既存テストは壊れず、LIP_SYNC_PROVIDER=hedra で従来どおり選択できる",
+      "expected_result": "tests/external/test_hedra_provider.py と lip_sync 既存テストが pass",
+      "manual_or_automated": "automated",
+      "verification_method": "pytest tests/external tests/tasks/test_lip_sync_processor.py tests/lip_sync -q"
+    },
+    {
+      "id": "check_010",
+      "target": "DB provider カラム制約",
+      "rule": "lip_sync_generations.provider に 'piapi_kling' を保存しても制約違反にならない",
+      "expected_result": "insert が成功する（CHECK 制約があれば事前に許可済み）",
+      "manual_or_automated": "manual",
+      "verification_method": "Supabase でテーブル制約を確認、必要なら docs/migrations/ にマイグレーション追加・適用"
+    }
+  ]
+}
