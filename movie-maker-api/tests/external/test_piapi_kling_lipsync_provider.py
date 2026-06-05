@@ -372,3 +372,18 @@ class TestPiAPIKlingLipSyncProvider:
             url = await provider.get_video_url("piapi-lip-001")
 
         assert url is None
+
+    def test_humanize_error_maps_free_plan_message(self):
+        """Free プラン制約エラーを分かりやすい日本語に変換する"""
+        from app.external.piapi_kling_lipsync_provider import PiAPIKlingLipSyncProvider
+
+        raw = (
+            'you are on the Free Plan (also known as the "Hobbyist Plan"), '
+            "Free Plan users cannot create lip_sync task. "
+            "Please upgrade your subscription plan as per pricing doc"
+        )
+        result = PiAPIKlingLipSyncProvider._humanize_error(raw)
+
+        assert "Free" in result
+        assert "アップグレード" in result
+        assert raw != result

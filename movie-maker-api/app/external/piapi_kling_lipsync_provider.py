@@ -110,8 +110,22 @@ class PiAPIKlingLipSyncProvider(LipSyncProviderInterface):
             logger.error(
                 f"PiAPI lip_sync HTTP error: {e.response.status_code} - {e.response.text}"
             )
+            # エラーボディ(JSON)から人間向けメッセージを抽出し、日本語化する
+            # (PiAPI は 5xx でも data.error.message / 直下 message に理由を返す)
+            raw_message = ""
+            try:
+                body = e.response.json()
+                raw_message = (
+                    body.get("data", {}).get("error", {}).get("message")
+                    or body.get("message")
+                    or ""
+                )
+            except Exception:
+                raw_message = ""
+            if raw_message:
+                raise Exception(self._humanize_error(raw_message))
             raise Exception(
-                f"PiAPI Kling lip_sync API returned {e.response.status_code}: {e.response.text}"
+                f"PiAPI Kling lip_sync API がエラーを返しました (HTTP {e.response.status_code})。"
             )
         except httpx.HTTPError as e:
             logger.exception(f"PiAPI Kling lip_sync request failed: {e}")
@@ -241,6 +255,16 @@ class PiAPIKlingLipSyncProvider(LipSyncProviderInterface):
         （piapi_kling_provider.py の変換に倣う）
         """
         lowered = raw_error.lower()
+        if (
+            "free plan" in lowered
+            or "hobbyist" in lowered
+            or "upgrade" in lowered
+            or "subscription" in lowered
+        ):
+            return (
+                "PiAPI が Free（Hobbyist）プランのため、リップシンク（lip_sync）を実行できません。"
+                "PiAPI の有料プランにアップグレードしてください（https://piapi.ai の Pricing 参照）。"
+            )
         if "credit" in lowered or "balance" in lowered:
             return "PiAPIのクレジットが不足しています。"
         if "rate" in lowered or "limit" in lowered:
