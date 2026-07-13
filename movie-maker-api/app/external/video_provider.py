@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -107,6 +108,41 @@ class VideoProviderInterface(ABC):
         """
         return False
 
+    @property
+    def supports_t2v(self) -> bool:
+        """
+        Text-to-Video (T2V) 生成のサポート有無
+
+        Returns:
+            bool: T2Vをサポートする場合True
+        """
+        return False
+
+    async def generate_video_from_text(
+        self,
+        prompt: str,
+        duration: int = 5,
+        aspect_ratio: str = "9:16",
+    ) -> str:
+        """
+        テキストプロンプトのみから動画を生成（画像不要）
+
+        Args:
+            prompt: 動画生成プロンプト
+            duration: 動画長さ（秒）
+            aspect_ratio: アスペクト比 ("9:16", "16:9")
+
+        Returns:
+            str: task_id（ポーリング用識別子）
+
+        Raises:
+            NotImplementedError: T2Vをサポートしないプロバイダーの場合
+            VideoProviderError: 生成開始に失敗した場合
+        """
+        raise NotImplementedError(
+            f"T2V not supported by {self.provider_name}"
+        )
+
     async def extend_video(
         self,
         video_url: str,
@@ -171,22 +207,33 @@ def get_video_provider(provider_name: Optional[str] = None) -> VideoProviderInte
     設定に応じた動画生成プロバイダーを返すファクトリー関数
 
     Args:
-        provider_name: プロバイダー名（"runway", "veo", "domoai", "piapi_kling", "hailuo"）。
+        provider_name: プロバイダー名（"runway", "veo", "domoai", "piapi_kling", "hailuo", "seedance"）。
                        指定がなければ環境変数 VIDEO_PROVIDER を使用
 
-    環境変数 VIDEO_PROVIDER で切り替え:
-    - "runway": Runway API (デフォルト)
-    - "veo": Google Gemini Veo API
-    - "domoai": DomoAI Enterprise API
-    - "piapi_kling": PiAPI経由のKling AI
-    - "hailuo": HailuoAI (MiniMax)
+    環境変数:
+    - GATEWAY_ENABLED=True の場合: GatewayRouter を経由してルーティング
+    - GATEWAY_ENABLED=False (デフォルト): 従来の直接プロバイダー選択
+    - VIDEO_PROVIDER: デフォルトプロバイダー（"runway", "veo", "domoai", "piapi_kling", "hailuo", "seedance"）
 
     Returns:
         VideoProviderInterface: 動画生成プロバイダーインスタンス
     """
+    from app.core.config import settings
+
+    # GATEWAY_ENABLED=True の場合はゲートウェイ経由でルーティング
+    if getattr(settings, 'GATEWAY_ENABLED', False):
+        from app.external.gateway_init import get_gateway
+        gateway = get_gateway()
+        priority = getattr(settings, 'GATEWAY_DEFAULT_PRIORITY', 'quality')
+        return gateway._router.route(
+            priority=priority,
+            capability="i2v",
+            preferred_provider=provider_name,
+        )
+
+    # 以下は従来の直接プロバイダー選択（GATEWAY_ENABLED=False のデフォルト動作）
     # パラメータ指定があればそれを使用、なければ環境変数から
     if provider_name is None:
-        from app.core.config import settings
         provider_name = getattr(settings, 'VIDEO_PROVIDER', 'runway')
 
     provider_name = provider_name.lower()
@@ -195,6 +242,10 @@ def get_video_provider(provider_name: Optional[str] = None) -> VideoProviderInte
         from app.external.piapi_kling_provider import PiAPIKlingProvider
         logger.info("Using PiAPI Kling video provider")
         return PiAPIKlingProvider()
+    elif provider_name == "seedance":
+        from app.external.piapi_seedance_provider import PiAPISeedanceProvider
+        logger.info("Using PiAPI Seedance video provider")
+        return PiAPISeedanceProvider()
     elif provider_name == "domoai":
         from app.external.domoai_provider import DomoAIProvider
         logger.info("Using DomoAI video provider")
@@ -207,14 +258,144 @@ def get_video_provider(provider_name: Optional[str] = None) -> VideoProviderInte
         from app.external.hailuo_provider import HailuoProvider
         logger.info("Using Hailuo video provider")
         return HailuoProvider()
-    elif provider_name == "seedance":
-        from app.external.piapi_seedance_provider import PiAPISeedanceProvider
-        logger.info("Using PiAPI Seedance video provider")
-        return PiAPISeedanceProvider()
     else:
         from app.external.runway_provider import RunwayProvider
         logger.info("Using Runway video provider")
         return RunwayProvider()
+
+
+# ===== おまかせモデル選択 (priority ベース解決) + 送信時フォールバック =====
+#
+# router で priority ("quality"|"speed"|"cost") を具体的なプロバイダー名に潰し、
+# 従来の video_provider フローに乗せる。送信時 (generate_video) の失敗に対して
+# 1 回だけランキング次点へフォールバックする。
+#
+# メタデータ (品質/速度スコア・コスト) の定義は gateway_init.build_registry() に
+# 一元化されている。GATEWAY_ENABLED とは独立に動作する (get_video_provider の
+# GATEWAY_ENABLED 分岐は変更しない)。
+
+# 送信 (generate_video) 1 回あたりの明示的なタイムアウト (秒)。
+# 各プロバイダー内部の submit 用 httpx タイムアウトは 30-60s
+# (piapi_seedance=30s, piapi_kling/runway=60s)。それより短い上限を課すことで、
+# 応答が滞る第一候補を待ち続けず速やかに次点へフォールバックする。
+_FALLBACK_SEND_TIMEOUT_SECONDS = 15.0
+
+
+def _ranked_provider_names(priority: str, capability: str) -> list[str]:
+    """priority/capability でランキングしたプロバイダー名リストを返す。
+
+    gateway_init.build_registry() のメタデータ（唯一の定義箇所）を用いる。
+    該当なしなら空リスト。
+    """
+    from app.external.gateway_init import build_registry
+
+    registry = build_registry()
+    return [m.name for m in registry.rank_metadata(priority, capability)]
+
+
+def _get_provider_for_fallback(name: str) -> VideoProviderInterface:
+    """名前からプロバイダーインスタンスを取得する（既存ファクトリーに委譲）。"""
+    return get_video_provider(name)
+
+
+def resolve_provider_with_priority(priority: str, capability: str = "i2v") -> str:
+    """優先度に基づいて具体的なプロバイダー名を解決する。
+
+    router 時点で priority ("quality"|"speed"|"cost") を具体名に潰すために使う。
+    gateway_init.build_registry() の find_best_metadata で最上位を選ぶ。
+
+    Args:
+        priority: 優先基準 ("quality" | "speed" | "cost")
+        capability: 必要な機能 ("i2v" | "v2v" | "t2v")
+
+    Returns:
+        str: 解決されたプロバイダー名。該当プロバイダーが存在しない場合は
+             環境変数 VIDEO_PROVIDER（従来デフォルト）にフォールバックする。
+    """
+    from app.core.config import settings
+    from app.external.gateway_init import build_registry
+
+    registry = build_registry()
+    best = registry.find_best_metadata(priority, capability)
+    if best is None:
+        fallback = getattr(settings, "VIDEO_PROVIDER", "runway").lower()
+        logger.warning(
+            f"resolve_provider_with_priority: no provider for "
+            f"priority={priority}, capability={capability}; "
+            f"falling back to VIDEO_PROVIDER={fallback}"
+        )
+        return fallback
+    return best.name
+
+
+async def submit_with_fallback(
+    provider_name: str,
+    priority: str,
+    capability: str = "i2v",
+    *,
+    generate_kwargs: dict,
+) -> tuple[str, str, bool]:
+    """第一候補で動画生成を送信し、送信時例外なら次点で 1 回だけ再送信する。
+
+    フォールバックは「送信時 (generate_video)」のみ。ポーリング中の失敗は対象外。
+    次点は priority ランキングで第一候補の次に来るプロバイダー 1 つ。
+    次点に渡すのは汎用引数 (generate_kwargs) のみ（プロバイダー固有 extra_params は
+    別プロバイダーで解釈できないため story_processor 側で汎用経路のみを通す）。
+
+    Args:
+        provider_name: 第一候補プロバイダー名（router で解決済みの具体名）
+        priority: 次点選択に使う優先基準 ("quality"|"speed"|"cost")
+        capability: ランキング絞り込み用 capability
+        generate_kwargs: generate_video に渡す汎用引数
+            (image_url, prompt, duration, aspect_ratio, camera_work)
+
+    Returns:
+        tuple[str, str, bool]: (task_id, 実使用プロバイダー名, フォールバック発生有無)
+
+    Raises:
+        VideoProviderError / Exception: 第一候補・次点の両方が失敗した場合
+            （最後に発生した例外を送出）。フォールバックは 1 回だけ。
+    """
+    provider = _get_provider_for_fallback(provider_name)
+    try:
+        task_id = await asyncio.wait_for(
+            provider.generate_video(**generate_kwargs),
+            timeout=_FALLBACK_SEND_TIMEOUT_SECONDS,
+        )
+        return task_id, provider_name, False
+    except asyncio.TimeoutError as first_error:
+        logger.warning(
+            f"submit_with_fallback: primary provider '{provider_name}' send "
+            f"timed out after {_FALLBACK_SEND_TIMEOUT_SECONDS}s; attempting fallback"
+        )
+    except Exception as first_error:  # noqa: BLE001 - 送信時失敗は次点へフォールバック
+        logger.warning(
+            f"submit_with_fallback: primary provider '{provider_name}' send "
+            f"failed ({first_error}); attempting fallback"
+        )
+
+    # 次点を決定（ランキングで第一候補の次）
+    ranked = _ranked_provider_names(priority, capability)
+    fallback_name = next((n for n in ranked if n != provider_name), None)
+    if fallback_name is None:
+        logger.error(
+            f"submit_with_fallback: no fallback provider available after "
+            f"'{provider_name}' failed (priority={priority}, capability={capability})"
+        )
+        raise VideoProviderError(
+            f"動画生成の送信に失敗しました（{provider_name}）。"
+            "利用可能な代替プロバイダーがありません。"
+        )
+
+    logger.info(
+        f"submit_with_fallback: falling back {provider_name} -> {fallback_name}"
+    )
+    fallback_provider = _get_provider_for_fallback(fallback_name)
+    task_id = await asyncio.wait_for(
+        fallback_provider.generate_video(**generate_kwargs),
+        timeout=_FALLBACK_SEND_TIMEOUT_SECONDS,
+    )
+    return task_id, fallback_name, True
 
 
 # VEO非対応カメラワーク → 対応カメラワークへのフォールバック変換

@@ -12,8 +12,9 @@ import { StoryboardCard, VideoItemCard, AdProjectCard, MotionCard, UserVideoCard
 import { formatRelativeTime } from "@/lib/utils";
 import { SlowNetworkWarning } from "@/components/ui/slow-network-warning";
 import { Plus, Video, Loader2, Combine, History, Upload, X, Film, Clapperboard, Settings, Play, CheckCircle, Image as ImageIcon, ArrowUpCircle } from "lucide-react";
-import { useVideos, useStoryboards, useUsage, useMotions, useUserVideos, useAdProjects, useLibraryImages, type Usage } from "@/lib/hooks/use-dashboard-data";
+import { useVideos, useStoryboards, useUsage, useMotions, useUserVideos, useAdProjects, useLibraryImages } from "@/lib/hooks/use-dashboard-data";
 import { CardGridSkeleton, UsageCardSkeleton } from "./components/skeletons";
+import { UsageCard } from "./components/usage-card";
 
 type TabType = "storyboard" | "scene" | "adcreator" | "motions" | "uploaded" | "images";
 
@@ -403,16 +404,6 @@ export default function DashboardPage() {
     );
   }
 
-  const planLabel = (plan: string) => {
-    const labels: Record<string, string> = {
-      free: "無料トライアル",
-      starter: "Starter",
-      pro: "Pro",
-      business: "Business",
-    };
-    return labels[plan] || plan;
-  };
-
   return (
     <div className="min-h-screen bg-[#212121]">
       <Header />
@@ -462,41 +453,7 @@ export default function DashboardPage() {
         {loadingUsage ? (
           <UsageCardSkeleton />
         ) : usage && (
-          <div className="mt-8 rounded-xl bg-[#2a2a2a] border border-[#404040] p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-400">
-                  今月の使用状況
-                </p>
-                <p className="mt-1 text-3xl font-bold text-white">
-                  {usage.videos_used} / {usage.videos_limit}
-                </p>
-                <p className="mt-1 text-sm text-gray-500">
-                  残り {usage.videos_remaining} 本
-                </p>
-              </div>
-              <div className="text-right">
-                <span className="inline-flex items-center rounded-full bg-[#fce300]/20 px-3 py-1 text-sm font-medium text-[#fce300]">
-                  {planLabel(usage.plan_type)}
-                </span>
-                {usage.plan_type === "free" && (
-                  <Link href="/pricing" className="mt-2 block text-sm text-[#00bdb6] hover:underline">
-                    プランをアップグレード →
-                  </Link>
-                )}
-              </div>
-            </div>
-            <div className="mt-4">
-              <div className="h-2 w-full overflow-hidden rounded-full bg-[#404040]">
-                <div
-                  className="h-full rounded-full bg-[#fce300]"
-                  style={{
-                    width: `${Math.min((usage.videos_used / usage.videos_limit) * 100, 100)}%`,
-                  }}
-                />
-              </div>
-            </div>
-          </div>
+          <UsageCard usage={usage} />
         )}
 
         {/* Tabs and Content */}

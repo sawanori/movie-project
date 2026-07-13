@@ -17,6 +17,10 @@ from app.tasks.storyboard_processor import (
 from app.tasks.upscale_processor import process_upscale, start_upscale_processing
 from app.tasks.interpolation_processor import process_interpolation, start_interpolation_processing
 from app.tasks.topaz_upscale_processor import process_topaz_upscale, start_topaz_upscale_processing
+from app.tasks.prores_processor import process_prores_conversion, start_prores_processing
+from app.tasks.tts_processor import process_tts_generation, start_tts_processing
+from app.tasks.t2v_processor import process_t2v_generation, start_t2v_processing
+from app.tasks.lip_sync_processor import process_lip_sync_generation, start_lip_sync_processing
 from app.tasks.dialogue_processor import process_dialogue_generation, start_dialogue_processing
 
 __all__ = [
@@ -40,6 +44,14 @@ __all__ = [
     "start_interpolation_processing",
     "process_topaz_upscale",
     "start_topaz_upscale_processing",
+    "process_prores_conversion",
+    "start_prores_processing",
+    "process_tts_generation",
+    "start_tts_processing",
+    "process_t2v_generation",
+    "start_t2v_processing",
+    "process_lip_sync_generation",
+    "start_lip_sync_processing",
     "process_dialogue_generation",
     "start_dialogue_processing",
 ]

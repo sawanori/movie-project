@@ -64,11 +64,8 @@ export function adjustDurationsOnChange(
 ): EditableCut[] {
   if (cuts.length === 0) return cuts;
 
-  const otherCuts = cuts.filter((cut) => cut.id !== changedCutId);
-  const otherCutCount = otherCuts.length;
-
-  // カットが1つしかない場合は、単純にそのカットの秒数を目標尺に設定
-  if (otherCutCount === 0) {
+  // カットが1つしかない場合は目標尺に設定
+  if (cuts.length === 1) {
     return cuts.map((cut) => ({
       ...cut,
       duration: targetTotal,
@@ -76,50 +73,80 @@ export function adjustDurationsOnChange(
     }));
   }
 
-  // 残りの秒数を計算
-  const remainingSeconds = targetTotal - newDuration;
+  // 変更カット以外の合計（最後のカットを除く）
+  const lastCut = cuts[cuts.length - 1];
+  const isChangingLastCut = lastCut.id === changedCutId;
 
-  // 残り秒数が他のカット数未満の場合（各カット最低1秒必要）
-  if (remainingSeconds < otherCutCount) {
-    console.warn(`残り秒数(${remainingSeconds})が他のカット数(${otherCutCount})未満です`);
-    // 変更されたカットの秒数を調整
-    const adjustedNewDuration = targetTotal - otherCutCount;
-    if (adjustedNewDuration < 1) {
-      // どうしようもない場合は全カット1秒
-      return cuts.map((cut) => ({
-        ...cut,
-        duration: 1,
-        video: adjustVideoTrim(cut.video, 1),
-      }));
+  // 変更したカットの秒数を適用し、最後のカットで帳尻を合わせる
+  const updatedCuts = cuts.map((cut) =>
+    cut.id === changedCutId ? { ...cut, duration: newDuration } : cut
+  );
+
+  if (isChangingLastCut) {
+    // 最後のカット自体を変更した場合は、最後から2番目で帳尻合わせ
+    const adjustIndex = cuts.length - 2;
+    const othersTotal = updatedCuts.reduce((sum, cut, i) =>
+      i !== adjustIndex ? sum + cut.duration : sum, 0);
+    const adjustedDuration = targetTotal - othersTotal;
+
+    if (adjustedDuration < 1) {
+      // 収まらない場合は変更カットの秒数をクランプ
+      const maxForLast = targetTotal - (cuts.length - 1); // 他カット各1秒
+      return cuts.map((cut, i) => {
+        if (cut.id === changedCutId) {
+          const d = Math.min(newDuration, maxForLast);
+          return { ...cut, duration: d, video: adjustVideoTrim(cut.video, d) };
+        }
+        if (i === adjustIndex) {
+          const d = Math.max(1, targetTotal - Math.min(newDuration, maxForLast) -
+            cuts.reduce((s, c, j) => j !== adjustIndex && c.id !== changedCutId ? s + c.duration : s, 0));
+          return { ...cut, duration: d, video: adjustVideoTrim(cut.video, d) };
+        }
+        return cut;
+      });
     }
-    newDuration = adjustedNewDuration;
+
+    return updatedCuts.map((cut, i) => {
+      if (i === adjustIndex) {
+        return { ...cut, duration: adjustedDuration, video: adjustVideoTrim(cut.video, adjustedDuration) };
+      }
+      return cut;
+    });
+  } else {
+    // 最後のカット以外を変更した場合 → 最後のカットで帳尻合わせ
+    const othersTotal = updatedCuts.reduce((sum, cut, i) =>
+      i !== cuts.length - 1 ? sum + cut.duration : sum, 0);
+    const lastDuration = targetTotal - othersTotal;
+
+    if (lastDuration < 1) {
+      // 最後のカットが1秒未満になる場合、変更カットの秒数をクランプ
+      const maxAllowed = targetTotal - (cuts.length - 1); // 他カット各1秒として
+      const clampedDuration = Math.min(newDuration, maxAllowed);
+      const recalcOthers = cuts.reduce((sum, cut, i) => {
+        if (cut.id === changedCutId || i === cuts.length - 1) return sum;
+        return sum + cut.duration;
+      }, 0);
+      const finalLastDuration = targetTotal - clampedDuration - recalcOthers;
+
+      return cuts.map((cut, i) => {
+        if (cut.id === changedCutId) {
+          return { ...cut, duration: clampedDuration, video: adjustVideoTrim(cut.video, clampedDuration) };
+        }
+        if (i === cuts.length - 1) {
+          const d = Math.max(1, finalLastDuration);
+          return { ...cut, duration: d, video: adjustVideoTrim(cut.video, d) };
+        }
+        return cut;
+      });
+    }
+
+    return updatedCuts.map((cut, i) => {
+      if (i === cuts.length - 1) {
+        return { ...cut, duration: lastDuration, video: adjustVideoTrim(cut.video, lastDuration) };
+      }
+      return cut;
+    });
   }
-
-  // 残り秒数を他のカットに均等分配
-  const actualRemaining = targetTotal - newDuration;
-  const baseDuration = Math.floor(actualRemaining / otherCutCount);
-  const remainder = actualRemaining % otherCutCount;
-
-  let otherIndex = 0;
-  return cuts.map((cut) => {
-    if (cut.id === changedCutId) {
-      return {
-        ...cut,
-        duration: newDuration,
-        video: adjustVideoTrim(cut.video, newDuration),
-      };
-    }
-
-    // 余りを先頭から1秒ずつ追加
-    const adjustedDuration = baseDuration + (otherIndex < remainder ? 1 : 0);
-    otherIndex++;
-
-    return {
-      ...cut,
-      duration: adjustedDuration,
-      video: adjustVideoTrim(cut.video, adjustedDuration),
-    };
-  });
 }
 
 /**

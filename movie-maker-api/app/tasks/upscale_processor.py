@@ -59,9 +59,14 @@ async def process_upscale(upscale_id: str) -> None:
             "progress": 10,
         }).eq("id", upscale_id).execute()
 
+        # サイズチェック・圧縮（Runway 32MB制限対応）
+        video_url_for_runway = await prepare_video_for_runway(
+            original_video_url, upscale_id, user_id,
+        )
+
         # Runway Upscale APIを呼び出し（HD/4K共通）
-        logger.info(f"Calling Runway upscale API for {original_video_url}")
-        task_id = await provider.upscale_video(original_video_url)
+        logger.info(f"Calling Runway upscale API for {video_url_for_runway}")
+        task_id = await provider.upscale_video(video_url_for_runway)
 
         if not task_id:
             raise Exception("Runway Upscale APIからタスクIDが返されませんでした")
@@ -120,6 +125,105 @@ async def process_upscale(upscale_id: str) -> None:
             "progress": 0,
             "error_message": str(e),
         }).eq("id", upscale_id).execute()
+
+
+async def prepare_video_for_runway(
+    original_video_url: str,
+    upscale_id: str,
+    user_id: str,
+    size_limit_mb: float = 30.0,
+) -> str:
+    """
+    Runway Upscale API用に動画のサイズを確認・圧縮
+
+    32MB制限に対応するため、サイズチェックと必要に応じた圧縮を行う。
+
+    Args:
+        original_video_url: 元の動画URL
+        upscale_id: アップスケールID
+        user_id: ユーザーID
+        size_limit_mb: サイズ制限（MB）デフォルト30.0
+
+    Returns:
+        str: 使用する動画URL（元のURLまたは圧縮後のR2 URL）
+    """
+    size_limit_bytes = size_limit_mb * 1024 * 1024
+
+    # Step 1: HEADリクエストでContent-Length確認
+    try:
+        async with httpx.AsyncClient() as client:
+            head_response = await client.head(
+                original_video_url,
+                timeout=30.0,
+                follow_redirects=True,
+            )
+            content_length = head_response.headers.get("content-length")
+            if content_length:
+                content_length = int(content_length)
+                logger.info(
+                    f"HEAD check for {upscale_id}: {content_length / 1024 / 1024:.1f}MB"
+                )
+                if content_length <= size_limit_bytes:
+                    logger.info(f"動画サイズOK（{content_length / 1024 / 1024:.1f}MB <= {size_limit_mb}MB）、圧縮不要")
+                    return original_video_url
+    except Exception as e:
+        logger.warning(f"HEAD request failed for {upscale_id}, falling back to GET download: {e}")
+        content_length = None
+
+    # Step 2: ダウンロードしてサイズ確認
+    temp_input = None
+    temp_output = None
+    try:
+        logger.info(f"Downloading video for size check: {upscale_id}")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                original_video_url,
+                timeout=180.0,
+                follow_redirects=True,
+            )
+            response.raise_for_status()
+            video_content = response.content
+
+        with tempfile.NamedTemporaryFile(suffix="_original.mp4", delete=False) as f:
+            temp_input = f.name
+            f.write(video_content)
+
+        file_size = os.path.getsize(temp_input)
+        logger.info(f"Downloaded video for {upscale_id}: {file_size / 1024 / 1024:.1f}MB")
+
+        if file_size <= size_limit_bytes:
+            logger.info(f"動画サイズOK（{file_size / 1024 / 1024:.1f}MB <= {size_limit_mb}MB）、圧縮不要")
+            return original_video_url
+
+        # Step 3: FFmpegで圧縮
+        logger.info(
+            f"動画サイズ超過（{file_size / 1024 / 1024:.1f}MB > {size_limit_mb}MB）、圧縮開始"
+        )
+        ffmpeg = get_ffmpeg_service()
+
+        with tempfile.NamedTemporaryFile(suffix="_compressed.mp4", delete=False) as f:
+            temp_output = f.name
+
+        await ffmpeg.compress_for_size_limit(temp_input, temp_output, size_limit_mb)
+
+        # Step 4: 圧縮ファイルをR2にアップロード
+        with open(temp_output, "rb") as f:
+            compressed_content = f.read()
+
+        timestamp = int(time.time())
+        filename = f"{user_id}/upscale_compressed_{upscale_id}_{timestamp}.mp4"
+        r2_url = await upload_video(compressed_content, filename)
+
+        logger.info(f"Compressed video uploaded to R2: {r2_url} ({len(compressed_content) / 1024 / 1024:.1f}MB)")
+        return r2_url
+
+    finally:
+        for temp_file in [temp_input, temp_output]:
+            if temp_file and os.path.exists(temp_file):
+                try:
+                    os.unlink(temp_file)
+                except Exception as e:
+                    logger.warning(f"Failed to delete temp file {temp_file}: {e}")
 
 
 async def process_hd_downscale(

@@ -1,0 +1,101 @@
+{
+  "feature": "video_to_prompt_reverse_engineering",
+  "checks": [
+    {
+      "id": "check_001",
+      "target": "主要フロー: 動画→逆算→表示",
+      "rule": "/generate/reverse で動画をアップロードし「分析」を押すと、120秒以内に6次元の中間表現（subject/environment/camera/lighting/style/mood/technical）と core_prompt が画面に表示される",
+      "expected_result": "6次元すべてのセクションと core_prompt・full_description_ja が表示される",
+      "manual_or_automated": "manual",
+      "verification_method": "両サーバー起動後、実動画（〜8秒）をアップロードし分析、結果UIを目視"
+    },
+    {
+      "id": "check_002",
+      "target": "API: analyze-prompt レスポンス形状",
+      "rule": "POST /api/v1/videos/analyze-prompt が ReversePromptResult 形状のJSONを返し、core_prompt と full_description_ja が非空文字列である",
+      "expected_result": "200 + 必須フィールドを含むJSON",
+      "manual_or_automated": "automated",
+      "verification_method": "tests/videos/test_analyze_prompt.py の正常系テスト（逆算関数をモック）"
+    },
+    {
+      "id": "check_003",
+      "target": "API: 非JSON応答のフォールバック",
+      "rule": "Gemini応答がJSONとしてパースできない場合でも、エンドポイントは500で落ちず、full_description_ja に raw、core_prompt に先頭行を入れて200を返す",
+      "expected_result": "200 + degrade フォールバックされた ReversePromptResult",
+      "manual_or_automated": "automated",
+      "verification_method": "tests/external/test_reverse_prompt.py の非JSONフォールバックテスト"
+    },
+    {
+      "id": "check_004",
+      "target": "API: SSRF防止（ホスト検証）",
+      "rule": "video_url のホストが R2_PUBLIC_URL でも *.r2.dev でもない場合は 400「不正な動画URLです」で拒否し、ダウンロードを行わない",
+      "expected_result": "400 + 日本語エラーメッセージ、download_file 未呼び出し",
+      "manual_or_automated": "automated",
+      "verification_method": "tests/videos/test_analyze_prompt.py の非許可ホストテスト"
+    },
+    {
+      "id": "check_005",
+      "target": "認証",
+      "rule": "未認証（無効トークン）での analyze-prompt 呼び出しは 401 を返す",
+      "expected_result": "401 Unauthorized",
+      "manual_or_automated": "automated",
+      "verification_method": "tests/videos/test_analyze_prompt.py の認証テスト（auth_client未使用で401を確認）"
+    },
+    {
+      "id": "check_006",
+      "target": "一時ファイルのクリーンアップ",
+      "rule": "分析処理の成功・失敗いずれの場合も、ダウンロードした動画と抽出フレームの一時ファイルが残らない",
+      "expected_result": "処理後に一時ディレクトリ/ファイルが存在しない",
+      "manual_or_automated": "automated",
+      "verification_method": "tests/videos/test_analyze_prompt.py で tempfile/os.unlink 呼び出しまたは finally 経路をアサート"
+    },
+    {
+      "id": "check_007",
+      "target": "Phase B: プリフィル遷移",
+      "rule": "結果画面で「このプロンプトで生成」を押すと /generate/story に遷移し、japanesePrompt に逆算由来テキストがプリフィルされる。プリフィルは1回限りでリロード後は残らない",
+      "expected_result": "story ページの日本語プロンプト欄に値が入る／リロードで空になる",
+      "manual_or_automated": "automated",
+      "verification_method": "app/generate/reverse/page.test.tsx（sessionStorage設定＋router.push呼び出し）＋手動でstory側プリフィル確認"
+    },
+    {
+      "id": "check_008",
+      "target": "回帰: 既存ワンシーン生成フロー",
+      "rule": "プリフィルの有無に関わらず、/generate/story の手入力→translateStoryPrompt→createStoryVideo の既存フローが従来通り動作する",
+      "expected_result": "既存生成フローが正常動作（プリフィル機構が既存挙動を壊さない）",
+      "manual_or_automated": "manual",
+      "verification_method": "プリフィルなしで story ページに直接アクセスし、手入力→生成まで通ることを目視"
+    },
+    {
+      "id": "check_009",
+      "target": "変換アダプタの堅牢性",
+      "rule": "buildJapanesePrompt は中間表現の一部フィールドが欠損/空でも例外を投げず、有効な日本語文字列を返す",
+      "expected_result": "欠損入力でもクラッシュせず文字列を返す",
+      "manual_or_automated": "automated",
+      "verification_method": "lib/reverse-prompt/to-japanese-prompt.test.ts（完全/部分/空入力ケース）"
+    },
+    {
+      "id": "check_010",
+      "target": "モバイルレイアウト",
+      "rule": "375px幅で /generate/reverse が1カラムで崩れず、アップロード・分析・結果表示・生成ボタンが操作可能",
+      "expected_result": "横スクロール無し、要素が縦積みで判読・操作可能",
+      "manual_or_automated": "manual",
+      "verification_method": "ブラウザのレスポンシブ375px幅で目視（globals.css は未変更であることも確認）"
+    },
+    {
+      "id": "check_011",
+      "target": "ビルド/型/Lint/テスト",
+      "rule": "バックエンド make test が新規failureなし、フロント npm run lint / npx tsc --noEmit / npm run test / npm run build が全通過",
+      "expected_result": "全コマンドが成功（既知の既存失敗以外の新規失敗ゼロ）",
+      "manual_or_automated": "automated",
+      "verification_method": "cd movie-maker-api && make test ／ cd movie-maker && npm run lint && npx tsc --noEmit && npm run test && npm run build"
+    },
+    {
+      "id": "check_012",
+      "target": "Tailwind v4 制約遵守",
+      "rule": "app/globals.css に @source ディレクティブを追加していない。新規ページは既知の欠落グリッドクラスに依存しない（flexで構成）",
+      "expected_result": "globals.css 差分なし、grid-cols系の未対応クラス不使用",
+      "manual_or_automated": "manual",
+      "verification_method": "git diff で globals.css 無変更を確認、page.tsx の className を確認"
+    }
+  ]
+}

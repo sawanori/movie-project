@@ -418,7 +418,7 @@ async def test_delete_library_image():
 async def test_get_all_images():
     """統合画像一覧取得のテスト"""
     mock_supabase = MagicMock()
-    
+
     # ライブラリ画像のモック
     library_result = MagicMock()
     library_result.data = [{
@@ -428,12 +428,18 @@ async def test_get_all_images():
         "description": None,
         "image_url": "https://example.com/lib.png",
         "thumbnail_url": "https://example.com/lib_thumb.jpg",
+        "r2_key": "uploads/lib-1.png",
         "width": 800,
         "height": 600,
         "aspect_ratio": "16:9",
+        "file_size_bytes": 102400,
         "source": "uploaded",
+        "image_provider": None,
+        "generated_prompt_ja": None,
+        "generated_prompt_en": None,
         "category": "general",
         "created_at": "2026-01-20T01:00:00Z",
+        "updated_at": "2026-01-20T01:00:00Z",
     }]
     
     # スクリーンショット画像のモック
@@ -451,22 +457,29 @@ async def test_get_all_images():
     library_chain.eq.return_value = library_chain
     library_chain.order.return_value = library_chain
     library_chain.execute.return_value = library_result
-    
+    library_result.count = 1
+
     screenshot_chain = MagicMock()
     screenshot_chain.select.return_value = screenshot_chain
     screenshot_chain.eq.return_value = screenshot_chain
     screenshot_chain.not_ = MagicMock()
     screenshot_chain.not_.is_.return_value = screenshot_chain
+    screenshot_chain.not_.is_.return_value.neq.return_value = screenshot_chain
+    screenshot_chain.neq.return_value = screenshot_chain
     screenshot_chain.order.return_value = screenshot_chain
     screenshot_chain.execute.return_value = screenshot_result
-    
+    screenshot_result.count = 1
+
     # table()の呼び出しごとに異なるチェーンを返す
     mock_supabase.table.side_effect = [library_chain, screenshot_chain]
     
     result = await get_all_images(mock_supabase, "user-123", source_filter="all")
-    
-    assert result.total == 2
-    assert len(result.images) == 2
-    # ライブラリ画像が先（新しい順）
-    assert result.images[0].id == "lib-1"
-    assert result.images[1].id == "ss-1"
+
+    assert result.total_library == 1
+    assert result.total_screenshots == 1
+    assert len(result.library_images) == 1
+    assert len(result.screenshots) == 1
+    # ライブラリ画像の確認
+    assert result.library_images[0].id == "lib-1"
+    # スクリーンショット画像の確認
+    assert result.screenshots[0].id == "ss-1"

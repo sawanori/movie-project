@@ -94,12 +94,12 @@ export const dialogueApi = {
 
 ## 完了条件 (AC)
 
-- [ ] `VoiceInfo` 型が export されている
-- [ ] `ttsApi.listVoices()` が export されている
-- [ ] `dialogueApi.create()` が export されている
-- [ ] `dialogueApi.getStatus()` が export されている
-- [ ] `language: 'ja'` が `create` のペイロードに自動で付加されている
-- [ ] `npm run build` (または `tsc --noEmit`) がエラーなし
+- [x] `VoiceInfo` 型が export されている (既存)
+- [x] `ttsApi.listVoices()` が export されている (既存)
+- [x] `dialogueApi.create()` が export されている
+- [x] `dialogueApi.getStatus()` が export されている
+- [x] `language: 'ja'` が `create` のペイロードに自動で付加されている
+- [x] `npm run build` (または `tsc --noEmit`) がエラーなし
 
 ## テスト
 

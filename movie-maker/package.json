@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "rm -f .next/dev/lock || true",
+    "predev": "rm -rf .next || true",
     "dev": "next dev",
     "dev:test": "NEXT_PUBLIC_E2E_TEST_MODE=true next dev",
     "build": "next build",

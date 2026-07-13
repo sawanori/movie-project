@@ -238,6 +238,7 @@ function StoryboardPageContent() {
 
   // Kling AI mode selection (Standard or Pro)
   const [klingMode, setKlingMode] = useState<'std' | 'pro'>('std');
+  const [klingDuration, setKlingDuration] = useState<5 | 10>(5);
 
   // Kling Elements: 一貫性向上用の追加画像
   const [elementImages, setElementImages] = useState<string[]>([]);
@@ -298,6 +299,7 @@ function StoryboardPageContent() {
   const [isConvertingProRes, setIsConvertingProRes] = useState(false);
   const [proResConversionPhase, setProResConversionPhase] = useState<'idle' | 'upscaling' | 'converting'>('idle');
   const [upscaleForProResProgress, setUpscaleForProResProgress] = useState(0);
+  const [proResConversionProgress, setProResConversionProgress] = useState(0);
   // 60fps補間用
   const [enable60fps, setEnable60fps] = useState(false);
   const [is60fpsProcessing, setIs60fpsProcessing] = useState(false);
@@ -313,6 +315,7 @@ function StoryboardPageContent() {
   const [isSceneConvertingProRes, setIsSceneConvertingProRes] = useState(false);
   const [sceneProResConversionPhase, setSceneProResConversionPhase] = useState<'idle' | 'upscaling' | 'converting'>('idle');
   const [sceneUpscaleForProResProgress, setSceneUpscaleForProResProgress] = useState(0);
+  const [sceneProResConversionProgress, setSceneProResConversionProgress] = useState(0);
 
   // Add scene image upload state (extends existing modal)
   const [addSceneImageFile, setAddSceneImageFile] = useState<File | null>(null);
@@ -1293,6 +1296,7 @@ function StoryboardPageContent() {
       await storyboardApi.regenerateVideo(storyboard.id, scene.scene_number, {
         video_provider: videoProvider,
         kling_mode: videoProvider === 'piapi_kling' ? klingMode : undefined,
+        kling_duration: videoProvider === 'piapi_kling' ? klingDuration : undefined,
       });
 
       // Wait a bit for the backend to update the status before polling
@@ -1537,6 +1541,7 @@ function StoryboardPageContent() {
         video_mode: videoMode,
         kling_mode: videoProvider === 'piapi_kling' ? klingMode : undefined,
         image_tail_url: videoProvider === 'piapi_kling' && endFrameImageUrl ? endFrameImageUrl : undefined,
+        kling_duration: videoProvider === 'piapi_kling' ? klingDuration : undefined,
       });
 
       // Wait a bit for the backend to update the status before polling
@@ -1939,26 +1944,49 @@ function StoryboardPageContent() {
       return;
     }
 
-    // For ProRes, convert on-the-fly and download
+    // For ProRes, convert via async job and download
     if (selectedResolution === 'prores') {
       setIsConvertingProRes(true);
+      setProResConversionProgress(0);
       try {
-        const blob = await videosApi.downloadAsProRes(storyboard.final_video_url);
-        const url = window.URL.createObjectURL(blob);
+        const job = await videosApi.startProResConversion({
+          video_url: storyboard.final_video_url,
+          source_type: 'storyboard',
+          source_id: storyboard!.id,
+        });
+
+        let proresUrl: string | null = null;
+        const maxAttempts = 200;
+        let attempts = 0;
+
+        while (!proresUrl && attempts < maxAttempts) {
+          await new Promise(r => setTimeout(r, 3000));
+          attempts++;
+          const status = await videosApi.getProResConversionStatus(job.id);
+          setProResConversionProgress(status.progress || Math.min(attempts * 2, 95));
+          if (status.status === 'completed' && status.prores_video_url) {
+            proresUrl = status.prores_video_url;
+          } else if (status.status === 'failed') {
+            throw new Error(status.message || 'ProRes変換に失敗しました');
+          }
+        }
+
+        if (!proresUrl) throw new Error('ProRes変換がタイムアウトしました');
+
         const a = document.createElement("a");
-        a.href = url;
+        a.href = proresUrl;
         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, "");
-        a.download = `video_prores_${timestamp}.mov`;
+        a.download = `storyboard_prores_${timestamp}.mov`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
         setShowDownloadModal(false);
-      } catch (err) {
-        console.error("ProRes conversion failed:", err);
-        setUpscaleError(err instanceof Error ? err.message : "ProRes変換に失敗しました");
+      } catch (error) {
+        console.error("ProRes conversion failed:", error);
+        setUpscaleError(error instanceof Error ? error.message : "ProRes変換に失敗しました");
       } finally {
         setIsConvertingProRes(false);
+        setProResConversionProgress(0);
       }
       return;
     }
@@ -1976,7 +2004,10 @@ function StoryboardPageContent() {
 
         // Poll for upscale completion
         let upscaledUrl: string | null = null;
-        while (!upscaledUrl) {
+        const maxUpscaleAttempts = 200; // 最大10分 (3秒 x 200回)
+        let upscaleAttempts = 0;
+        while (!upscaledUrl && upscaleAttempts < maxUpscaleAttempts) {
+          upscaleAttempts++;
           const status = await storyboardApi.getUpscaleStatus(storyboard.id);
           setUpscaleForProResProgress(status.progress);
 
@@ -1988,29 +2019,52 @@ function StoryboardPageContent() {
             await new Promise(r => setTimeout(r, 3000));
           }
         }
+        if (!upscaledUrl) {
+          throw new Error('アップスケールがタイムアウトしました（10分超過）');
+        }
 
         // Phase 2: ProRes conversion
         setProResConversionPhase('converting');
+        setProResConversionProgress(0);
 
-        const blob = await videosApi.downloadAsProRes(upscaledUrl);
+        const proResJob = await videosApi.startProResConversion({
+          video_url: upscaledUrl,
+          source_type: 'storyboard',
+          source_id: storyboard!.id,
+        });
 
-        // Download
-        const url = window.URL.createObjectURL(blob);
+        let proresUrl: string | null = null;
+        const proResMaxAttempts = 200;
+        let proResAttempts = 0;
+
+        while (!proresUrl && proResAttempts < proResMaxAttempts) {
+          await new Promise(r => setTimeout(r, 3000));
+          proResAttempts++;
+          const proResStatus = await videosApi.getProResConversionStatus(proResJob.id);
+          setProResConversionProgress(proResStatus.progress || Math.min(proResAttempts * 2, 95));
+          if (proResStatus.status === 'completed' && proResStatus.prores_video_url) {
+            proresUrl = proResStatus.prores_video_url;
+          } else if (proResStatus.status === 'failed') {
+            throw new Error(proResStatus.message || 'ProRes変換に失敗しました');
+          }
+        }
+
+        if (!proresUrl) throw new Error('ProRes変換がタイムアウトしました');
+
         const a = document.createElement("a");
-        a.href = url;
+        a.href = proresUrl;
         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, "");
-        a.download = `video_prores_${targetResolution}_${timestamp}.mov`;
+        a.download = `storyboard_prores_${targetResolution}_${timestamp}.mov`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-
         setShowDownloadModal(false);
       } catch (err) {
         console.error("ProRes + Upscale failed:", err);
         setUpscaleError(err instanceof Error ? err.message : "処理に失敗しました");
       } finally {
         setProResConversionPhase('idle');
+        setProResConversionProgress(0);
       }
       return;
     }
@@ -2139,27 +2193,49 @@ function StoryboardPageContent() {
       return;
     }
 
-    // For ProRes, convert on-the-fly and download
+    // For ProRes, convert via async job and download
     if (sceneSelectedResolution === 'prores') {
       setIsSceneConvertingProRes(true);
+      setSceneProResConversionProgress(0);
       try {
-        const blob = await videosApi.downloadAsProRes(scene.video_url);
-        const url = window.URL.createObjectURL(blob);
+        const job = await videosApi.startProResConversion({
+          video_url: scene.video_url,
+          source_type: 'storyboard',
+          source_id: storyboard!.id,
+        });
+
+        let proresUrl: string | null = null;
+        const maxAttempts = 200;
+        let attempts = 0;
+
+        while (!proresUrl && attempts < maxAttempts) {
+          await new Promise(r => setTimeout(r, 3000));
+          attempts++;
+          const status = await videosApi.getProResConversionStatus(job.id);
+          setSceneProResConversionProgress(status.progress || Math.min(attempts * 2, 95));
+          if (status.status === 'completed' && status.prores_video_url) {
+            proresUrl = status.prores_video_url;
+          } else if (status.status === 'failed') {
+            throw new Error(status.message || 'ProRes変換に失敗しました');
+          }
+        }
+
+        if (!proresUrl) throw new Error('ProRes変換がタイムアウトしました');
+
         const a = document.createElement("a");
-        a.href = url;
+        a.href = proresUrl;
         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, "");
         a.download = `scene_${downloadingSceneNumber}_prores_${timestamp}.mov`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
         setShowSceneDownloadModal(false);
-        setDownloadingSceneNumber(null);
-      } catch (err) {
-        console.error("ProRes conversion failed:", err);
-        setSceneUpscaleError(err instanceof Error ? err.message : "ProRes変換に失敗しました");
+      } catch (error) {
+        console.error("Scene ProRes conversion failed:", error);
+        setSceneUpscaleError(error instanceof Error ? error.message : "ProRes変換に失敗しました");
       } finally {
         setIsSceneConvertingProRes(false);
+        setSceneProResConversionProgress(0);
       }
       return;
     }
@@ -2177,7 +2253,10 @@ function StoryboardPageContent() {
 
         // Poll for upscale completion
         let upscaledUrl: string | null = null;
-        while (!upscaledUrl) {
+        const maxSceneUpscaleAttempts = 200; // 最大10分 (3秒 x 200回)
+        let sceneUpscaleAttempts = 0;
+        while (!upscaledUrl && sceneUpscaleAttempts < maxSceneUpscaleAttempts) {
+          sceneUpscaleAttempts++;
           const status = await storyboardApi.getSceneUpscaleStatus(storyboard.id, downloadingSceneNumber);
           setSceneUpscaleForProResProgress(status.progress);
 
@@ -2189,23 +2268,45 @@ function StoryboardPageContent() {
             await new Promise(r => setTimeout(r, 3000));
           }
         }
+        if (!upscaledUrl) {
+          throw new Error('アップスケールがタイムアウトしました（10分超過）');
+        }
 
         // Phase 2: ProRes conversion
         setSceneProResConversionPhase('converting');
+        setSceneProResConversionProgress(0);
 
-        const blob = await videosApi.downloadAsProRes(upscaledUrl);
+        const proResJob = await videosApi.startProResConversion({
+          video_url: upscaledUrl,
+          source_type: 'storyboard',
+          source_id: storyboard!.id,
+        });
 
-        // Download
-        const url = window.URL.createObjectURL(blob);
+        let proresUrl: string | null = null;
+        const proResMaxAttempts = 200;
+        let proResAttempts = 0;
+
+        while (!proresUrl && proResAttempts < proResMaxAttempts) {
+          await new Promise(r => setTimeout(r, 3000));
+          proResAttempts++;
+          const proResStatus = await videosApi.getProResConversionStatus(proResJob.id);
+          setSceneProResConversionProgress(proResStatus.progress || Math.min(proResAttempts * 2, 95));
+          if (proResStatus.status === 'completed' && proResStatus.prores_video_url) {
+            proresUrl = proResStatus.prores_video_url;
+          } else if (proResStatus.status === 'failed') {
+            throw new Error(proResStatus.message || 'ProRes変換に失敗しました');
+          }
+        }
+
+        if (!proresUrl) throw new Error('ProRes変換がタイムアウトしました');
+
         const a = document.createElement("a");
-        a.href = url;
+        a.href = proresUrl;
         const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, "");
         a.download = `scene_${downloadingSceneNumber}_prores_${targetResolution}_${timestamp}.mov`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-
         setShowSceneDownloadModal(false);
         setDownloadingSceneNumber(null);
       } catch (err) {
@@ -2213,6 +2314,7 @@ function StoryboardPageContent() {
         setSceneUpscaleError(err instanceof Error ? err.message : "処理に失敗しました");
       } finally {
         setSceneProResConversionPhase('idle');
+        setSceneProResConversionProgress(0);
       }
       return;
     }
@@ -2304,6 +2406,7 @@ function StoryboardPageContent() {
         element_images: videoProvider === 'piapi_kling' && elementImages.length > 0
           ? elementImages.map(url => ({ image_url: url }))
           : undefined,
+        kling_duration: videoProvider === 'piapi_kling' ? klingDuration : undefined,
       });
       setStep("generating");
       pollStatus();
@@ -3032,7 +3135,7 @@ function StoryboardPageContent() {
                             Kling AI
                           </div>
                           <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                            {klingMode === 'pro' ? 'Pro・高品質' : 'Standard・低コスト'}（5秒）
+                            {klingMode === 'pro' ? 'Pro・高品質' : 'Standard・低コスト'}（{klingDuration}秒）
                           </div>
                         </button>
                         <button
@@ -3054,6 +3157,7 @@ function StoryboardPageContent() {
 
                       {/* Kling AI モード選択（Kling選択時のみ表示） */}
                       {videoProvider === 'piapi_kling' && (
+                        <>
                         <div className="mt-3 flex gap-2">
                           <button
                             onClick={() => setKlingMode('std')}
@@ -3078,6 +3182,23 @@ function StoryboardPageContent() {
                             <div className="text-xs opacity-70">高品質</div>
                           </button>
                         </div>
+                        <div className="mt-2 flex gap-2">
+                          {([5, 10] as const).map((d) => (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => setKlingDuration(d)}
+                              className={`flex-1 rounded-md border px-3 py-2 text-sm transition-all ${
+                                klingDuration === d
+                                  ? 'border-purple-500 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+                                  : 'border-zinc-200 text-zinc-600 hover:border-zinc-300 dark:border-zinc-700 dark:text-zinc-400'
+                              }`}
+                            >
+                              <div className="font-medium">{d}秒</div>
+                            </button>
+                          ))}
+                        </div>
+                        </>
                       )}
 
                       {/* Kling Elements: 一貫性向上用の追加画像（Kling選択時のみ表示） */}
@@ -4903,9 +5024,9 @@ function StoryboardPageContent() {
                     {proResConversionPhase === 'upscaling'
                       ? `ステップ 1/2: 高解像度化 (${upscaleForProResProgress}%)`
                       : proResConversionPhase === 'converting'
-                      ? 'ステップ 2/2: ProRes変換中...'
+                      ? `ステップ 2/2: ProRes変換中... (${proResConversionProgress}%)`
                       : isConvertingProRes
-                      ? 'しばらくお待ちください（約30秒〜1分）'
+                      ? `ProRes変換中... (${proResConversionProgress}%)`
                       : 'しばらくお待ちください（約1〜2分）'}
                   </p>
 
@@ -4916,6 +5037,18 @@ function StoryboardPageContent() {
                         <div
                           className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
                           style={{ width: `${upscaleForProResProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Progress bar for ProRes conversion */}
+                  {(isConvertingProRes || proResConversionPhase === 'converting') && (
+                    <div className="mt-4 mx-auto w-48">
+                      <div className="h-2 overflow-hidden rounded-full bg-zinc-700">
+                        <div
+                          className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
+                          style={{ width: `${proResConversionProgress}%` }}
                         />
                       </div>
                     </div>
@@ -5235,9 +5368,9 @@ function StoryboardPageContent() {
                     {sceneProResConversionPhase === 'upscaling'
                       ? `ステップ 1/2: 高解像度化 (${sceneUpscaleForProResProgress}%)`
                       : sceneProResConversionPhase === 'converting'
-                      ? 'ステップ 2/2: ProRes変換中...'
+                      ? `ステップ 2/2: ProRes変換中... (${sceneProResConversionProgress}%)`
                       : isSceneConvertingProRes
-                      ? 'しばらくお待ちください（約30秒〜1分）'
+                      ? `ProRes変換中... (${sceneProResConversionProgress}%)`
                       : 'しばらくお待ちください（約1〜2分）'}
                   </p>
 
@@ -5248,6 +5381,18 @@ function StoryboardPageContent() {
                         <div
                           className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
                           style={{ width: `${sceneUpscaleForProResProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Progress bar for ProRes conversion */}
+                  {(isSceneConvertingProRes || sceneProResConversionPhase === 'converting') && (
+                    <div className="mt-4 mx-auto w-48">
+                      <div className="h-2 overflow-hidden rounded-full bg-zinc-700">
+                        <div
+                          className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
+                          style={{ width: `${sceneProResConversionProgress}%` }}
                         />
                       </div>
                     </div>

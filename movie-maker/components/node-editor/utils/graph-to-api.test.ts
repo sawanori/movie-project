@@ -1489,3 +1489,133 @@ describe('graphToStoryVideoCreate - Seedance Omni Reference', () => {
     expect(result.audio_reference_asset_ids).toEqual(['aud-1', 'aud-2', 'aud-3']);
   });
 });
+
+// ========== おまかせ (providerMode='auto') 透過テスト ==========
+// task_009: auto のとき video_provider を送らず selection_priority を送る。
+// explicit (未指定含む) のときは従来通り video_provider を送り selection_priority は送らない。
+
+describe('graphToStoryVideoCreate - おまかせ (auto) 透過', () => {
+  function createAutoProviderNode(
+    selectionPriority: 'quality' | 'speed' | 'cost' = 'quality'
+  ): WorkflowNode {
+    return {
+      id: 'provider-1',
+      type: 'provider',
+      position: { x: 200, y: 0 },
+      data: {
+        type: 'provider',
+        isValid: true,
+        providerMode: 'auto',
+        selectionPriority,
+        // auto でも UI 上は具体プロバイダー値を保持しているが、透過時は無視される
+        provider: 'runway',
+        aspectRatio: '9:16',
+        duration: null,
+      } satisfies ProviderNodeData,
+    };
+  }
+
+  it('providerMode=auto のとき video_provider を送らず selection_priority=quality を送る', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createAutoProviderNode('quality'),
+      createGenerateNode(),
+    ];
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges());
+
+    expect('video_provider' in result).toBe(false);
+    expect(result.selection_priority).toBe('quality');
+  });
+
+  it('providerMode=auto + selectionPriority=speed を送る', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createAutoProviderNode('speed'),
+      createGenerateNode(),
+    ];
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges());
+
+    expect('video_provider' in result).toBe(false);
+    expect(result.selection_priority).toBe('speed');
+  });
+
+  it('providerMode=auto + selectionPriority=cost を送る', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createAutoProviderNode('cost'),
+      createGenerateNode(),
+    ];
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges());
+
+    expect('video_provider' in result).toBe(false);
+    expect(result.selection_priority).toBe('cost');
+  });
+
+  it('providerMode=auto で selectionPriority 未指定なら quality をデフォルトで送る', () => {
+    const providerNode: WorkflowNode = {
+      id: 'provider-1',
+      type: 'provider',
+      position: { x: 200, y: 0 },
+      data: {
+        type: 'provider',
+        isValid: true,
+        providerMode: 'auto',
+        provider: 'runway',
+        aspectRatio: '9:16',
+        duration: null,
+      } satisfies ProviderNodeData,
+    };
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      providerNode,
+      createGenerateNode(),
+    ];
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges());
+
+    expect('video_provider' in result).toBe(false);
+    expect(result.selection_priority).toBe('quality');
+  });
+
+  it('providerMode=explicit のとき従来通り video_provider を送り selection_priority は送らない', () => {
+    const providerNode: WorkflowNode = {
+      id: 'provider-1',
+      type: 'provider',
+      position: { x: 200, y: 0 },
+      data: {
+        type: 'provider',
+        isValid: true,
+        providerMode: 'explicit',
+        provider: 'piapi_kling',
+        aspectRatio: '9:16',
+        duration: null,
+      } satisfies ProviderNodeData,
+    };
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      providerNode,
+      createGenerateNode(),
+    ];
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges());
+
+    expect(result.video_provider).toBe('piapi_kling');
+    expect('selection_priority' in result).toBe(false);
+  });
+
+  it('providerMode 未指定 (旧グラフ) は explicit 扱いで video_provider を送る', () => {
+    const nodes: WorkflowNode[] = [
+      createImageInputNode(),
+      createPromptNode(),
+      createProviderNode('runway'),
+      createGenerateNode(),
+    ];
+    const result = graphToStoryVideoCreate(nodes, createBasicEdges());
+
+    expect(result.video_provider).toBe('runway');
+    expect('selection_priority' in result).toBe(false);
+  });
+})

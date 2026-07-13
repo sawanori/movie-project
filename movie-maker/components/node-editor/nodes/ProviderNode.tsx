@@ -14,6 +14,27 @@ import { cn } from '@/lib/utils';
 import { HANDLE_IDS } from '@/lib/types/node-editor';
 import type { ProviderNodeData, VideoProvider } from '@/lib/types/node-editor';
 import { emitNodeDataUpdate } from '../utils/emit-node-data';
+import { useProviderModels } from '../hooks/useProviderModels';
+
+type SelectionPriority = 'quality' | 'speed' | 'cost';
+
+// おまかせ (auto) の優先度選択肢
+const PRIORITY_OPTIONS: { value: SelectionPriority; label: string; description: string }[] = [
+  { value: 'quality', label: '品質優先', description: '最も品質の高いモデルを自動選択' },
+  { value: 'speed', label: '速度優先', description: '最も速いモデルを自動選択' },
+  { value: 'cost', label: 'コスト優先', description: '最もコストの低いモデルを自動選択' },
+];
+
+// 優先度に応じてモデルを並べ替える (先頭が現優先度での最有力候補)。
+function sortModelsByPriority<
+  T extends { quality_score: number; speed_score: number; cost_per_second: number },
+>(models: T[], priority: SelectionPriority): T[] {
+  return [...models].sort((a, b) => {
+    if (priority === 'quality') return b.quality_score - a.quality_score;
+    if (priority === 'speed') return b.speed_score - a.speed_score;
+    return a.cost_per_second - b.cost_per_second;
+  });
+}
 
 interface ProviderNodeProps extends NodeProps {
   data: ProviderNodeData;
@@ -61,11 +82,39 @@ const DURATION_CONFIG: Record<VideoProvider, DurationConfig> = {
 export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
   const [isSeedanceAdvancedOpen, setIsSeedanceAdvancedOpen] = useState(false);
 
+  // providerMode 未指定 (旧グラフ) は explicit 扱い。
+  const isAuto = data.providerMode === 'auto';
+
+  // おまかせ表示用のモデルメタデータ。取得失敗時は data=undefined のまま静的 UI を継続する。
+  const { data: models } = useProviderModels();
+
   const updateNodeData = useCallback(
     (updates: Partial<ProviderNodeData>) => {
       emitNodeDataUpdate<ProviderNodeData>(id, updates);
     },
     [id]
+  );
+
+  const handleModeChange = useCallback(
+    (mode: 'explicit' | 'auto') => {
+      if (mode === 'auto') {
+        // 初回 auto 化時に優先度デフォルト (quality) を確定させる
+        updateNodeData({
+          providerMode: 'auto',
+          selectionPriority: data.selectionPriority ?? 'quality',
+        });
+      } else {
+        updateNodeData({ providerMode: 'explicit' });
+      }
+    },
+    [updateNodeData, data.selectionPriority]
+  );
+
+  const handlePriorityChange = useCallback(
+    (priority: SelectionPriority) => {
+      updateNodeData({ selectionPriority: priority });
+    },
+    [updateNodeData]
   );
 
   const handleProviderChange = useCallback(
@@ -121,36 +170,120 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
       errorMessage={data.errorMessage}
       style={{ minHeight: '240px' }}
     >
-      {/* プロバイダー選択 */}
+      {/* プロバイダー選択モード切替 (具体的に選ぶ / おまかせ) */}
       <div className="mb-3">
-        <label className={nodeLabelClassName}>動画生成エンジン</label>
-        <div className="grid grid-cols-1 gap-1">
-          {PROVIDERS.map((provider) => (
-            <button
-              key={provider.value}
-              onClick={() => handleProviderChange(provider.value)}
-              className={cn(
-                'flex flex-col items-start p-2 rounded-lg text-left transition-all',
-                data.provider === provider.value
-                  ? 'bg-[#fce300] text-black'
-                  : 'bg-[#1a1a1a] text-white hover:bg-[#2a2a2a]'
-              )}
-            >
-              <span className="text-xs font-medium">{provider.label}</span>
-              <span
-                className={cn(
-                  'text-[10px]',
-                  data.provider === provider.value
-                    ? 'text-black/70'
-                    : 'text-gray-500'
-                )}
-              >
-                {provider.description}
-              </span>
-            </button>
-          ))}
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-[#1a1a1a] p-0.5">
+          <button
+            onClick={() => handleModeChange('explicit')}
+            className={cn(
+              'rounded-md py-1.5 text-xs font-medium transition-all',
+              !isAuto ? 'bg-[#fce300] text-black' : 'text-gray-400 hover:text-white'
+            )}
+          >
+            具体的に選ぶ
+          </button>
+          <button
+            onClick={() => handleModeChange('auto')}
+            className={cn(
+              'rounded-md py-1.5 text-xs font-medium transition-all',
+              isAuto ? 'bg-[#fce300] text-black' : 'text-gray-400 hover:text-white'
+            )}
+          >
+            おまかせ
+          </button>
         </div>
       </div>
+
+      {/* プロバイダー選択 (具体的に選ぶ = explicit) */}
+      {!isAuto && (
+        <div className="mb-3">
+          <label className={nodeLabelClassName}>動画生成エンジン</label>
+          <div className="grid grid-cols-1 gap-1">
+            {PROVIDERS.map((provider) => (
+              <button
+                key={provider.value}
+                onClick={() => handleProviderChange(provider.value)}
+                className={cn(
+                  'flex flex-col items-start p-2 rounded-lg text-left transition-all',
+                  data.provider === provider.value
+                    ? 'bg-[#fce300] text-black'
+                    : 'bg-[#1a1a1a] text-white hover:bg-[#2a2a2a]'
+                )}
+              >
+                <span className="text-xs font-medium">{provider.label}</span>
+                <span
+                  className={cn(
+                    'text-[10px]',
+                    data.provider === provider.value
+                      ? 'text-black/70'
+                      : 'text-gray-500'
+                  )}
+                >
+                  {provider.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* おまかせ (auto): 優先度選択 + モデル実力値表示 */}
+      {isAuto && (
+        <div className="mb-3">
+          <label className={nodeLabelClassName}>おまかせ優先度</label>
+          <div className="grid grid-cols-1 gap-1">
+            {PRIORITY_OPTIONS.map((opt) => {
+              const isSelected = (data.selectionPriority ?? 'quality') === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => handlePriorityChange(opt.value)}
+                  className={cn(
+                    'flex flex-col items-start p-2 rounded-lg text-left transition-all',
+                    isSelected
+                      ? 'bg-[#fce300] text-black'
+                      : 'bg-[#1a1a1a] text-white hover:bg-[#2a2a2a]'
+                  )}
+                >
+                  <span className="text-xs font-medium">{opt.label}</span>
+                  <span
+                    className={cn(
+                      'text-[10px]',
+                      isSelected ? 'text-black/70' : 'text-gray-500'
+                    )}
+                  >
+                    {opt.description}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* モデル実力値 (取得成功時のみ。失敗時は非表示にして優先度 UI を継続) */}
+          {models && models.length > 0 && (
+            <div className="mt-2 space-y-1 rounded-md border border-[#2a2a2a] bg-[#111] p-2">
+              <p className="text-[10px] font-medium text-gray-400">対象モデル (実力値)</p>
+              {sortModelsByPriority(models, data.selectionPriority ?? 'quality').map((m) => (
+                <div
+                  key={`${m.provider}-${m.name}`}
+                  className="flex items-center justify-between text-[10px] text-gray-500"
+                  title={`品質 ${m.quality_score} / 速度 ${m.speed_score} / $${m.cost_per_second}/秒 / 最大 ${m.max_duration}秒`}
+                >
+                  <span className="truncate text-gray-300">{m.name}</span>
+                  <span className="ml-2 shrink-0 tabular-nums">
+                    品質{m.quality_score} / ${m.cost_per_second}/秒 / {m.max_duration}秒
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* おまかせ対象は registry 登録モデルのみ (domoai は明示指定専用) */}
+          <p className="mt-1.5 text-[10px] leading-relaxed text-gray-500">
+            おまかせは登録済みモデルから自動選択します。DomoAI は「具体的に選ぶ」でのみ利用できます。
+          </p>
+        </div>
+      )}
 
       {/* アスペクト比 */}
       <div className="mb-3">
@@ -168,8 +301,8 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
         </select>
       </div>
 
-      {/* 動画時間 (プロバイダー設定に応じて表示切替) */}
-      {(() => {
+      {/* 動画時間 (プロバイダー設定に応じて表示切替。auto では非表示) */}
+      {!isAuto && (() => {
         const config = DURATION_CONFIG[data.provider];
         if (config.type === 'fixed') {
           return (
@@ -216,8 +349,8 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
         );
       })()}
 
-      {/* 速度モード (Seedance のみ) */}
-      {data.provider === 'seedance' && (
+      {/* 速度モード (Seedance のみ、explicit 時のみ) */}
+      {!isAuto && data.provider === 'seedance' && (
         <div className="mt-3">
           <label className={nodeLabelClassName}>速度モード</label>
           <select
@@ -231,8 +364,8 @@ export function ProviderNode({ data, selected, id }: ProviderNodeProps) {
         </div>
       )}
 
-      {/* Seedance 詳細設定 (折りたたみ) */}
-      {data.provider === 'seedance' && (
+      {/* Seedance 詳細設定 (折りたたみ、explicit 時のみ) */}
+      {!isAuto && data.provider === 'seedance' && (
         <div className="mt-3 border-t border-[#2a2a2a] pt-3">
           <button
             onClick={() => setIsSeedanceAdvancedOpen((o) => !o)}

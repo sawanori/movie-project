@@ -1,198 +1,604 @@
 {
-  "feature": "piapi_kling_lipsync_provider",
-  "version": 1,
+  "feature": "workflow_automation_and_unified_gateway",
+  "version": 2,
   "tasks": [
     {
       "task_id": "task_001",
-      "title": "PiAPIKlingLipSyncProvider 実装 + ファクトリ登録",
-      "goal": "PiAPI Kling lip_sync タスクを使う LipSyncProviderInterface 実装を追加し、get_lip_sync_provider から 'piapi_kling' で取得できるようにする",
+      "title": "workflow_runs テーブル + クォータ予約/返金関数のマイグレーション",
+      "goal": "サーバーサイド実行の状態永続化テーブルと、原子的クォータ予約（TOCTOU対策）のSQL関数を新設する",
       "scope": [
-        "app/external/piapi_kling_lipsync_provider.py の新規作成",
-        "app/external/lip_sync_provider.py の get_lip_sync_provider に 'piapi_kling' 分岐追加"
+        "docs/migrations/20260707_workflow_runs.sql を implementation-plan.md §10 の DDL 通りに作成（FK は auth.users(id)、reserved_generations カラム含む）",
+        "reserve_video_quota(p_user_id, p_count, p_limit) / release_video_quota(p_user_id, p_count) の2関数を同マイグレーションに含める",
+        "users テーブルの月間カウントの実カラム名を確認し、相違があれば SQL を実名に合わせる（関数シグネチャは維持）",
+        "Supabase MCP (apply_migration) で適用し、情報スキーマ照会で確認"
       ],
       "non_scope": [
-        "Hedra プロバイダーの削除",
-        "tts_text 等の TTS 直指定モード",
-        "DB マイグレーション"
+        "既存テーブルのカラム変更",
+        "アプリケーションコードの変更",
+        "updated_at の DB トリガー（アプリ側で明示更新する方針）"
       ],
       "files_to_read": [
-        "movie-maker-api/app/external/lip_sync_provider.py",
-        "movie-maker-api/app/external/hedra_provider.py",
-        "movie-maker-api/app/external/piapi_kling_provider.py"
+        "docs/implementation-plan.md",
+        "docs/migrations/20260518_add_omni_reference_assets.sql",
+        "movie-maker-api/app/core/dependencies.py"
       ],
       "files_to_create": [
-        "movie-maker-api/app/external/piapi_kling_lipsync_provider.py"
+        "docs/migrations/20260707_workflow_runs.sql"
       ],
-      "files_to_modify": [
-        "movie-maker-api/app/external/lip_sync_provider.py"
-      ],
+      "files_to_modify": [],
       "dependencies": [],
       "implementation_steps": [
-        "PIAPI_BASE_URL='https://api.piapi.ai/api/v1' と _get_headers()（x-api-key + Content-Type）を定義（piapi_kling_provider.py に倣う）",
-        "__init__ で settings.PIAPI_API_KEY を取得し、未設定なら ValueError",
-        "provider_name property は 'piapi_kling' を返す",
-        "generate_lip_sync: source_url 空チェック→ValueError、source_type!='video' なら静止画非対応の日本語 ValueError、POST /task に {model:'kling', task_type:'lip_sync', input:{video_url:source_url, local_dubbing_url:audio_url}} を送信、data.task_id を返す",
-        "check_status: GET /task/{task_id}、data.status を小文字マッピング（completed/processing/pending/staged/failed→LipSyncStatus）、完了時 data.output から video_url を多パターン抽出、失敗時 data.error.message を日本語化して LipSyncStatus(error_message=...)",
-        "get_video_url: check_status が completed なら video_url を返し、それ以外は None",
-        "get_lip_sync_provider に 'piapi_kling' 分岐を追加（hedra 分岐は残す）"
+        "omni_reference_assets のマイグレーション（auth.users FK + SELECT-only RLS + service-role書き込み）の記法を踏襲する",
+        "increment_video_count RPC の定義を Supabase 上で確認し、対象カラム名（video_count_this_month 等）を実名で特定する",
+        "implementation-plan.md §10 の DDL + 2関数で SQL ファイルを作成する",
+        "Supabase MCP で適用する",
+        "情報スキーマ照会で workflow_runs のカラム・CHECK制約・SELECTポリシーのみ存在・3インデックス・2関数を確認する",
+        "reserve_video_quota を SQL で直接呼び、上限内 true / 超過 false / 並行呼び出しで超過しないことを確認する"
       ],
       "done_definition": [
-        "get_lip_sync_provider('piapi_kling') が PiAPIKlingLipSyncProvider を返す",
-        "generate_lip_sync が正しい body で POST /task を呼び task_id を返す（モックで確認可能な実装）",
-        "source_type='image' で ValueError（静止画非対応メッセージ）",
-        "import エラーや構文エラーがない"
+        "workflow_runs テーブルが Supabase 上に存在し、user_id FK が auth.users を参照している",
+        "RLS が有効で SELECT ポリシーのみ存在する（INSERT/UPDATE/DELETE ポリシーなし）",
+        "idx_workflow_runs_user_created / idx_workflow_runs_active / idx_workflow_runs_batch が存在する",
+        "reserve_video_quota / release_video_quota が存在し、上限境界と並行実行で正しく動作する",
+        "SQL ファイルが docs/migrations/ に保存されている"
       ],
-      "verify_commands": [
-        "pytest tests/external/test_piapi_kling_lipsync_provider.py -v"
-      ],
-      "risk_level": "medium"
+      "verify_commands": [],
+      "risk_level": "low"
     },
     {
       "task_id": "task_002",
-      "title": "PiAPIKlingLipSyncProvider の単体テスト追加",
-      "goal": "新プロバイダーの主要メソッドとエラーハンドリングを httpx モックで検証する",
+      "title": "ゲートウェイ設定エンドポイント3本 + find_best_metadata()",
+      "goal": "フロントエンド gatewayApi が既に期待するパスで model_registry のメタデータを §9 ワイヤ形式で HTTP 公開する",
       "scope": [
-        "tests/external/test_piapi_kling_lipsync_provider.py の新規作成"
+        "app/gateway/router.py 新設: GET /config/models(?capability=), GET /config/capabilities, GET /config/recommended?priority=&capability=",
+        "model_registry.py に find_best_metadata(priority, capability) を追加（find_best と同一ソート規則: quality/speed 降順・cost 昇順。find_best はインスタンスを返すため流用不可）",
+        "レスポンスは §9 ワイヤ形式（quality_score / speed_score / cost_per_second / max_duration / supported_aspect_ratios / capabilities）で統一",
+        "main.py への include_router(prefix=/api/v1)。main.py:114 の既存ハンドラ get_video_provider との import 名衝突を避ける",
+        "JWT 認証必須化と異常系(不正 priority/capability)の 422/400 応答",
+        "tests/gateway/test_router.py 作成（401 テストは DEBUG=True のモックユーザー化（dependencies.py:27-28）を dependency override で回避して検証）"
       ],
       "non_scope": [
-        "実 PiAPI への通信",
-        "E2E テスト"
+        "生成経路の変更",
+        "GATEWAY_ENABLED の変更（本計画全体で False のまま不変）",
+        "レジストリのモデル追加（domoai 登録含む）・スコア変更"
       ],
       "files_to_read": [
-        "movie-maker-api/tests/external/test_hedra_provider.py",
-        "movie-maker-api/tests/external/test_piapi_kling_provider.py",
-        "movie-maker-api/app/external/piapi_kling_lipsync_provider.py"
+        "movie-maker-api/app/external/model_registry.py",
+        "movie-maker-api/app/external/gateway_init.py",
+        "movie-maker-api/app/external/unified_gateway.py",
+        "movie-maker/lib/api/client.ts",
+        "movie-maker/lib/types/provider-metadata.ts",
+        "movie-maker-api/app/main.py",
+        "movie-maker-api/app/core/dependencies.py"
       ],
       "files_to_create": [
-        "movie-maker-api/tests/external/test_piapi_kling_lipsync_provider.py"
+        "movie-maker-api/app/gateway/__init__.py",
+        "movie-maker-api/app/gateway/router.py",
+        "movie-maker-api/tests/gateway/test_router.py"
       ],
-      "files_to_modify": [],
-      "dependencies": ["task_001"],
+      "files_to_modify": [
+        "movie-maker-api/app/external/model_registry.py",
+        "movie-maker-api/app/main.py"
+      ],
+      "dependencies": [],
       "implementation_steps": [
-        "autouse フィクスチャで settings.PIAPI_API_KEY を擬似値に固定（test_hedra_provider.py の手法に倣う）",
-        "provider_name='piapi_kling' を検証",
-        "generate_lip_sync(video): httpx.AsyncClient をモックし {data:{task_id:'...'}} を返す→task_id を検証、POST body に video_url/local_dubbing_url/task_type='lip_sync' が含まれることを確認",
-        "generate_lip_sync(image): source_type='image' で ValueError を検証",
-        "check_status: completed/processing/pending/failed 各レスポンスのマッピングと、completed 時の video_url 抽出を検証",
-        "check_status: 失敗レスポンスで error_message が設定されることを検証",
-        "get_video_url: completed→URL、未完了→None"
+        "client.ts:2381-2390 の3パスを正とし、フィールド名は §9 ワイヤ形式（バックエンドの ModelMetadata 実名）を正とする（フロント既存型の短縮名 quality/speed/cost は task_007 で拡張置換）",
+        "find_best_metadata() を model_registry に追加し、recommended はこれで {name, provider} を組む",
+        "get_current_user 依存を全 endpoint に付与する",
+        "レジストリ未初期化時の挙動（gateway_init の lazy 実行 or 503）を gateway_init.py の実装に合わせて決め、テストで固定する",
+        "正常系・401（dependency override）・不正 priority の pytest を書く"
       ],
       "done_definition": [
-        "新テストファイルが全て pass する",
-        "generate/check_status/get_video_url/image非対応/APIエラー の各ケースを網羅"
+        "3エンドポイントがフロントの既存パスに応答し、§9 ワイヤ形式のボディを返す",
+        "find_best_metadata が find_best と同一の選択結果を返す（同一入力比較テスト）",
+        "未認証リクエストが 401 になる（override 検証）",
+        "pytest tests/gateway/ が全件成功する"
       ],
       "verify_commands": [
-        "pytest tests/external/test_piapi_kling_lipsync_provider.py -v"
+        "pytest tests/gateway/ -v"
       ],
       "risk_level": "low"
     },
     {
       "task_id": "task_003",
-      "title": "既定 provider を settings.LIP_SYNC_PROVIDER 由来にする",
-      "goal": "リップシンクスタジオ API と DialogueNode が、未指定時に設定値のプロバイダーを使うようにする",
+      "title": "おまかせモデル選択（router 時点解決）と送信時フォールバック",
+      "goal": "story 生成で priority ベースのモデル自動選択（router で具体名に解決）と、プロバイダ送信失敗時の次点1回フォールバックを可能にする",
       "scope": [
-        "app/lip_sync/service.py の create_lip_sync_generation の provider 既定を settings.LIP_SYNC_PROVIDER 由来に変更",
-        "既存テストの追従修正（必要時）"
+        "StoryVideoCreate（app/videos/schemas.py:278、video_provider は :288）に selection_priority (quality|speed|cost, 任意) を追加しバリデーションする",
+        "app/videos/router.py の /story 解決部（:3953 付近）を拡張: selection_priority 指定かつ video_provider 未指定なら resolve_provider_with_priority() で具体名に解決して従来通り DB 保存（:3967）・下流受け渡し（:4024）。併記時は video_provider 優先",
+        "selection_priority を start_story_processing のタスク引数として story_processor へ伝搬（DB カラムは追加しない）",
+        "app/external/video_provider.py に resolve_provider_with_priority()（find_best_metadata の薄いラッパ）と submit_with_fallback()（明示的な短い接続/送信タイムアウト付き、次点1回のみ）を追加。既存 get_video_provider() と GATEWAY_ENABLED 分岐（:223）は変更しない",
+        "story_processor.py の送信部（:130 付近）を submit_with_fallback 経由にし、フォールバック時は video_generations.video_provider を実使用プロバイダに更新 + 構造化ログ記録",
+        "tests/videos/test_model_selection.py 作成"
       ],
       "non_scope": [
-        "router / dialogue_processor の呼び出しシグネチャ大改修",
-        "新規 API パラメータの追加"
+        "GATEWAY_ENABLED の既定値変更・:223 分岐の再設計（レビュー P0-1 によりスコープ外確定）",
+        "生成中(ポーリング中)の失敗のフォールバック（送信時のみ対象）",
+        "story 以外の経路（upscale/lip-sync/TTS）への適用",
+        "video_generations へのカラム追加",
+        "domoai のレジストリ登録（おまかせ対象外のまま。明示指定は従来通り可能）"
       ],
       "files_to_read": [
-        "movie-maker-api/app/lip_sync/service.py",
-        "movie-maker-api/app/lip_sync/router.py",
-        "movie-maker-api/app/tasks/dialogue_processor.py",
-        "movie-maker-api/app/core/config.py",
-        "movie-maker-api/tests/lip_sync/test_lip_sync_service.py"
+        "movie-maker-api/app/videos/schemas.py",
+        "movie-maker-api/app/videos/router.py",
+        "movie-maker-api/app/external/video_provider.py",
+        "movie-maker-api/app/external/model_registry.py",
+        "movie-maker-api/app/tasks/story_processor.py"
       ],
-      "files_to_create": [],
+      "files_to_create": [
+        "movie-maker-api/tests/videos/test_model_selection.py"
+      ],
       "files_to_modify": [
-        "movie-maker-api/app/lip_sync/service.py",
-        "movie-maker-api/tests/lip_sync/test_lip_sync_service.py"
+        "movie-maker-api/app/videos/schemas.py",
+        "movie-maker-api/app/videos/router.py",
+        "movie-maker-api/app/tasks/story_processor.py",
+        "movie-maker-api/app/external/video_provider.py"
       ],
-      "dependencies": ["task_001"],
+      "dependencies": ["task_002"],
       "implementation_steps": [
-        "create_lip_sync_generation の provider 引数の既定を、関数内で settings.LIP_SYNC_PROVIDER を参照する形に変更（明示指定時はそれを優先）",
-        "router.py / dialogue_processor.py は未指定のままで設定値が反映されることを確認（必要なら明示的に settings.LIP_SYNC_PROVIDER を渡す）",
-        "provider='hedra' をハードコード前提にしている既存テストがあれば、設定値ベースに追従修正"
+        "schemas に selection_priority を追加し、video_provider との併記規則（video_provider 優先）をバリデータに実装する",
+        "router.py:3953 の三項分岐を「video_provider 明示 > selection_priority 解決 > env 既定」の3段に拡張する（既存2経路の挙動は不変）",
+        "resolve_provider_with_priority は capability='i2v' で find_best_metadata を呼び、name を返す",
+        "submit_with_fallback: 送信例外時に find_best_metadata の次点（同一ソートの2位）で1回だけ再送信し、(task_id, provider_used, fallback_occurred) を返す。タイムアウトは既存プロバイダ実装の HTTP クライアント設定を確認して明示値を設定する",
+        "story_processor でフォールバック発生時に video_generations.video_provider を UPDATE し、logger で構造化記録する",
+        "テスト: priority 解決（最高 quality_score 選択）/ 併記時の優先 / 既存2経路の回帰 / フォールバック1回 / 2連続失敗で failed（すべてプロバイダはモック）"
       ],
       "done_definition": [
-        "LIP_SYNC_PROVIDER 設定値に応じて lip_sync_generations.provider が決まる",
-        "既存の lip_sync サービステストが pass する"
+        "selection_priority=quality で video_generations.video_provider に registry 最高 quality_score のプロバイダ名が保存される（テスト）",
+        "送信時失敗→次点1回フォールバック→video_provider 更新のテストが成功する",
+        "video_provider 明示時・両方未指定時（env 既定）の従来動作が不変（回帰テスト）",
+        "GATEWAY_ENABLED と video_provider.py:223 分岐に差分がない（git diff で確認）",
+        "既存の videos 系テストが既知3件失敗以外グリーン"
       ],
       "verify_commands": [
-        "pytest tests/lip_sync -q",
-        "pytest tests/tasks/test_lip_sync_processor.py -q"
+        "pytest tests/videos/test_model_selection.py -v",
+        "pytest tests/videos/ -v"
       ],
       "risk_level": "medium"
     },
     {
       "task_id": "task_004",
-      "title": "設定切替（config 既定 + .env）と provider カラム制約確認",
-      "goal": "LIP_SYNC_PROVIDER を piapi_kling に切り替え、DB の provider カラムが値を許容することを確認する",
+      "title": "workflow_engine: グラフ検証・コンパイル純関数 + パリティ fixture",
+      "goal": "user_workflows の nodes/edges JSONB を、実行可能な順序付きステップ列へ検証付きでコンパイルし、フロント実装との意味論等価を fixture で機械検証する",
       "scope": [
-        "app/core/config.py の LIP_SYNC_PROVIDER 既定を 'piapi_kling' に変更",
-        "movie-maker-api/.env の LIP_SYNC_PROVIDER=piapi_kling を設定",
-        "lip_sync_generations.provider の制約確認"
+        "app/services/workflow_engine.py 新設: validate_graph() / compile_graph()",
+        "意味論の正の使い分け: Generate ペイロード部分は graph-to-api.ts（全633行）を正とし等価実装。チェーン意味論（Dialogue/GetVideoFrame/TrimVideo/StitchVideos の接続・入出力受け渡し）は各ノードコンポーネント + HANDLE_IDS（lib/types/node-editor.ts）+ utils/node-types.ts を正とし、連結規則を docstring + docs に仕様化",
+        "対応ノード22種（node-types.ts:34-62 の実登録全て。StickyNote は無視）。未対応ノード検出は将来ノード/不正データ用の防御として実装",
+        "v1 制限: Generate は1グラフ1個のみ。GenerateNode→GenerateNode v2v チェーン（graph-to-api.ts:193-223）検出時は専用エラー（クライアント実行への案内文言）",
+        "乖離ポイント決定表の確定: (a) 未接続設定ノードのグローバルフォールバック（:111-135） (b) Kling 6軸カメラ時の camera_work 削除（:418-419） (c) KlingElements 画像による ImageInput 代替（:299-301、バッチ不可条件と連動） (d) V2V=Runway 固定等のプロバイダガード — 再現/拒否を項目毎に決めて文書化",
+        "パリティ fixture: tests/services/fixtures/ に代表グラフ→期待ペイロード JSON を配置し、フロント側 graph-to-api.parity.test.ts（task_009 で作成）と同一ファイルを共用する前提の照合テストを実装",
+        "fixture グラフ5系統 + パリティ照合の単体テスト"
       ],
       "non_scope": [
-        "Hedra キー設定",
-        "他プロバイダー設定の変更"
+        "実行（I/O）そのもの",
+        "DAG 並列・条件分岐・複数 Generate 対応",
+        "graph-to-api.ts の変更（task_009 の selection_priority 透過を除き不変）"
       ],
       "files_to_read": [
-        "movie-maker-api/app/core/config.py",
-        "movie-maker-api/.env"
+        "movie-maker/components/node-editor/utils/graph-to-api.ts",
+        "movie-maker/components/node-editor/utils/node-types.ts",
+        "movie-maker/lib/types/node-editor.ts",
+        "movie-maker/components/node-editor/nodes/DialogueNode.tsx",
+        "movie-maker/components/node-editor/nodes/GetVideoFrameNode.tsx",
+        "movie-maker/components/node-editor/nodes/TrimVideoNode.tsx",
+        "movie-maker/components/node-editor/nodes/StitchVideosNode.tsx",
+        "movie-maker/components/node-editor/utils/omni-reference-compact.ts",
+        "movie-maker-api/app/videos/schemas.py"
+      ],
+      "files_to_create": [
+        "movie-maker-api/app/services/workflow_engine.py",
+        "movie-maker-api/tests/services/test_workflow_engine.py",
+        "movie-maker-api/tests/services/fixtures/parity_graphs.json"
+      ],
+      "files_to_modify": [],
+      "dependencies": [],
+      "implementation_steps": [
+        "graph-to-api.ts を精読し、ノードタイプ→StoryVideoCreate フィールドの対応表と乖離ポイント決定表を docstring として書き起こす",
+        "各ユーティリティ/Dialogue ノードコンポーネントと HANDLE_IDS からチェーン連結規則（どの handle 経由で出力が次ステップ入力になるか）を仕様化する",
+        "エッジを辿って Generate ノードを核にパラメータノードを収集し、Generate ステップ + 後続（Dialogue/後処理/ユーティリティ）ステップの列に変換する",
+        "検証を実装する: 未対応ノード・入力欠落・循環・複数 Generate（v2v チェーン案内）・バッチ前提違反（ImageInput≠1、KlingElements 代替）を個別のエラー型で返す",
+        "fixture: 最小構成 / 全対応ノード構成 / 未対応ノード混入 / 断線 / 複数 Generate の5系統 + parity_graphs.json 照合でテストする"
+      ],
+      "done_definition": [
+        "5系統の fixture テストとパリティ照合テストが全て成功する",
+        "乖離ポイント決定表が docstring に存在し、各項目に再現/拒否の決定が書かれている",
+        "コンパイル結果のステップ params が StoryVideoCreate 等の既存スキーマで検証可能な形になっている",
+        "純関数（DB・ネットワーク I/O なし）で実装されている"
+      ],
+      "verify_commands": [
+        "pytest tests/services/test_workflow_engine.py -v"
+      ],
+      "risk_level": "high"
+    },
+    {
+      "task_id": "task_005",
+      "title": "workflow_run_processor: セマフォ・submitting プロトコル・実行・逐次再開・キャンセル",
+      "goal": "コンパイル済みステップ列を既存ドメインサービス経由で耐久実行し、二重課金ゼロ・同時実行上限付きで workflow_runs に永続化する",
+      "scope": [
+        "app/tasks/workflow_run_processor.py 新設: start_workflow_run(run_id)",
+        "プロセス全体の asyncio.Semaphore(settings.WORKFLOW_MAX_CONCURRENT_RUNS)（既定3）。超過分は pending のまま待機",
+        "submitting プロトコル: 外部送信直前にステップを submitting で DB 保存 → 送信 → external_task_id 保存で processing へ",
+        "ステップ種別→既存サービス呼び出しのディスパッチ（Generate→story 系の使用量加算を含まない下位関数、Dialogue→dialogue、Stitch/Trim/ExtractFrame→utility 系、BGM/LUT/FilmGrain/Overlay→ffmpeg_service）",
+        "キャンセル検査（各ステップ境界で status 再読込）と、failed/canceled 確定時の未着手 Generate 分 release_video_quota 呼び出し",
+        "resume_stuck_workflow_runs(): 起動時に processing の run を逐次走査。external_task_id ありはポーリング再開、submitting のまま task_id なしは再送信せず failed 化（二重課金防止）",
+        "app/core/config.py に WORKFLOW_MAX_CONCURRENT_RUNS 追加、main.py startup への再開フック登録",
+        "tests/workflows/test_run_processor.py 作成"
+      ],
+      "non_scope": [
+        "HTTP エンドポイント（task_006）",
+        "新規外部 API 呼び出しコードの実装（既存サービスの再利用のみ）",
+        "並列ステップ実行・バッチ一括キャンセル"
+      ],
+      "files_to_read": [
+        "movie-maker-api/app/tasks/bg_removal_processor.py",
+        "movie-maker-api/app/tasks/story_processor.py",
+        "movie-maker-api/app/tasks/dialogue_processor.py",
+        "movie-maker-api/app/videos/service.py",
+        "movie-maker-api/app/services/ffmpeg_service.py",
+        "movie-maker-api/app/services/workflow_engine.py",
+        "movie-maker-api/app/core/config.py"
+      ],
+      "files_to_create": [
+        "movie-maker-api/app/tasks/workflow_run_processor.py",
+        "movie-maker-api/tests/workflows/test_run_processor.py"
+      ],
+      "files_to_modify": [
+        "movie-maker-api/app/main.py",
+        "movie-maker-api/app/core/config.py"
+      ],
+      "dependencies": ["task_001", "task_004"],
+      "implementation_steps": [
+        "bg_removal_processor.py の自動再開・状態遷移パターンを読み、同じ構造で骨格を作る（差異: bg_removal は参照なし時フル再処理、本処理は failed 化 — docs に明記）",
+        "story 系サービスの加算箇所（videos/service.py:59, 265 の increment_video_count）を特定し、加算を含まない下位関数（無ければ加算スキップ引数の追加）でディスパッチする",
+        "submitting → 送信 → external_task_id 保存の順序を厳守し、各ステップの成果 URL を次ステップ入力に引き渡す",
+        "ステップ失敗時: compiled_steps に error_message を書き、run を failed にし、未着手 Generate 分を返金する",
+        "キャンセル: 各ステップ境界で workflow_runs.status を再読込し canceled なら停止 + 返金する",
+        "セマフォと逐次再開を実装し、startup フックに登録する（bg_removal と並置）",
+        "テスト: 状態遷移 / submitting-無task_id 再開で failed かつ再送信なし / task_id あり再開でポーリング継続 / キャンセル境界 / セマフォ上限 / 返金数値（すべてモック）"
+      ],
+      "done_definition": [
+        "モック化した最小チェーン（Generate→Dialogue）が completed まで進み final_output_url が設定される",
+        "submitting のまま task_id が無いステップの再開が「再送信ゼロ + failed 化 + 返金」になるテストが成功する",
+        "同時 N+1 run 投入でアクティブ実行が N に制限されるテストが成功する",
+        "pytest tests/workflows/test_run_processor.py が全件成功する"
+      ],
+      "verify_commands": [
+        "pytest tests/workflows/test_run_processor.py -v"
+      ],
+      "risk_level": "high"
+    },
+    {
+      "task_id": "task_006",
+      "title": "ワークフロー実行 API 4本 + 原子的クォータ予約/バッチ検査",
+      "goal": "execute/一覧/詳細/キャンセルの HTTP API を公開し、原子的予約・プラン別バッチ上限・返金を強制する",
+      "scope": [
+        "POST /workflows/{id}/execute（input_image_urls バッチ・video_provider/selection_priority オプション）",
+        "GET /workflows/runs（一覧・ページング）/ GET /workflows/runs/{run_id}（ステップ詳細）/ POST /workflows/runs/{run_id}/cancel",
+        "ルート定義順: runs 系を既存 GET /{workflow_id}（router.py:94）より前に置く",
+        "app/workflows/service.py を新規作成（既存に service.py は無い）: create_runs（コンパイル→バッチ検証→reserve_video_quota 原子予約→run 群 INSERT→BackgroundTasks 起動）、取得系、キャンセル+返金",
+        "get_plan_limits() に max_batch_size (free/starter=1, pro=3, business=10) を追加",
+        "予約数 = Generate ステップ数 × バッチ数。予約失敗は 403（不足数を文言に含める）。予約後の後続バリデーション失敗は即時返金",
+        "バッチ展開: ImageInput ちょうど1個の検証（KlingElements 代替グラフは 400）、batch_id 付与、置換済み graph_snapshot で N 件の run 作成",
+        "tests/workflows/test_execution.py 作成"
+      ],
+      "non_scope": [
+        "フロントエンド",
+        "DEBUG バイパスの変更",
+        "月次リセットの仕組み",
+        "バッチ一括キャンセル API"
+      ],
+      "files_to_read": [
+        "movie-maker-api/app/workflows/router.py",
+        "movie-maker-api/app/workflows/schemas.py",
+        "movie-maker-api/app/core/dependencies.py",
+        "movie-maker-api/app/videos/router.py",
+        "movie-maker-api/app/services/workflow_engine.py",
+        "movie-maker-api/app/tasks/workflow_run_processor.py"
+      ],
+      "files_to_create": [
+        "movie-maker-api/app/workflows/service.py",
+        "movie-maker-api/tests/workflows/test_execution.py"
+      ],
+      "files_to_modify": [
+        "movie-maker-api/app/workflows/router.py",
+        "movie-maker-api/app/workflows/schemas.py",
+        "movie-maker-api/app/core/dependencies.py"
+      ],
+      "dependencies": ["task_003", "task_005"],
+      "implementation_steps": [
+        "schemas に ExecuteRequest/RunResponse/RunDetailResponse を追加する",
+        "service.create_runs(): compile_graph → バッチ条件検証 → get_plan_limits で上限取得 → reserve_video_quota(user, N, limit) → 失敗なら 403 / 成功なら run 群 INSERT（reserved_generations 記録）→ プロセッサ起動",
+        "router に4エンドポイントを追加する（宣言順に注意、全て get_current_user、他人リソースは 404）",
+        "エラー系を実装する: 未対応ノード 400（ノード名リスト付き）/ 複数 Generate 400（案内文言）/ ImageInput 個数違反 400 / 予約失敗・バッチ上限 403",
+        "テスト: 202/400/403/404・一覧・詳細・キャンセル+返金・並行 execute で予約が原子的（片方のみ成功）・free プランのバッチ拒否（プロバイダ・プロセッサはモック）"
+      ],
+      "done_definition": [
+        "4エンドポイントが仕様通りのステータスとボディを返す",
+        "残数10に対する並行 execute×2（各10本）で片方のみ 202 になるテストが成功する",
+        "free プランで input_image_urls 2件が 403 になる",
+        "キャンセルで未着手 Generate 分が返金されるテストが成功する",
+        "他人の workflow_id / run_id は 404 になる",
+        "pytest tests/workflows/ が全件成功する"
+      ],
+      "verify_commands": [
+        "pytest tests/workflows/ -v",
+        "make test"
+      ],
+      "risk_level": "medium"
+    },
+    {
+      "task_id": "task_007",
+      "title": "フロント API クライアント: workflowRunsApi + ProviderMetadata ワイヤ形式統一",
+      "goal": "実行系4エンドポイントの型付きクライアントを追加し、ProviderMetadata 型を §9 ワイヤ形式に拡張する",
+      "scope": [
+        "lib/api/client.ts に workflowRunsApi (execute/list/get/cancel) と関連型を追加",
+        "lib/types/provider-metadata.ts を §9 ワイヤ形式へ拡張（quality_score/speed_score/cost_per_second/max_duration/supported_aspect_ratios/capabilities。短縮名 quality/speed/cost は置換）",
+        "gatewayApi の3パスは不変。client.test.ts の gatewayApi テストを新ワイヤ形式に更新",
+        "lib/api/client.test.ts へ workflowRunsApi テスト追記"
+      ],
+      "non_scope": [
+        "UI コンポーネント",
+        "gatewayApi のパス変更"
+      ],
+      "files_to_read": [
+        "movie-maker/lib/api/client.ts",
+        "movie-maker/lib/api/client.test.ts",
+        "movie-maker/lib/types/provider-metadata.ts",
+        "movie-maker-api/app/workflows/schemas.py",
+        "movie-maker-api/app/gateway/router.py"
       ],
       "files_to_create": [],
       "files_to_modify": [
-        "movie-maker-api/app/core/config.py",
-        "movie-maker-api/.env"
+        "movie-maker/lib/api/client.ts",
+        "movie-maker/lib/api/client.test.ts",
+        "movie-maker/lib/types/provider-metadata.ts"
       ],
-      "dependencies": ["task_001", "task_003"],
+      "dependencies": ["task_006"],
       "implementation_steps": [
-        "config.py の LIP_SYNC_PROVIDER 既定を 'piapi_kling' に変更",
-        ".env に LIP_SYNC_PROVIDER=piapi_kling を追記/設定",
-        "Supabase の lip_sync_generations.provider に CHECK 制約（許可値）があるか確認。あれば 'piapi_kling' を許可するマイグレーションを docs/migrations/ に追加し適用（その場合は計画を更新）"
+        "バックエンド schemas から Request/Response 型を TypeScript interface に写す（submitting を含む StepStatus）",
+        "provider-metadata.ts を新形式に書き換え、既存参照（あれば）をコンパイルエラー起点で追随させる",
+        "既存 fetchWithAuth パターンで4メソッドを実装する",
+        "既存テスト様式に合わせてモックテストを追記・更新する"
       ],
       "done_definition": [
-        "設定が piapi_kling になっている",
-        "provider='piapi_kling' の insert が制約違反にならないことを確認（制約があれば緩和済み）"
+        "npm run test で client.test.ts が成功する",
+        "npm run lint / npm run build が成功する（型不整合ゼロ）",
+        "型がバックエンドのレスポンス形と一致している"
       ],
       "verify_commands": [
-        "pytest tests/lip_sync -q"
+        "npm run test",
+        "npm run lint",
+        "npm run build"
       ],
       "risk_level": "low"
     },
     {
-      "task_id": "task_005",
-      "title": "回帰テスト（lip_sync 関連一式）",
-      "goal": "新プロバイダー追加と既定切替が既存機能を壊していないことを確認する",
+      "task_id": "task_008",
+      "title": "NodeEditor サーバー実行 UI（ボタン・モーダル・実行履歴パネル）",
+      "goal": "エディタからサーバー実行を開始し、履歴とステップ進捗を確認・キャンセルできる UI を提供する",
       "scope": [
-        "external / tasks / lip_sync のテスト実行と修正"
+        "NodeEditor.tsx: 「サーバーで実行」ボタン（未保存時は保存誘導ダイアログ）",
+        "ExecuteOnServerModal.tsx: バッチ画像選択（プラン上限で制御、バッチ不可グラフでは無効化）・モデル選択（グラフ設定に従う/おまかせ）・消費見込み（予約説明付き）と残数表示・実行",
+        "WorkflowRunsPanel.tsx: 実行一覧・ステップ別進捗（submitting 表示含む）・エラー表示・キャンセル・成果物リンク（lg 以上サイドパネル、未満フルスクリーンドロワー）",
+        "use-workflow-runs.ts: SWR 3秒ポーリング（terminal 状態で停止）",
+        "コンポーネントテスト作成"
       ],
       "non_scope": [
-        "無関係なテストの修正",
-        "新機能追加"
+        "クライアント側実行（GenerateNode）の変更",
+        "ProviderNode の変更（task_009）",
+        "新規ノード追加"
       ],
       "files_to_read": [
-        "movie-maker-api/tests/external/test_hedra_provider.py",
-        "movie-maker-api/tests/tasks/test_lip_sync_processor.py",
-        "movie-maker-api/tests/lip_sync"
+        "movie-maker/components/node-editor/NodeEditor.tsx",
+        "movie-maker/lib/hooks/use-auto-save-draft.ts",
+        "movie-maker/lib/hooks/use-dashboard-data.ts",
+        "movie-maker/app/globals.css",
+        "movie-maker/lib/api/client.ts"
       ],
-      "files_to_create": [],
-      "files_to_modify": [],
-      "dependencies": ["task_001", "task_002", "task_003", "task_004"],
+      "files_to_create": [
+        "movie-maker/components/node-editor/ExecuteOnServerModal.tsx",
+        "movie-maker/components/node-editor/WorkflowRunsPanel.tsx",
+        "movie-maker/lib/hooks/use-workflow-runs.ts",
+        "movie-maker/components/node-editor/__tests__/WorkflowRunsPanel.test.tsx"
+      ],
+      "files_to_modify": [
+        "movie-maker/components/node-editor/NodeEditor.tsx"
+      ],
+      "dependencies": ["task_007"],
       "implementation_steps": [
-        "pytest を external / tasks / lip_sync に対して実行",
-        "失敗があれば §15 Repair Loop に従い該当 task に紐づけて修正"
+        "authApi.getUsage() で残数を取得し、モーダルに予約見込み（Generate 数 × バッチ数）と残数を表示、不足時は実行ボタンを無効化する",
+        "execute 成功時に WorkflowRunsPanel を開いて当該 batch の run を選択状態にする",
+        "SWR ポーリングは completed/failed/canceled で自動停止する",
+        "レイアウトは flex 基調とし、レスポンシブ grid が必要な場合は globals.css の既存 override 対象クラスのみ使用、@source は絶対に追加しない",
+        "表示・操作（実行不可条件、キャンセル、エラー表示、submitting バッジ）のコンポーネントテストを書く"
       ],
       "done_definition": [
-        "lip_sync 関連のテストが全て pass する",
-        "Hedra 既存テストも pass を維持"
+        "サーバー実行→パネルで進捗確認→成果物リンク表示の一連が動作する（モック API テストで検証）",
+        "残数不足時に実行ボタンが無効化され理由が表示される",
+        "npm run test / npm run lint / npm run build が成功する"
       ],
       "verify_commands": [
-        "pytest tests/external tests/tasks/test_lip_sync_processor.py tests/lip_sync -q"
+        "npm run test",
+        "npm run lint",
+        "npm run build"
       ],
+      "risk_level": "medium"
+    },
+    {
+      "task_id": "task_009",
+      "title": "ProviderNode おまかせ選択 + graph-to-api 透過 + パリティ fixture",
+      "goal": "ノードエディタ上で priority ベースのモデル自動選択を選べ、モデル実力値を確認でき、サーバー/クライアント両実行の意味論一致を fixture で担保する",
+      "scope": [
+        "ProviderNode.tsx: プロバイダ選択に「おまかせ（品質/速度/コスト優先）」を追加（おまかせ対象は registry 登録5モデルで domoai は明示指定のみ、の注記付き）",
+        "gatewayApi.listModels() で quality_score・cost_per_second・max_duration をツールチップ表示",
+        "API 失敗時は静的 PROVIDERS リスト（ProviderNode.tsx:23）へフォールバック（機能退行なし）",
+        "graph-to-api.ts: auto 選択時は video_provider を送らず selection_priority を送る（最小差分）",
+        "graph-to-api.parity.test.ts 新設: 代表グラフ→期待ペイロードの fixture を生成・検証し、バックエンド tests/services/fixtures/parity_graphs.json と同一内容を保証",
+        "コンポーネントテスト"
+      ],
+      "non_scope": [
+        "/generate/story ページ（Guide Mode）へのおまかせ UI 追加（将来課題として見送り）",
+        "モデルスコアの編集 UI"
+      ],
+      "files_to_read": [
+        "movie-maker/components/node-editor/nodes/ProviderNode.tsx",
+        "movie-maker/components/node-editor/utils/graph-to-api.ts",
+        "movie-maker/lib/api/client.ts",
+        "movie-maker-api/tests/services/fixtures/parity_graphs.json"
+      ],
+      "files_to_create": [
+        "movie-maker/components/node-editor/utils/graph-to-api.parity.test.ts"
+      ],
+      "files_to_modify": [
+        "movie-maker/components/node-editor/nodes/ProviderNode.tsx",
+        "movie-maker/components/node-editor/utils/graph-to-api.ts"
+      ],
+      "dependencies": ["task_007"],
+      "implementation_steps": [
+        "ProviderNode に mode: explicit | auto(priority) の状態を追加する",
+        "listModels の取得は SWR + エラー時静的リストフォールバックにする",
+        "graph-to-api.ts: auto 選択時は selection_priority をペイロードへ透過する（クライアント実行でも task_003 のバックエンド実装で機能する）",
+        "ノード data のキー名を workflow_engine（task_004）の対応表と一致させる",
+        "parity テスト: 代表グラフ群からペイロード JSON を生成し、バックエンド fixture と文字列一致で照合する（乖離時はフロント側再生成が正）",
+        "フォールバック挙動のテストを追加する"
+      ],
+      "done_definition": [
+        "おまかせ選択でクライアント実行・サーバー実行の両方がモデル自動選択で動く（モックテスト）",
+        "パリティ fixture 照合テストがフロント・バックエンド双方でグリーン",
+        "API 失敗時に静的リストで操作継続できる",
+        "npm run test / npm run lint / npm run build が成功する"
+      ],
+      "verify_commands": [
+        "npm run test",
+        "npm run lint",
+        "npm run build"
+      ],
+      "risk_level": "medium"
+    },
+    {
+      "task_id": "task_010",
+      "title": "ダッシュボード使用量表示の差分拡張（コンポーネント抽出 + プログレスバー + リセット日）",
+      "goal": "既に実装済みのインライン使用量表示を再利用可能なコンポーネントに抽出し、視覚性（プログレスバー・リセット日）とテストを追加する",
+      "scope": [
+        "app/dashboard/page.tsx:461-485 の既存インライン表示（使用数/上限・残数・プラン名バッジ・アップグレード導線）を app/dashboard/components/usage-card.tsx に抽出（表示内容は維持）",
+        "残数プログレスバーの追加。リセット日は GET /auth/usage が返す場合のみ表示（返さない場合は「毎月自動リセット」固定文言とし、完了報告に明記）",
+        "コンポーネントテスト新設（既存実装にはテストが無い）"
+      ],
+      "non_scope": [
+        "GET /auth/usage のレスポンス変更",
+        "プラン変更導線・Polar 連携の変更",
+        "表示内容の削減・変更（既存等価 + 追加のみ）"
+      ],
+      "files_to_read": [
+        "movie-maker/app/dashboard/page.tsx",
+        "movie-maker/app/dashboard/components/skeletons.tsx",
+        "movie-maker/lib/hooks/use-dashboard-data.ts",
+        "movie-maker-api/app/auth/router.py"
+      ],
+      "files_to_create": [
+        "movie-maker/app/dashboard/components/usage-card.tsx"
+      ],
+      "files_to_modify": [
+        "movie-maker/app/dashboard/page.tsx"
+      ],
+      "dependencies": [],
+      "implementation_steps": [
+        "GET /auth/usage の実レスポンス形を auth/router.py で確認し、リセット日フィールドの有無を確定する",
+        "page.tsx:461-485 のインライン JSX を等価のまま usage-card.tsx へ抽出する（視覚様式・文言を維持）",
+        "プログレスバーとリセット日（または固定文言）を追加する",
+        "loading 中は既存 UsageCardSkeleton、取得後は UsageCard、エラー時は既存挙動を維持する",
+        "表示のユニットテスト（残数計算・境界値・リセット日有無）を書く"
+      ],
+      "done_definition": [
+        "既存の表示内容がすべて維持されている（目視 + テスト）",
+        "プログレスバーが表示され、残数と整合する",
+        "npm run test / npm run lint / npm run build が成功する"
+      ],
+      "verify_commands": [
+        "npm run test",
+        "npm run lint",
+        "npm run build"
+      ],
+      "risk_level": "low"
+    },
+    {
+      "task_id": "task_011",
+      "title": "E2E テストと回帰確認一式",
+      "goal": "サーバー実行 UI の一連操作を E2E で担保し、既存機能の無回帰を確認する",
+      "scope": [
+        "tests/e2e/workflow-server-run.spec.ts 新設（playwright.config.ts の testDir './tests/e2e' 配下。E2E テストモード + API モックで: ワークフロー保存→サーバーで実行→パネルで進捗→完了表示）",
+        "既存 E2E・ユニット・バックエンドテストの全体実行と結果記録",
+        "回帰判定（既知3件失敗以外グリーンであること）"
+      ],
+      "non_scope": [
+        "実プロバイダ課金を伴う実 generate の E2E",
+        "新規テストインフラ導入"
+      ],
+      "files_to_read": [
+        "movie-maker/tests/e2e/",
+        "movie-maker/playwright.config.ts"
+      ],
+      "files_to_create": [
+        "movie-maker/tests/e2e/workflow-server-run.spec.ts"
+      ],
+      "files_to_modify": [],
+      "dependencies": ["task_008", "task_009", "task_010"],
+      "implementation_steps": [
+        "既存 tests/e2e/*.spec.ts（7本）のモック手法（NEXT_PUBLIC_E2E_TEST_MODE + route interception）を踏襲する",
+        "実行系 API をモックして UI 状態遷移（pending→submitting→processing→completed）を検証する",
+        "フル検証を実行し、失敗があれば Repair Loop（implementation-plan.md §15）に従い該当 task へ差し戻す"
+      ],
+      "done_definition": [
+        "npm run test:e2e が新スペック込みで成功する（新スペックが実際に実行されていることをレポートで確認）",
+        "make test が既知3件以外グリーン",
+        "npm run test / npm run lint / npm run build が成功する"
+      ],
+      "verify_commands": [
+        "npm run test:e2e",
+        "npm run test",
+        "npm run lint",
+        "npm run build",
+        "make test"
+      ],
+      "risk_level": "medium"
+    },
+    {
+      "task_id": "task_012",
+      "title": "環境変数・運用ドキュメント整備",
+      "goal": "デプロイに必要な設定と機能仕様・運用手順を文書化し、リリース可能状態にする",
+      "scope": [
+        "movie-maker-api/.env.example に WORKFLOW_MAX_CONCURRENT_RUNS（既定3）を追記し、GATEWAY_ENABLED は False 維持である旨のコメントを整備",
+        "docs/features/workflow-runs.md 新設（機能仕様・対応ノード表・乖離ポイント決定表・クォータ予約/返金ポリシー・submitting/再開/キャンセル/フォールバックの意味論・同時実行制御・bg_removal との再開方式差異・Railway 設定手順）",
+        "リポジトリルート CLAUDE.md の機能一覧への1行追記"
+      ],
+      "non_scope": [
+        "requirements.md / plan.md の全面改訂",
+        "Railway への実デプロイ作業"
+      ],
+      "files_to_read": [
+        "movie-maker-api/.env.example",
+        "docs/features/seedance-omni-reference.md",
+        "CLAUDE.md",
+        "movie-maker-api/app/services/workflow_engine.py"
+      ],
+      "files_to_create": [
+        "docs/features/workflow-runs.md"
+      ],
+      "files_to_modify": [
+        "movie-maker-api/.env.example",
+        "CLAUDE.md"
+      ],
+      "dependencies": ["task_011"],
+      "implementation_steps": [
+        "seedance-omni-reference.md の文書構成（仕様→制限→運用）を踏襲して workflow-runs.md を書く",
+        "対応ノード表と乖離ポイント決定表は workflow_engine.py の実装から転記する（コードとの乖離を作らない）",
+        ".env.example と CLAUDE.md を最小差分で更新する"
+      ],
+      "done_definition": [
+        "docs/features/workflow-runs.md が存在し、対応ノード表・クォータポリシー・submitting 意味論が実装と一致している",
+        ".env.example に WORKFLOW_MAX_CONCURRENT_RUNS が説明付きで記載され、GATEWAY_ENABLED の注記がある"
+      ],
+      "verify_commands": [],
       "risk_level": "low"
     }
   ]

@@ -55,9 +55,9 @@ case 'mic':
 
 ## 完了条件 (AC)
 
-- [ ] `NODE_ITEMS` に `type: 'dialogue'` のエントリが追加されている
-- [ ] `getIcon('mic', ...)` が `<Mic />` を返す
-- [ ] `npm run build` (または `tsc --noEmit`) がエラーなし
+- [x] `NODE_ITEMS` に `type: 'dialogue'` のエントリが追加されている
+- [x] `getIcon('mic', ...)` が `<Mic />` を返す
+- [x] `npm run build` (または `tsc --noEmit`) がエラーなし
 - [ ] ブラウザのパレットに「セリフ (TTS)」が Mic アイコンとともに表示される (手動確認 — T3-1 でも検証)
 
 ## テスト

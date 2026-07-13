@@ -294,13 +294,6 @@ class PiAPIKlingProvider(VideoProviderInterface):
         """PiAPI Kling は Text-to-Video をサポート"""
         return True
 
-    def _get_headers(self) -> dict:
-        """API認証ヘッダーを取得"""
-        return {
-            "x-api-key": self.api_key,
-            "Content-Type": "application/json",
-        }
-
     async def generate_video_from_text(
         self,
         prompt: str,
@@ -395,6 +388,13 @@ class PiAPIKlingProvider(VideoProviderInterface):
         except Exception as e:
             logger.exception(f"T2V: PiAPI Kling generation failed: {e}")
             raise VideoProviderError(f"T2V動画生成に失敗しました: {str(e)}")
+
+    def _get_headers(self) -> dict:
+        """API認証ヘッダーを取得"""
+        return {
+            "x-api-key": self.api_key,
+            "Content-Type": "application/json",
+        }
 
     async def generate_video(
         self,
@@ -625,14 +625,16 @@ class PiAPIKlingProvider(VideoProviderInterface):
 
             if internal_status == VideoGenerationStatus.COMPLETED:
                 # PiAPI Kling のレスポンス構造から動画URLを取得
-                # 複数パターンに対応（url または resource フィールド）
+                # 複数パターンに対応（url または resource フィールド、3.0では文字列直接）
                 output = data.get("output", {})
                 works = output.get("works", [{}])
                 works_video = works[0].get("video", {}) if works else {}
+                raw_video = output.get("video")
                 video_url = (
                     output.get("video_url") or
-                    output.get("video", {}).get("url") or
-                    output.get("video", {}).get("resource") or
+                    (raw_video if isinstance(raw_video, str) and raw_video.startswith("http") else None) or
+                    (raw_video.get("url") if isinstance(raw_video, dict) else None) or
+                    (raw_video.get("resource") if isinstance(raw_video, dict) else None) or
                     works_video.get("url") or
                     works_video.get("resource")
                 )
@@ -716,19 +718,33 @@ class PiAPIKlingProvider(VideoProviderInterface):
             VideoProviderError: 生成開始に失敗した場合
         """
         try:
-            request_body = {
-                "model": "kling",
-                "task_type": "extend_video",
-                "input": {
-                    "prompt": prompt,
-                    "video_url": video_url,
-                    "aspect_ratio": aspect_ratio,
-                    "mode": self.mode,
-                    "version": self.version,
+            if self.version.startswith("3"):
+                # 3.0: mode を含めない
+                request_body = {
+                    "model": "kling",
+                    "task_type": "extend_video",
+                    "input": {
+                        "prompt": prompt,
+                        "video_url": video_url,
+                        "aspect_ratio": aspect_ratio,
+                        "version": self.version,
+                    }
                 }
-            }
+            else:
+                # 2.6: 既存ロジック（mode含む）
+                request_body = {
+                    "model": "kling",
+                    "task_type": "extend_video",
+                    "input": {
+                        "prompt": prompt,
+                        "video_url": video_url,
+                        "aspect_ratio": aspect_ratio,
+                        "mode": self.mode,
+                        "version": self.version,
+                    }
+                }
 
-            logger.info(f"PiAPI Kling extend_video request: aspect_ratio={aspect_ratio}")
+            logger.info(f"PiAPI Kling extend_video request: version={self.version}, aspect_ratio={aspect_ratio}")
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(

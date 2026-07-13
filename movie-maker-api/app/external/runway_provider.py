@@ -517,13 +517,17 @@ class RunwayProvider(VideoProviderInterface):
             logger.error(f"Runway upscale HTTP error: {e.response.status_code} - {e.response.text}")
             try:
                 error_data = e.response.json()
-                error_msg = error_data.get("error", "")
+                error_msg = error_data.get("error", "") or error_data.get("message", "")
                 issues = error_data.get("issues", [])
                 if issues:
                     issue_msgs = [issue.get("message", "") for issue in issues if issue.get("message")]
                     if issue_msgs:
                         error_msg = "; ".join(issue_msgs)
 
+                if "size" in error_msg.lower() or "exceeds" in error_msg.lower():
+                    raise VideoProviderError(
+                        "動画ファイルサイズがRunwayの制限（32MB）を超えています。"
+                    )
                 if "duration" in error_msg.lower() or "40" in error_msg:
                     raise VideoProviderError("動画が長すぎます。40秒以内の動画のみアップスケールできます。")
                 if "credits" in error_msg.lower():

@@ -5,7 +5,8 @@ import { sceneImageApi, GenerateSceneImageResponse, libraryApi } from "@/lib/api
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ImageProviderSelector } from "@/components/ui/image-provider-selector";
-import type { ImageProvider } from "@/lib/constants/image-generation";
+import { ImageLookSelector } from "@/components/ui/image-look-selector";
+import type { ImageProvider, ImageLook } from "@/lib/constants/image-generation";
 import {
   X,
   Loader2,
@@ -54,6 +55,7 @@ export function SceneImageGeneratorModal({
   const [error, setError] = useState<string | null>(null);
   const [generatedImage, setGeneratedImage] = useState<GenerateSceneImageResponse | null>(null);
   const [internalImageProvider, setInternalImageProvider] = useState<ImageProvider>("nanobanana");
+  const [imageLook, setImageLook] = useState<ImageLook>("cinematic");
   const [isSavingToLibrary, setIsSavingToLibrary] = useState(false);
   const [savedToLibrary, setSavedToLibrary] = useState(false);
 
@@ -97,6 +99,7 @@ export function SceneImageGeneratorModal({
         dialogue: dialogue || undefined,
         aspect_ratio: aspectRatio,
         image_provider: imageProvider,
+        image_look: imageLook,
       });
       setGeneratedImage(response);
     } catch (err) {
@@ -106,7 +109,7 @@ export function SceneImageGeneratorModal({
     } finally {
       setIsGenerating(false);
     }
-  }, [descriptionJa, dialogue, aspectRatio, imageProvider]);
+  }, [descriptionJa, dialogue, aspectRatio, imageProvider, imageLook]);
 
   // 画像を確認して次へ進む
   const handleConfirm = useCallback(() => {
@@ -224,6 +227,13 @@ export function SceneImageGeneratorModal({
           <ImageProviderSelector
             value={imageProvider}
             onChange={handleProviderChange}
+            disabled={isGenerating}
+          />
+
+          {/* 画像スタイル選択 */}
+          <ImageLookSelector
+            value={imageLook}
+            onChange={setImageLook}
             disabled={isGenerating}
           />
 

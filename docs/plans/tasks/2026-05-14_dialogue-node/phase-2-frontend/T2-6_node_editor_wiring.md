@@ -194,14 +194,14 @@ import { dialogueApi } from '@/lib/api/client'
 
 ## 完了条件 (AC)
 
-- [ ] `handleStartDialogue` が既存の useEffect ブロック内に追加されている (別 useEffect ではない)
-- [ ] `window.addEventListener('startDialogue', handleStartDialogue)` が追加されている
-- [ ] cleanup 関数に `window.removeEventListener('startDialogue', handleStartDialogue)` が追加されている
-- [ ] `getNodeVideoOutput` を使って upstream ノードの動画 URL を取得している
-- [ ] 動画未接続の場合に `errorMessage` が設定される
-- [ ] ポーリングタイムアウトの場合に `errorMessage` が設定される
-- [ ] `npm run build` がエラーなし
-- [ ] 既存の `startGeneration` ハンドラの動作が変わっていないこと (既存テストが通ること)
+- [x] `handleStartDialogue` が既存の useEffect ブロック内に追加されている (別 useEffect ではない)
+- [x] `window.addEventListener('startDialogue', handleStartDialogue)` が追加されている
+- [x] cleanup 関数に `window.removeEventListener('startDialogue', handleStartDialogue)` が追加されている
+- [x] `getNodeVideoOutput` を使って upstream ノードの動画 URL を取得している
+- [x] 動画未接続の場合に `errorMessage` が設定される
+- [x] ポーリングタイムアウトの場合に `errorMessage` が設定される
+- [x] `npm run build` がエラーなし
+- [x] 既存の `startGeneration` ハンドラの動作が変わっていないこと (既存テストが通ること)
 
 ## テスト
 

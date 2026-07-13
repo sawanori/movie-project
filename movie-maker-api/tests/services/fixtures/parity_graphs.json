@@ -1,0 +1,224 @@
+{
+  "_readme": [
+    "SHARED PARITY FIXTURE (task_004 backend <-> task_009 frontend).",
+    "Each entry: an input node-editor graph (nodes/edges) + the EXPECTED StoryVideoCreate payload",
+    "that the *Generate* step of compile_graph must produce.",
+    "",
+    "CONTRACT: movie-maker/components/node-editor/utils/graph-to-api.ts is the FINAL source of truth",
+    "for the Generate payload. The backend workflow_engine.compile_graph must reproduce it semantically.",
+    "task_009 will add movie-maker/components/node-editor/utils/graph-to-api.parity.test.ts that reads THIS",
+    "same file and asserts graph-to-api.ts real output matches these expected payloads. If task_009 finds a",
+    "mismatch, the FRONTEND output wins: fix the expected payload here (and the backend) to match graph-to-api.ts,",
+    "do NOT change graph-to-api.ts to match this file.",
+    "",
+    "Expected payloads were traced by hand from graph-to-api.ts (see line refs in each note).",
+    "Keys omitted from an expected payload mean the field must be ABSENT (undefined) in the compiled params,",
+    "matching graph-to-api.ts which omits undefined properties. film_grain/use_lut always present (defaults).",
+    "generateNodeId in each graph is the id of the single 'generate' node."
+  ],
+  "cases": [
+    {
+      "name": "runway_i2v_bare",
+      "note": "Bare Runway i2v: ImageInput->Prompt->Provider->Generate. graph-to-api.ts:296-334. No duration field (runway fixed). camera_work omitted (empty). film_grain default 'medium', use_lut default true.",
+      "generateNodeId": "gen-1",
+      "graph": {
+        "nodes": [
+          {
+            "id": "img-1",
+            "type": "imageInput",
+            "position": { "x": 0, "y": 0 },
+            "data": { "type": "imageInput", "isValid": true, "imageUrl": "https://r2.example.com/img1.png", "imagePreview": "https://r2.example.com/img1.png" }
+          },
+          {
+            "id": "prompt-1",
+            "type": "prompt",
+            "position": { "x": 200, "y": 0 },
+            "data": { "type": "prompt", "isValid": true, "japanesePrompt": "猫が歩いている", "englishPrompt": "a cat walking down a quiet street", "isTranslating": false, "subjectType": "person" }
+          },
+          {
+            "id": "prov-1",
+            "type": "provider",
+            "position": { "x": 400, "y": 0 },
+            "data": { "type": "provider", "isValid": true, "provider": "runway", "aspectRatio": "9:16", "duration": null }
+          },
+          {
+            "id": "gen-1",
+            "type": "generate",
+            "position": { "x": 600, "y": 0 },
+            "data": { "type": "generate", "isValid": false, "isGenerating": false, "progress": 0, "videoUrl": null, "error": null }
+          }
+        ],
+        "edges": [
+          { "id": "e1", "source": "img-1", "target": "gen-1", "sourceHandle": "image_url", "targetHandle": "image_url" },
+          { "id": "e2", "source": "prompt-1", "target": "gen-1", "sourceHandle": "story_text", "targetHandle": "story_text" },
+          { "id": "e3", "source": "prov-1", "target": "gen-1", "sourceHandle": "config", "targetHandle": "config" }
+        ]
+      },
+      "expectedPayload": {
+        "image_url": "https://r2.example.com/img1.png",
+        "story_text": "a cat walking down a quiet street",
+        "aspect_ratio": "9:16",
+        "video_provider": "runway",
+        "subject_type": "person",
+        "film_grain": "medium",
+        "use_lut": true
+      }
+    },
+    {
+      "name": "kling_mode_endframe",
+      "note": "Kling i2v with KlingMode(pro) + KlingEndFrame, connected to Provider input handles. graph-to-api.ts:398-410 (kling_mode, end_frame_image_url), :338-339 (kling_duration when duration is 5 or 10). aspect 16:9. FilmGrain heavy + LUT off overrides defaults.",
+      "generateNodeId": "gen-1",
+      "graph": {
+        "nodes": [
+          {
+            "id": "img-1",
+            "type": "imageInput",
+            "position": { "x": 0, "y": 0 },
+            "data": { "type": "imageInput", "isValid": true, "imageUrl": "https://r2.example.com/kling-base.png", "imagePreview": "https://r2.example.com/kling-base.png" }
+          },
+          {
+            "id": "prompt-1",
+            "type": "prompt",
+            "position": { "x": 200, "y": 0 },
+            "data": { "type": "prompt", "isValid": true, "japanesePrompt": "ロボットが振り向く", "englishPrompt": "a robot turns around slowly", "isTranslating": false, "subjectType": "object" }
+          },
+          {
+            "id": "prov-1",
+            "type": "provider",
+            "position": { "x": 400, "y": 0 },
+            "data": { "type": "provider", "isValid": true, "provider": "piapi_kling", "aspectRatio": "16:9", "duration": 10 }
+          },
+          {
+            "id": "kmode-1",
+            "type": "klingMode",
+            "position": { "x": 400, "y": 200 },
+            "data": { "type": "klingMode", "isValid": true, "mode": "pro" }
+          },
+          {
+            "id": "kend-1",
+            "type": "klingEndFrame",
+            "position": { "x": 400, "y": 300 },
+            "data": { "type": "klingEndFrame", "isValid": true, "endFrameImageUrl": "https://r2.example.com/kling-end.png" }
+          },
+          {
+            "id": "grain-1",
+            "type": "filmGrain",
+            "position": { "x": 400, "y": 400 },
+            "data": { "type": "filmGrain", "isValid": true, "grain": "heavy" }
+          },
+          {
+            "id": "lut-1",
+            "type": "lut",
+            "position": { "x": 400, "y": 500 },
+            "data": { "type": "lut", "isValid": true, "useLut": false }
+          },
+          {
+            "id": "gen-1",
+            "type": "generate",
+            "position": { "x": 600, "y": 0 },
+            "data": { "type": "generate", "isValid": false, "isGenerating": false, "progress": 0, "videoUrl": null, "error": null }
+          }
+        ],
+        "edges": [
+          { "id": "e1", "source": "img-1", "target": "gen-1", "sourceHandle": "image_url", "targetHandle": "image_url" },
+          { "id": "e2", "source": "prompt-1", "target": "gen-1", "sourceHandle": "story_text", "targetHandle": "story_text" },
+          { "id": "e3", "source": "prov-1", "target": "gen-1", "sourceHandle": "config", "targetHandle": "config" },
+          { "id": "e4", "source": "kmode-1", "target": "prov-1", "sourceHandle": "kling_mode", "targetHandle": "kling_mode_input" },
+          { "id": "e5", "source": "kend-1", "target": "prov-1", "sourceHandle": "kling_end_frame", "targetHandle": "kling_end_frame_input" }
+        ]
+      },
+      "expectedPayload": {
+        "image_url": "https://r2.example.com/kling-base.png",
+        "story_text": "a robot turns around slowly",
+        "aspect_ratio": "16:9",
+        "video_provider": "piapi_kling",
+        "subject_type": "object",
+        "film_grain": "heavy",
+        "use_lut": false,
+        "kling_duration": 10,
+        "kling_mode": "pro",
+        "end_frame_image_url": "https://r2.example.com/kling-end.png"
+      }
+    },
+    {
+      "name": "seedance_omni_reference",
+      "note": "Seedance i2v with OmniReference connected to Provider OMNI_REFERENCE_INPUT. graph-to-api.ts:355-395. duration 8 -> seedance_duration clamp(4..15). seedance_generate_audio default false always emitted (:357). resolution 720p, camera_fixed false. Omni image/video/audio asset_ids from compactOmniReferences (non-empty slots, ordinal order preserved).",
+      "generateNodeId": "gen-1",
+      "graph": {
+        "nodes": [
+          {
+            "id": "img-1",
+            "type": "imageInput",
+            "position": { "x": 0, "y": 0 },
+            "data": { "type": "imageInput", "isValid": true, "imageUrl": "https://r2.example.com/seed-base.png", "imagePreview": "https://r2.example.com/seed-base.png" }
+          },
+          {
+            "id": "prompt-1",
+            "type": "prompt",
+            "position": { "x": 200, "y": 0 },
+            "data": { "type": "prompt", "isValid": true, "japanesePrompt": "海辺のシーン @image1 @video1 @audio1", "englishPrompt": "a seaside scene referencing @image1 with motion @video1 and sound @audio1", "isTranslating": false, "subjectType": "object" }
+          },
+          {
+            "id": "prov-1",
+            "type": "provider",
+            "position": { "x": 400, "y": 0 },
+            "data": { "type": "provider", "isValid": true, "provider": "seedance", "aspectRatio": "9:16", "duration": 8, "seedanceMode": "pro", "seedanceGenerateAudio": false, "seedanceSeed": null, "seedanceResolution": "720p", "seedanceCameraFixed": false }
+          },
+          {
+            "id": "omni-1",
+            "type": "omniReference",
+            "position": { "x": 400, "y": 200 },
+            "data": {
+              "type": "omniReference",
+              "isValid": true,
+              "consentAccepted": true,
+              "imageSlots": [
+                { "assetId": "11111111-1111-1111-1111-111111111111", "mediaType": "image", "filename": "ref1.png" },
+                { "assetId": null, "mediaType": "image" }
+              ],
+              "videoSlots": [
+                { "assetId": "22222222-2222-2222-2222-222222222222", "mediaType": "video", "filename": "clip1.mp4", "durationSeconds": 4.0 },
+                { "assetId": null, "mediaType": "video" },
+                { "assetId": null, "mediaType": "video" }
+              ],
+              "audioSlots": [
+                { "assetId": "33333333-3333-3333-3333-333333333333", "mediaType": "audio", "filename": "voice1.mp3", "durationSeconds": 5.0 },
+                { "assetId": null, "mediaType": "audio" },
+                { "assetId": null, "mediaType": "audio" }
+              ]
+            }
+          },
+          {
+            "id": "gen-1",
+            "type": "generate",
+            "position": { "x": 600, "y": 0 },
+            "data": { "type": "generate", "isValid": false, "isGenerating": false, "progress": 0, "videoUrl": null, "error": null }
+          }
+        ],
+        "edges": [
+          { "id": "e1", "source": "img-1", "target": "gen-1", "sourceHandle": "image_url", "targetHandle": "image_url" },
+          { "id": "e2", "source": "prompt-1", "target": "gen-1", "sourceHandle": "story_text", "targetHandle": "story_text" },
+          { "id": "e3", "source": "prov-1", "target": "gen-1", "sourceHandle": "config", "targetHandle": "config" },
+          { "id": "e4", "source": "omni-1", "target": "prov-1", "sourceHandle": "omni_reference", "targetHandle": "omni_reference_input" }
+        ]
+      },
+      "expectedPayload": {
+        "image_url": "https://r2.example.com/seed-base.png",
+        "story_text": "a seaside scene referencing @image1 with motion @video1 and sound @audio1",
+        "aspect_ratio": "9:16",
+        "video_provider": "seedance",
+        "subject_type": "object",
+        "film_grain": "medium",
+        "use_lut": true,
+        "seedance_duration": 8,
+        "seedance_mode": "pro",
+        "seedance_generate_audio": false,
+        "seedance_resolution": "720p",
+        "seedance_camera_fixed": false,
+        "image_reference_asset_ids": ["11111111-1111-1111-1111-111111111111"],
+        "video_reference_asset_ids": ["22222222-2222-2222-2222-222222222222"],
+        "audio_reference_asset_ids": ["33333333-3333-3333-3333-333333333333"]
+      }
+    }
+  ]
+}

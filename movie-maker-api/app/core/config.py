@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     GATEWAY_ENABLED: bool = False
     GATEWAY_DEFAULT_PRIORITY: str = "quality"
 
+    # Workflow server-side execution
+    # プロセス全体で同時に実行する workflow_run の上限（超過分は pending で待機）。
+    WORKFLOW_MAX_CONCURRENT_RUNS: int = 3
+
     # Topaz Video API (for 60fps frame interpolation)
     TOPAZ_API_KEY: str = ""
 
@@ -101,6 +105,12 @@ class Settings(BaseSettings):
     # TTS Audio Postprocessing (ffmpeg: highpass/lowpass/dynaudnorm/loudnorm + MP3 320kbps)
     # False にすると従来の WAV 出力に即時切替（障害切り戻し用）
     ENABLE_TTS_POSTPROCESSING: bool = True
+
+    # fal.ai (Background Removal)
+    FAL_KEY: str = ""
+    FAL_BG_REMOVAL_VIDEO_MODEL: str = "bria/video/background-removal/v3"
+    FAL_BG_REMOVAL_IMAGE_MODEL: str = "fal-ai/bria/background/remove"
+    BG_REMOVAL_MOCK: bool = False  # ローカルE2E用: trueでfalを呼ばずsource_urlをそのまま結果として返す
 
     # Hedra API (for Lip Sync generation)
     HEDRA_API_KEY: str = ""

@@ -1,5 +1,7 @@
 export { NodeEditor } from './NodeEditor';
 export { NodePalette } from './NodePalette';
+export { ExecuteOnServerModal } from './ExecuteOnServerModal';
+export { WorkflowRunsPanel } from './WorkflowRunsPanel';
 export * from './nodes';
 export * from './hooks/useWorkflowValidation';
 export * from './hooks/useNodesAvailability';

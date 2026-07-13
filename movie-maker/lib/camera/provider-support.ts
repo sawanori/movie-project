@@ -89,8 +89,8 @@ export function getCameraSupportLevel(
 ): CameraSupportLevel {
   switch (provider) {
     case 'piapi_kling':
-      // Klingは全てネイティブ対応（バックエンドで6軸パラメータにマッピング済み）
-      return 'native';
+      // Kling 3.0 Omni ではcamera_controlパラメータが廃止されたため非対応
+      return 'unsupported';
 
     case 'hailuo':
       // Hailuoはマッピングされているもののみネイティブ

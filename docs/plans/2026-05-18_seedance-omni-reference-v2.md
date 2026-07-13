@@ -1397,4 +1397,4 @@ gantt
 | 日付 | 版 | 内容 |
 |------|----|------|
 | 2026-05-18 | v1 | 初版 (`docs/plans/2026-05-18_seedance-omni-reference.md`) |
-| 2026-05-18 | **v2** | **GPT-5.5 + Opus 4.7 ダブルレビュー指摘 5 件 (C-1〜C-5) + H-1〜H-5 を全反映。主変更: (1) PiAPI 契約名 `*_urls` 訂正 + omni 専用 task_type 廃止 + mode 不要、(2) R2 既存挙動踏襲 + 既存関数再利用、(3) `omni_reference_assets` テーブル + asset_id 経由で外部 URL 注入根絶 + RLS + 72h TTL GC + 著作権同意、(4) schema 実フィールド `image_url`/`story_text` 参照に訂正、(5) `image_reference_asset_ids` 新設で対称化、(6) AC-8 を BG failed 化に訂正、(7) duration 整数 4-15 統一、(8) 新規テスト B-29〜B-38, F-14〜F-16, AC-13〜AC-17 追加** |
+| 2026-05-18 | **v2** | **GPT-5.5 + Opus 4.8 ダブルレビュー指摘 5 件 (C-1〜C-5) + H-1〜H-5 を全反映。主変更: (1) PiAPI 契約名 `*_urls` 訂正 + omni 専用 task_type 廃止 + mode 不要、(2) R2 既存挙動踏襲 + 既存関数再利用、(3) `omni_reference_assets` テーブル + asset_id 経由で外部 URL 注入根絶 + RLS + 72h TTL GC + 著作権同意、(4) schema 実フィールド `image_url`/`story_text` 参照に訂正、(5) `image_reference_asset_ids` 新設で対称化、(6) AC-8 を BG failed 化に訂正、(7) duration 整数 4-15 統一、(8) 新規テスト B-29〜B-38, F-14〜F-16, AC-13〜AC-17 追加** |

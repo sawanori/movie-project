@@ -23,6 +23,8 @@ from app.workflows.router import router as workflows_router
 from app.tts.router import router as tts_router
 from app.lip_sync.router import router as lip_sync_router
 from app.dialogue.router import router as dialogue_router
+from app.background_removal.router import router as background_removal_router
+from app.gateway.router import router as gateway_router
 
 app = FastAPI(
     title="Movie Maker API",
@@ -56,6 +58,8 @@ app.include_router(suno_webhooks_router, prefix="/api/v1")
 app.include_router(tts_router, prefix="/api/v1")
 app.include_router(lip_sync_router, prefix="/api/v1")
 app.include_router(dialogue_router, prefix="/api/v1")
+app.include_router(background_removal_router, prefix="/api/v1")
+app.include_router(gateway_router, prefix="/api/v1")
 
 
 @app.on_event("startup")
@@ -79,6 +83,50 @@ async def _check_ffmpeg_on_startup():
             "Install ffmpeg or set ENABLE_TTS_POSTPROCESSING=False to suppress this warning."
         )
         settings._FFMPEG_AVAILABLE = False
+
+
+@app.on_event("startup")
+async def _resume_stuck_background_removals_on_startup():
+    """起動時に 'pending' / 'processing' のまま取り残された背景削除ジョブを再開する
+
+    uvicorn のリロードや Railway の再デプロイで実行中の asyncio ポーリングタスクが
+    失われるため、起動時にバックグラウンドで再開スイープを行う。
+    （asyncio.create_task で起動するため、アプリの起動はブロックしない）
+    """
+    try:
+        from app.tasks.bg_removal_processor import (
+            start_resume_stuck_background_removals,
+        )
+
+        await start_resume_stuck_background_removals()
+        logger.info("Background removal resume sweep scheduled at startup")
+    except Exception:
+        # スイープの失敗でアプリ起動を止めない
+        logger.exception(
+            "背景削除の再開スイープ起動に失敗しました（アプリ起動は継続します）"
+        )
+
+
+@app.on_event("startup")
+async def _resume_stuck_workflow_runs_on_startup():
+    """起動時に 'processing' のまま取り残された workflow_run を逐次再開する
+
+    uvicorn のリロードや Railway の再デプロイで実行中の asyncio タスクが失われるため、
+    起動時にバックグラウンドで再開スイープを行う（逐次実行でサンダリングハードを防ぐ）。
+    submitting のまま task_id 無しのステップは再送信せず failed 化する（二重課金回避）。
+    """
+    try:
+        from app.tasks.workflow_run_processor import (
+            start_resume_stuck_workflow_runs,
+        )
+
+        await start_resume_stuck_workflow_runs()
+        logger.info("Workflow run resume sweep scheduled at startup")
+    except Exception:
+        # スイープの失敗でアプリ起動を止めない
+        logger.exception(
+            "workflow_run の再開スイープ起動に失敗しました（アプリ起動は継続します）"
+        )
 
 
 @app.get("/health")

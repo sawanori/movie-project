@@ -20,16 +20,20 @@ logger = logging.getLogger(__name__)
 _gateway: Optional[UnifiedGateway] = None
 
 
-def init_gateway() -> UnifiedGateway:
-    """ゲートウェイを全プロバイダーで初期化する
+def build_registry() -> ModelRegistry:
+    """全プロバイダーのメタデータを登録した ModelRegistry を構築する
 
-    各プロバイダーの初期化は独立したtry/exceptで保護されているため、
+    各プロバイダーの登録は独立したtry/exceptで保護されているため、
     一部のAPIキーが未設定の場合でも残りのプロバイダーは正常に登録される。
 
+    メタデータ（品質/速度スコア・コスト）の唯一の定義箇所。
+    Gateway 初期化（init_gateway）と、GATEWAY_ENABLED に依存しない
+    priority ベースのプロバイダー解決（resolve_provider_with_priority）の
+    両方から利用される。
+
     Returns:
-        UnifiedGateway: 初期化済みのゲートウェイ
+        ModelRegistry: 全プロバイダー登録済みのレジストリ
     """
-    global _gateway
     registry = ModelRegistry()
 
     try:
@@ -117,6 +121,17 @@ def init_gateway() -> UnifiedGateway:
     except Exception as e:
         logger.debug(f"Gateway: Skipped seedance provider: {e}")
 
+    return registry
+
+
+def init_gateway() -> UnifiedGateway:
+    """ゲートウェイを全プロバイダーで初期化する
+
+    Returns:
+        UnifiedGateway: 初期化済みのゲートウェイ
+    """
+    global _gateway
+    registry = build_registry()
     router = GatewayRouter(registry)
     _gateway = UnifiedGateway(router)
     return _gateway

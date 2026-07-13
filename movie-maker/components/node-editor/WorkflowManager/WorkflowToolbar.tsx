@@ -1,6 +1,6 @@
 'use client';
 
-import { Save, FolderOpen, FilePlus, Cloud, HardDrive, CopyPlus } from 'lucide-react';
+import { Save, FolderOpen, FilePlus, Cloud, HardDrive, CopyPlus, Server, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface WorkflowToolbarProps {
@@ -15,6 +15,10 @@ interface WorkflowToolbarProps {
   onNew: () => void;
   onClearError: () => void;
   onDuplicate: () => void;
+  /** サーバー側で実行を開始する。未指定なら「サーバーで実行」ボタンを表示しない。 */
+  onExecuteOnServer?: () => void;
+  /** サーバー実行履歴パネルを開く。未指定なら履歴ボタンを表示しない。 */
+  onOpenRuns?: () => void;
 }
 
 export function WorkflowToolbar({
@@ -29,6 +33,8 @@ export function WorkflowToolbar({
   onNew,
   onClearError,
   onDuplicate,
+  onExecuteOnServer,
+  onOpenRuns,
 }: WorkflowToolbarProps) {
   return (
     <div className="flex items-center gap-2 px-3 py-2 bg-[#1a1a1a] border-b border-[#404040]">
@@ -68,6 +74,28 @@ export function WorkflowToolbar({
 
       {/* アクションボタン */}
       <div className="flex items-center gap-1 shrink-0">
+        {onOpenRuns && (
+          <button
+            onClick={onOpenRuns}
+            className="p-2 rounded-lg hover:bg-[#2a2a2a] text-gray-400 hover:text-white transition-colors"
+            title="サーバー実行履歴"
+          >
+            <History className="w-4 h-4" />
+          </button>
+        )}
+        {onExecuteOnServer && (
+          <button
+            onClick={onExecuteOnServer}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#fce300]/15 text-[#fce300] hover:bg-[#fce300]/25 transition-colors"
+            title="サーバーで実行"
+          >
+            <Server className="w-4 h-4" />
+            <span className="text-xs font-medium">サーバーで実行</span>
+          </button>
+        )}
+        {(onOpenRuns || onExecuteOnServer) && (
+          <div className="w-px h-5 bg-[#404040] mx-1" />
+        )}
         <button
           onClick={onDuplicate}
           disabled={selectedNodeCount === 0}

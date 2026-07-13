@@ -78,6 +78,12 @@ export interface PromptNodeData extends BaseNodeData {
 
 export interface ProviderNodeData extends BaseNodeData {
   type: 'provider';
+  // プロバイダー選択モード。
+  // 'explicit' (default/未指定): provider フィールドの具体プロバイダーを使う。
+  // 'auto': provider を送らず selectionPriority でサーバー/ゲートウェイに自動選択させる。
+  providerMode?: 'explicit' | 'auto';
+  // providerMode='auto' 時の選択優先度 (default: 'quality')。
+  selectionPriority?: 'quality' | 'speed' | 'cost';
   provider: VideoProvider;
   aspectRatio: '9:16' | '16:9';
   // 動画時間 (秒)。null = プロバイダーのデフォルト/固定値を使う。
@@ -757,6 +763,8 @@ export interface StoryVideoCreateRequest {
   // 基本設定
   aspect_ratio?: '9:16' | '16:9';
   video_provider?: VideoProvider;
+  // おまかせ (auto) 時: video_provider を送らず優先度でサーバー自動選択させる。
+  selection_priority?: 'quality' | 'speed' | 'cost';
   // V2V設定
   video_mode?: 'i2v' | 'v2v';
   source_video_url?: string;

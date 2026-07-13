@@ -110,14 +110,14 @@ case 'dialogue':
 
 ## 完了条件 (AC)
 
-- [ ] `NodeType` union に `'dialogue'` が含まれる
-- [ ] `DialogueNodeData` インターフェースが export されている
-- [ ] `WorkflowNodeData` union に `DialogueNodeData` が含まれる
-- [ ] `HasVideoOutput` インターフェースが export されている
-- [ ] `getNodeVideoOutput` 関数が export されている
-- [ ] `HANDLE_IDS.DIALOGUE_VIDEO_INPUT` と `HANDLE_IDS.DIALOGUE_VIDEO_OUTPUT` が定義されている
-- [ ] `createDefaultNodeData('dialogue')` を呼び出すと期待するデフォルト値が返る
-- [ ] `npm run build` (または `tsc --noEmit`) がエラーなし
+- [x] `NodeType` union に `'dialogue'` が含まれる
+- [x] `DialogueNodeData` インターフェースが export されている
+- [x] `WorkflowNodeData` union に `DialogueNodeData` が含まれる
+- [x] `HasVideoOutput` インターフェースが export されている
+- [x] `getNodeVideoOutput` 関数が export されている
+- [x] `HANDLE_IDS.DIALOGUE_VIDEO_INPUT` と `HANDLE_IDS.DIALOGUE_VIDEO_OUTPUT` が定義されている
+- [x] `createDefaultNodeData('dialogue')` を呼び出すと期待するデフォルト値が返る
+- [x] `npm run build` (または `tsc --noEmit`) がエラーなし
 
 ## テスト
 

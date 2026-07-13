@@ -31,8 +31,8 @@ export interface UseAutoSaveAdCreatorDraftResult {
   restoredDraft: AdCreatorDraftResponse | null;
   /** ドラフト存在情報（軽量チェック結果） */
   draftExistsInfo: AdCreatorDraftExistsResponse | null;
-  /** 手動保存をトリガー */
-  saveDraft: () => Promise<void>;
+  /** 手動保存をトリガー（force: true で enabled に関係なく保存） */
+  saveDraft: (force?: boolean) => Promise<void>;
   /** ドラフトをクリア */
   clearDraft: () => Promise<void>;
   /** ドラフト復元完了をマーク（再復元防止用） */
@@ -61,6 +61,7 @@ export interface UseAutoSaveAdCreatorDraftOptions {
   getTrimSettings: () => Record<string, AdCreatorTrimSetting>;
   getTransition: () => string;
   getTransitionDuration: () => number;
+  getImageLook?: () => string | null;
 }
 
 /**
@@ -82,6 +83,7 @@ export function useAutoSaveAdCreatorDraft(options: UseAutoSaveAdCreatorDraftOpti
     getTrimSettings,
     getTransition,
     getTransitionDuration,
+    getImageLook,
   } = options;
 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -111,13 +113,14 @@ export function useAutoSaveAdCreatorDraft(options: UseAutoSaveAdCreatorDraftOpti
       trim_settings: getTrimSettings(),
       transition: getTransition(),
       transition_duration: getTransitionDuration(),
+      image_look: getImageLook?.() ?? undefined,
       last_saved_at: null, // サーバー側で設定
       auto_saved: true,
     };
   }, [
     getAspectRatio, getAdMode, getAdScript, getScriptConfirmed, getTargetDuration,
     getStoryboardCuts, getSelectedItems, getTrimSettings,
-    getTransition, getTransitionDuration,
+    getTransition, getTransitionDuration, getImageLook,
   ]);
 
   /**
@@ -157,8 +160,12 @@ export function useAutoSaveAdCreatorDraft(options: UseAutoSaveAdCreatorDraftOpti
   /**
    * ドラフトを保存
    */
-  const saveDraft = useCallback(async () => {
-    if (!enabled || isSavingRef.current) {
+  const saveDraft = useCallback(async (force?: boolean) => {
+    if (isSavingRef.current) {
+      return;
+    }
+    // 自動保存の場合は enabled チェック、手動保存（force=true）の場合はスキップ
+    if (!force && !enabled) {
       return;
     }
 

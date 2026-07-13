@@ -432,6 +432,14 @@ function ConcatPageContent() {
     setIsSceneGeneratorOpen(true);
   }, []);
 
+  // CM目標尺変更ハンドラ
+  const handleTargetDurationChange = useCallback((newDuration: number) => {
+    setTargetDuration(newDuration);
+    setStoryboardCuts((prev) =>
+      prev.length > 0 ? distributeDurations(prev, newDuration) : prev
+    );
+  }, []);
+
   // 動画選択完了ハンドラ
   const handleVideoSelected = useCallback((video: SelectedVideo) => {
     if (!currentAdCutId) return;
@@ -1940,6 +1948,7 @@ function ConcatPageContent() {
               onRegenerate={handleRegenerateScript}
               onCutsChange={setStoryboardCuts}
               onGenerateVideoFromImage={handleGenerateVideoFromImage}
+              onTargetDurationChange={handleTargetDurationChange}
             />
           </div>
         )}

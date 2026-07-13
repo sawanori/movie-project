@@ -1,85 +1,149 @@
 {
-  "feature": "piapi_kling_lipsync_provider",
+  "feature": "workflow_automation_and_unified_gateway",
   "checks": [
     {
       "id": "check_001",
-      "target": "get_lip_sync_provider('piapi_kling')",
-      "rule": "ファクトリが PiAPIKlingLipSyncProvider インスタンスを返し、provider_name が 'piapi_kling' である",
-      "expected_result": "PiAPIKlingLipSyncProvider が返り、provider_name == 'piapi_kling'",
+      "target": "ゲートウェイ設定API",
+      "rule": "GET /api/v1/config/models・/config/capabilities・/config/recommended?priority=quality&capability=i2v が JWT 付きで 200 を返し、models には registry 登録5モデル（runway/piapi_kling/veo/hailuo/seedance）の §9 ワイヤ形式メタデータ（quality_score/speed_score/cost_per_second/max_duration/supported_aspect_ratios/capabilities）が含まれる。未認証は 401（DEBUG バイパスがあるため dependency override で検証）",
+      "expected_result": "3エンドポイントが拡張後の lib/types/provider-metadata.ts と一致する JSON を返す",
       "manual_or_automated": "automated",
-      "verification_method": "pytest tests/external/test_piapi_kling_lipsync_provider.py"
+      "verification_method": "pytest tests/gateway/ -v"
     },
     {
       "id": "check_002",
-      "target": "generate_lip_sync(video_url, audio_url, source_type='video')",
-      "rule": "POST https://api.piapi.ai/api/v1/task に model='kling', task_type='lip_sync', input.video_url=source_url, input.local_dubbing_url=audio_url を送り、data.task_id を返す",
-      "expected_result": "httpx モックで送信 body が一致し、戻り値が task_id 文字列",
+      "target": "おまかせモデル選択（router 時点解決）",
+      "rule": "POST /api/v1/videos/story で selection_priority=quality（video_provider 未指定）を送ると、router 時点で registry 最高 quality_score のプロバイダに解決され、video_generations.video_provider に具体プロバイダ名が保存されて生成が開始される",
+      "expected_result": "video_generations.video_provider = find_best_metadata('quality','i2v').name",
       "manual_or_automated": "automated",
-      "verification_method": "pytest（httpx.AsyncClient をモックし post 引数を検証）"
+      "verification_method": "pytest tests/videos/test_model_selection.py -v（プロバイダはモック）"
     },
     {
       "id": "check_003",
-      "target": "generate_lip_sync(source_type='image')",
-      "rule": "静止画ソースは Kling lip_sync 非対応のため、分かりやすい日本語メッセージの ValueError を送出する",
-      "expected_result": "ValueError が送出され、メッセージに『動画』『静止画は非対応』に類する説明が含まれる",
+      "target": "送信時フォールバック",
+      "rule": "第一候補プロバイダの generate_video が送信時に例外を投げた場合、次点プロバイダへちょうど1回フォールバックし、video_generations.video_provider（story 経路）/ step.provider_used（workflow 経路）が実使用プロバイダに更新され、構造化ログに記録される。2連続失敗は failed。外部送信には明示的な短い接続タイムアウトが設定されている",
+      "expected_result": "フォールバック1回・記録更新・タイムアウト設定がテストで固定される",
       "manual_or_automated": "automated",
-      "verification_method": "pytest（pytest.raises(ValueError)）"
+      "verification_method": "pytest tests/videos/test_model_selection.py -v"
     },
     {
       "id": "check_004",
-      "target": "check_status のステータスマッピング",
-      "rule": "PiAPI の status（completed/processing/pending/staged/failed）を LipSyncStatus.status（completed/processing/pending/pending/failed）に正しく変換し、completed 時に output から video_url を抽出する",
-      "expected_result": "各ステータスで期待どおりの LipSyncStatus を返し、completed 時 video_url が非 None",
-      "manual_or_automated": "automated",
-      "verification_method": "pytest（各 status のモックレスポンス）"
+      "target": "主要フロー: サーバーサイド・ワークフロー実行",
+      "rule": "ImageInput→Prompt→Provider→Generate→Dialogue の保存済みワークフローを POST /workflows/{id}/execute で実行すると、ブラウザ/クライアント切断状態でも run が completed になり final_output_url が得られる",
+      "expected_result": "workflow_runs.status=completed、compiled_steps 全要素 completed、final_output_url 非NULL",
+      "manual_or_automated": "manual",
+      "verification_method": "ローカル両サーバー起動（DEBUG=True）で実行後ブラウザを閉じ、GET /workflows/runs/{run_id} で完走を確認（統合レベルはモックテストでも担保: pytest tests/workflows/ -v）"
     },
     {
       "id": "check_005",
-      "target": "check_status の失敗・エラー処理",
-      "rule": "PiAPI が failed/エラーを返した場合、LipSyncStatus.status='failed' と日本語化された error_message を返す（credit/balance, rate/limit, timeout 等）",
-      "expected_result": "status=='failed' かつ error_message が設定される",
+      "target": "コンパイル検証と拒否",
+      "rule": "未対応ノードタイプを含むグラフの execute は 400 + detail に未対応ノード名一覧（現行22ノードは全対応のため将来ノード/不正データ用の防御であることをテストコメントに明記）。GenerateNode→GenerateNode の v2v チェーンは 400 + クライアント実行への案内文言",
+      "expected_result": "400 応答とエラーメッセージの内容がテストで固定される",
       "manual_or_automated": "automated",
-      "verification_method": "pytest（失敗レスポンスのモック）"
+      "verification_method": "pytest tests/services/test_workflow_engine.py tests/workflows/test_execution.py -v"
     },
     {
       "id": "check_006",
-      "target": "PIAPI_API_KEY 未設定時の初期化",
-      "rule": "PIAPI_API_KEY が空のときは生成前に明確な ValueError になる（Illegal header のような不明瞭エラーにしない）",
-      "expected_result": "ValueError が送出される",
+      "target": "耐久性: submitting プロトコルと再開（二重課金防止）",
+      "rule": "(a) submitting のまま external_task_id が無いステップは、プロセス再起動後に再送信されず run が failed 化・未着手分返金される（外部プロバイダへの二重送信ゼロ）。(b) external_task_id を持つステップはポーリング再開で完走する。(c) 起動時再開スイープは逐次実行される",
+      "expected_result": "resume_stuck_workflow_runs の3分岐が単体テストで固定される",
       "manual_or_automated": "automated",
-      "verification_method": "pytest（settings.PIAPI_API_KEY を '' にパッチ）"
+      "verification_method": "pytest tests/workflows/test_run_processor.py -v + ローカルで uvicorn 再起動の手動確認"
     },
     {
       "id": "check_007",
-      "target": "既定プロバイダー切替（LIP_SYNC_PROVIDER=piapi_kling）",
-      "rule": "リップシンクスタジオ API（/api/v1/lip-sync）と DialogueNode（use_lip_sync=True）で生成される lip_sync_generations レコードの provider が 'piapi_kling' になる",
-      "expected_result": "create_lip_sync_generation が provider='piapi_kling' を保存する",
+      "target": "キャンセル",
+      "rule": "POST /workflows/runs/{run_id}/cancel 後、以降のステップは実行されず status=canceled で停止し、未着手 Generate 分が release_video_quota で返金される。実行中の外部タスクは打ち切らない（当該ステップは消費確定）。completed/failed への cancel は 400",
+      "expected_result": "キャンセル境界の状態遷移と返金数値がテストで固定される",
       "manual_or_automated": "automated",
-      "verification_method": "pytest tests/lip_sync（service の provider 既定検証）"
+      "verification_method": "pytest tests/workflows/ -v"
     },
     {
       "id": "check_008",
-      "target": "メイン利用フロー（手動）",
-      "rule": "/generate/lip-sync で『動画』を選びキャラクター動画をアップロード→TTS でセリフ音声生成→リップシンク生成を実行すると、口が動いた動画が生成・表示される",
-      "expected_result": "ステータスが completed になり結果動画が再生できる（PiAPI 残高を消費）",
-      "manual_or_automated": "manual",
-      "verification_method": "ローカルで LIP_SYNC_PROVIDER=piapi_kling に設定しバックエンド再起動後、ブラウザで実行"
+      "target": "クォータ: 原子予約・バッチ上限・返金",
+      "rule": "(a) 予約は reserve_video_quota で原子的に行われ、残数10に対する並行 execute×2（各バッチ10）は片方のみ成功する（TOCTOU なし）。(b) バッチ数がプラン上限（free/starter=1, pro=3, business=10）超過は 403 で理由文言を返す。(c) 予約は Generate ステップ数 × バッチ数で計算され、外部プロバイダ呼び出し前に確定する。(d) failed/canceled 時に未着手分が返金される",
+      "expected_result": "予約・拒否・返金の全パスで users の月間カウントが正確に増減する",
+      "manual_or_automated": "automated",
+      "verification_method": "pytest tests/workflows/test_execution.py -v（並行予約テスト含む）"
     },
     {
       "id": "check_009",
-      "target": "回帰（Hedra 既存コード）",
-      "rule": "Hedra プロバイダーと既存テストは壊れず、LIP_SYNC_PROVIDER=hedra で従来どおり選択できる",
-      "expected_result": "tests/external/test_hedra_provider.py と lip_sync 既存テストが pass",
+      "target": "二重計上防止",
+      "rule": "ワークフロー経路の Generate ステップは使用量加算を含まない下位関数を経由し、story 直接経路の increment_video_count（videos/router.py:4014, service.py:59, 265）と二重計上にならない。story 直接経路の加算挙動は従来通り",
+      "expected_result": "workflow 実行1回（Generate×1）で月間カウント増分がちょうど1（予約分のみ）である",
       "manual_or_automated": "automated",
-      "verification_method": "pytest tests/external tests/tasks/test_lip_sync_processor.py tests/lip_sync -q"
+      "verification_method": "pytest tests/workflows/test_execution.py -v（カウント増分のアサーション）"
     },
     {
       "id": "check_010",
-      "target": "DB provider カラム制約",
-      "rule": "lip_sync_generations.provider に 'piapi_kling' を保存しても制約違反にならない",
-      "expected_result": "insert が成功する（CHECK 制約があれば事前に許可済み）",
+      "target": "同時実行制御",
+      "rule": "プロセス全体でアクティブに実行される run が WORKFLOW_MAX_CONCURRENT_RUNS（既定3）を超えない。超過分は pending で待機し、枠が空くと自動開始する",
+      "expected_result": "N+1 件同時投入でアクティブ実行が N に制限される",
+      "manual_or_automated": "automated",
+      "verification_method": "pytest tests/workflows/test_run_processor.py -v（セマフォテスト）"
+    },
+    {
+      "id": "check_011",
+      "target": "認可（API層）",
+      "rule": "他人の workflow_id への execute、他人の run_id への GET / cancel はすべて 404 を返す",
+      "expected_result": "所有者以外はリソースの存在を知り得ない",
+      "manual_or_automated": "automated",
+      "verification_method": "pytest tests/workflows/test_execution.py -v"
+    },
+    {
+      "id": "check_012",
+      "target": "RLS（DB層）",
+      "rule": "workflow_runs は RLS により本人のみ SELECT 可。anon キーおよび別ユーザーの JWT での直接 SELECT は 0 行。INSERT/UPDATE/DELETE ポリシーは存在しない（service-role のみ書き込み可）",
+      "expected_result": "DB 直アクセスでも他人の run が見えない",
       "manual_or_automated": "manual",
-      "verification_method": "Supabase でテーブル制約を確認、必要なら docs/migrations/ にマイグレーション追加・適用"
+      "verification_method": "Supabase SQL エディタ or MCP で anon/別ユーザーの SELECT・INSERT を実行し、0行・拒否を確認"
+    },
+    {
+      "id": "check_013",
+      "target": "UI: 使用量表示の差分拡張",
+      "rule": "ダッシュボードの使用量表示が既存内容（使用数/上限・残数・プラン名バッジ・アップグレード導線）を維持したまま UsageCard コンポーネントに抽出され、残数プログレスバーが追加され、リセット日（API が返す場合のみ、返さない場合は固定文言）が表示される",
+      "expected_result": "既存等価 + 追加要素が表示され、新設コンポーネントテストがグリーン",
+      "manual_or_automated": "automated",
+      "verification_method": "npm run test（usage-card テスト）+ 目視"
+    },
+    {
+      "id": "check_014",
+      "target": "UI: サーバー実行と進捗パネル",
+      "rule": "エディタの「サーバーで実行」→ モーダルで予約見込み/残数表示 → 実行 → WorkflowRunsPanel でステップ進捗が pending→submitting→processing→completed と更新され、成果物リンクとキャンセルが機能する。残数不足時は実行ボタンが無効",
+      "expected_result": "一連の UI 操作がモック API で完走する",
+      "manual_or_automated": "automated",
+      "verification_method": "npm run test:e2e（tests/e2e/workflow-server-run.spec.ts が実行されていることをレポートで確認）"
+    },
+    {
+      "id": "check_015",
+      "target": "UI: おまかせ選択とフォールバック",
+      "rule": "ProviderNode で「おまかせ（品質）」を選ぶと selection_priority がペイロードに載り（video_provider は送らない）、/config/models 取得失敗時は静的 PROVIDERS リストで操作継続できる",
+      "expected_result": "auto 選択の透過とグレースフルデグラデーションが担保される",
+      "manual_or_automated": "automated",
+      "verification_method": "npm run test（ProviderNode テスト）"
+    },
+    {
+      "id": "check_016",
+      "target": "パリティ: graph-to-api.ts ⇔ workflow_engine.py",
+      "rule": "フロント graph-to-api.parity.test.ts が生成する代表グラフ→期待ペイロード fixture と、バックエンド tests/services/fixtures/parity_graphs.json が同一内容であり、両側のパリティテストが同時にグリーンである（乖離時はフロント側再生成が正）",
+      "expected_result": "二重実装の意味論乖離が機械的に検出される状態",
+      "manual_or_automated": "automated",
+      "verification_method": "npm run test + pytest tests/services/test_workflow_engine.py -v"
+    },
+    {
+      "id": "check_017",
+      "target": "回帰: 既存機能の不変",
+      "rule": "既存のクライアント側 Execute（GenerateNode）、/generate/story の従来動作（video_provider 明示/未指定/env 既定）、ワークフロー CRUD、story 直接経路の使用量加算が全て従来通り。GATEWAY_ENABLED は False のまま、video_provider.py:223 分岐に差分なし",
+      "expected_result": "既存テストスイートが、環境依存の test_bgm_api::test_generate_bgm_success（オフライン時のみ失敗）以外グリーン、対象ファイルの git diff が計画範囲内",
+      "manual_or_automated": "automated",
+      "verification_method": "make test + npm run test + npm run test:e2e + git diff の確認"
+    },
+    {
+      "id": "check_018",
+      "target": "ビルド/静的検証",
+      "rule": "フロントエンドのビルド・lint・ユニットテストとバックエンドの全テストが成功する",
+      "expected_result": "npm run lint / npm run test / npm run build / make test が全て exit 0",
+      "manual_or_automated": "automated",
+      "verification_method": "npm run lint && npm run test && npm run build; cd movie-maker-api && make test"
     }
   ]
 }

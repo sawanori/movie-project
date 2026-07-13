@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Layout
 
-This is a monorepo for **movie-maker**, an AI video generation web app (originally 5-second vertical shorts; now expanded to multi-provider video generation, storyboards, TTS, lip-sync, BGM, upscaling, concatenation, and Seedance 2.0 omni_reference (video/audio/image references with @-syntax)).
+This is a monorepo for **movie-maker**, an AI video generation web app (originally 5-second vertical shorts; now expanded to multi-provider video generation, storyboards, TTS, lip-sync, BGM, upscaling, concatenation, Seedance 2.0 omni_reference (video/audio/image references with @-syntax), and server-side workflow execution (workflow_runs: durable runs, batch, おまかせ model selection, unified gateway catalog)).
 
 ```
 movie-project/

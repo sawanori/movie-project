@@ -193,8 +193,8 @@ async def process_video_generation(video_id: str) -> None:
             await update_video_status(video_id, "processing", progress=75)
 
             try:
-                # 60fps変換済みの場合はそのFPSを維持、そうでなければ24fps
-                ffmpeg_target_fps = None if target_fps == 60 else 24
+                # 60fps変換済みの場合も元動画の場合もFPSを維持（変換しない）
+                ffmpeg_target_fps = None
 
                 await ffmpeg.process_video(
                     video_path=interpolated_video_path,  # 60fps変換済み or 元動画

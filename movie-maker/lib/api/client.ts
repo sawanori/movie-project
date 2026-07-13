@@ -2234,6 +2234,53 @@ export const lipSyncApi = {
     }),
 };
 
+// ===== Background Removal API =====
+
+export type BackgroundRemovalJobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export interface BackgroundRemovalCreateRequest {
+  source_type: 'video' | 'image';
+  source_url: string;
+  /** 動画のみ指定可（webm がデフォルト。画像は常に透過PNG） */
+  output_format?: 'webm' | 'prores';
+}
+
+export interface BackgroundRemovalJob {
+  id: string;
+  status: BackgroundRemovalJobStatus;
+  progress: number;
+  source_type: 'video' | 'image';
+  output_format: 'webm' | 'prores' | 'png';
+  output_url?: string | null;
+  created_at: string;
+}
+
+export interface BackgroundRemovalListResponse {
+  items: BackgroundRemovalJob[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+export interface BackgroundRemovalStatus {
+  id: string;
+  status: BackgroundRemovalJobStatus;
+  progress: number;
+  output_url?: string | null;
+  error_message?: string | null;
+}
+
+export const backgroundRemovalApi = {
+  create: (body: BackgroundRemovalCreateRequest): Promise<BackgroundRemovalJob> =>
+    fetchWithAuth('/api/v1/background-removal', { method: 'POST', body: JSON.stringify(body) }),
+
+  getStatus: (id: string): Promise<BackgroundRemovalStatus> =>
+    fetchWithAuth(`/api/v1/background-removal/${id}/status`),
+
+  list: (page = 1, perPage = 20): Promise<BackgroundRemovalListResponse> =>
+    fetchWithAuth(`/api/v1/background-removal?page=${page}&per_page=${perPage}`),
+};
+
 export const workflowsApi = {
   // 自分のワークフロー一覧
   list: (): Promise<CloudWorkflowListResponse> =>
@@ -2340,5 +2387,97 @@ export const gatewayApi = {
 
   getRecommended: (priority: string, capability: string): Promise<{ name: string; provider: string }> =>
     fetchWithAuth(`/api/v1/config/recommended?priority=${priority}&capability=${capability}`),
+};
+
+// ===== Workflow Runs API (server-side execution) =====
+
+export type WorkflowRunStatus =
+  | 'pending'
+  | 'submitting'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'canceled';
+
+export type WorkflowRunStepStatusValue =
+  | 'pending'
+  | 'submitting'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'skipped';
+
+export interface WorkflowRunResponse {
+  id: string;
+  workflow_id: string | null;
+  batch_id: string | null;
+  status: WorkflowRunStatus;
+  progress: number;
+  final_output_url: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface WorkflowRunStepStatus {
+  node_id: string;
+  node_type: string;
+  status: WorkflowRunStepStatusValue;
+  output_url: string | null;
+  error_message: string | null;
+  provider_used: string | null;
+}
+
+export interface WorkflowRunDetail extends WorkflowRunResponse {
+  steps: WorkflowRunStepStatus[];
+}
+
+export interface WorkflowRunListResponse {
+  runs: WorkflowRunResponse[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+export interface ExecuteWorkflowRequest {
+  input_image_urls?: string[];
+  video_provider?: string;
+  selection_priority?: 'quality' | 'speed' | 'cost';
+}
+
+export interface ExecuteWorkflowResponse {
+  batch_id: string;
+  run_ids: string[];
+}
+
+export interface ListWorkflowRunsParams {
+  workflow_id?: string;
+  page?: number;
+  per_page?: number;
+}
+
+export const workflowRunsApi = {
+  execute: (
+    workflowId: string,
+    body: ExecuteWorkflowRequest,
+  ): Promise<ExecuteWorkflowResponse> =>
+    fetchWithAuth(`/api/v1/workflows/${workflowId}/execute`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  listRuns: (params: ListWorkflowRunsParams = {}): Promise<WorkflowRunListResponse> => {
+    const query = new URLSearchParams();
+    if (params.workflow_id) query.set('workflow_id', params.workflow_id);
+    if (params.page !== undefined) query.set('page', String(params.page));
+    if (params.per_page !== undefined) query.set('per_page', String(params.per_page));
+    const qs = query.toString();
+    return fetchWithAuth(`/api/v1/workflows/runs${qs ? `?${qs}` : ''}`);
+  },
+
+  getRun: (runId: string): Promise<WorkflowRunDetail> =>
+    fetchWithAuth(`/api/v1/workflows/runs/${runId}`),
+
+  cancelRun: (runId: string): Promise<WorkflowRunResponse> =>
+    fetchWithAuth(`/api/v1/workflows/runs/${runId}/cancel`, { method: 'POST' }),
 };
 

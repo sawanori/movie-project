@@ -1,0 +1,337 @@
+{
+  "feature": "video_to_prompt_reverse_engineering",
+  "version": 1,
+  "tasks": [
+    {
+      "task_id": "task_001",
+      "title": "逆算用システムプロンプト定数とGemini逆算関数を追加",
+      "goal": "8枚のbase64キーフレームから、その動画を生成し得るプロンプトを6次元構造のJSONで逆算するGemini関数を実装する。",
+      "scope": [
+        "prompt-lensの6次元逆算テンプレート（主体/環境/カメラ/光影/スタイル/雰囲気＋技術）を日本語化し、JSON出力を強制する定数 REVERSE_PROMPT_SYSTEM_JA を定義",
+        "reverse_engineer_prompt_from_frames(frames_base64, video_duration) -> dict を実装",
+        "Markdownコードブロック除去→json.loads→失敗時degradeフォールバック（full_description_jaにraw、core_promptに先頭行、他フィールド空）"
+      ],
+      "non_scope": [
+        "英語プロンプト生成",
+        "single/batchモード切替（複数フレーム一括分析を既定とする）",
+        "フレーム抽出（task_002）"
+      ],
+      "files_to_read": [
+        "movie-maker-api/app/external/gemini_client.py",
+        "movie-maker-api/app/services/video_analyzer.py"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "movie-maker-api/app/external/gemini_client.py"
+      ],
+      "dependencies": [],
+      "implementation_steps": [
+        "既存の _analyze_with_gemini / analyze_image_for_base_prompt のGemini呼び出し方法（genaiクライアント, types.Part.from_bytes, generation config, JSONパース）を確認",
+        "REVERSE_PROMPT_SYSTEM_JA を定義（6次元の分析指示＋出力JSONスキーマを明記、数値化指定）",
+        "reverse_engineer_prompt_from_frames を実装（全フレームを1リクエストに含め、JSONで受領、パース、フォールバック）"
+      ],
+      "done_definition": [
+        "reverse_engineer_prompt_from_frames が core_prompt/full_description_ja/subject/environment/camera/lighting/style/mood/technical を含むdictを返す",
+        "Gemini応答がコードブロック付きJSONでも正しくパースできる",
+        "Gemini応答が非JSONでも例外を投げずdegradeフォールバックdictを返す"
+      ],
+      "verify_commands": [
+        "cd movie-maker-api && ./venv/bin/python -c \"from app.external.gemini_client import reverse_engineer_prompt_from_frames, REVERSE_PROMPT_SYSTEM_JA; print('ok')\""
+      ],
+      "risk_level": "medium"
+    },
+    {
+      "task_id": "task_002",
+      "title": "キーフレーム抽出のpublicラッパーを追加",
+      "goal": "BGM用のprivate _extract_frames を、分析用途から安全に呼べるpublicメソッドとして公開する。",
+      "scope": [
+        "VideoAnalyzer に extract_keyframes(video_path, num_frames=8) -> list[str] を追加し、既存 _extract_frames へ委譲"
+      ],
+      "non_scope": [
+        "_extract_frames 本体のロジック変更",
+        "BGM分析の既存挙動変更"
+      ],
+      "files_to_read": [
+        "movie-maker-api/app/services/video_analyzer.py"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "movie-maker-api/app/services/video_analyzer.py"
+      ],
+      "dependencies": [],
+      "implementation_steps": [
+        "_extract_frames のシグネチャ（output_dir要否、戻り値）を確認",
+        "extract_keyframes を追加（一時ディレクトリ作成→_extract_frames呼び出し→パスlist返却）"
+      ],
+      "done_definition": [
+        "extract_keyframes(video_path, num_frames=8) がフレーム画像パスのlistを返す",
+        "既存BGM分析のテストが引き続き通る"
+      ],
+      "verify_commands": [
+        "cd movie-maker-api && ./venv/bin/python -m pytest tests/services/test_video_analyzer.py -v"
+      ],
+      "risk_level": "low"
+    },
+    {
+      "task_id": "task_003",
+      "title": "中間表現スキーマ（ReversePromptResult）を定義",
+      "goal": "逆算結果の構造化中間表現とリクエストスキーマをPydanticで定義する。",
+      "scope": [
+        "AnalyzePromptRequest(video_url: str)",
+        "ReversePromptResult（core_prompt, full_description_ja, subject, environment, camera, lighting, style, mood, technical）と各サブモデル"
+      ],
+      "non_scope": [
+        "DBモデル（永続化しない）"
+      ],
+      "files_to_read": [
+        "movie-maker-api/app/videos/schemas.py"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "movie-maker-api/app/videos/schemas.py"
+      ],
+      "dependencies": [],
+      "implementation_steps": [
+        "既存schemasの命名・BaseModel規約を確認",
+        "サブモデル（Subject/Environment/Camera/Lighting/Style/Mood/Technical）とReversePromptResult、AnalyzePromptRequestを追加（各フィールドに既定値を持たせ欠損耐性を確保）"
+      ],
+      "done_definition": [
+        "ReversePromptResult(**dict) がtask_001の出力dictから構築できる",
+        "全サブフィールドにデフォルトがあり、部分的なdictでもValidationErrorにならない"
+      ],
+      "verify_commands": [
+        "cd movie-maker-api && ./venv/bin/python -c \"from app.videos.schemas import ReversePromptResult, AnalyzePromptRequest; print(ReversePromptResult().core_prompt)\""
+      ],
+      "risk_level": "low"
+    },
+    {
+      "task_id": "task_004",
+      "title": "POST /api/v1/videos/analyze-prompt エンドポイントを実装",
+      "goal": "video_urlを受け、ダウンロード→8フレーム抽出→Gemini逆算→ReversePromptResultを返す同期エンドポイントを実装する。",
+      "scope": [
+        "video_urlのホスト検証（R2_PUBLIC_URL or *.r2.dev、背景削除と同方針）",
+        "r2.download_file で一時ファイル取得、ffprobeでduration取得",
+        "extract_keyframes(num_frames=8)→base64→reverse_engineer_prompt_from_frames→ReversePromptResult整形",
+        "一時ファイル・抽出フレームをfinallyで削除",
+        "認証 Depends(get_current_user)"
+      ],
+      "non_scope": [
+        "非同期ジョブ化・DBジョブ行",
+        "生成系の改修"
+      ],
+      "files_to_read": [
+        "movie-maker-api/app/videos/router.py",
+        "movie-maker-api/app/external/r2.py",
+        "movie-maker-api/app/core/dependencies.py"
+      ],
+      "files_to_create": [],
+      "files_to_modify": [
+        "movie-maker-api/app/videos/router.py",
+        "movie-maker-api/app/videos/service.py"
+      ],
+      "dependencies": ["task_001", "task_002", "task_003"],
+      "implementation_steps": [
+        "背景削除のSSRFホスト検証実装を参照し同方針のvalidatorを用意",
+        "ハンドラ実装（検証→DL→抽出→base64→逆算→整形→返却→finally削除）",
+        "ルーターが太る場合はservice.analyze_video_promptへ抽出"
+      ],
+      "done_definition": [
+        "正常系: モックした逆算関数の結果がReversePromptResultとして200で返る",
+        "video_url欠如で422、非許可ホストで400「不正な動画URLです」、未認証で401",
+        "処理後に一時ファイルが残らない"
+      ],
+      "verify_commands": [
+        "cd movie-maker-api && ./venv/bin/python -m pytest tests/videos/test_analyze_prompt.py -v"
+      ],
+      "risk_level": "medium"
+    },
+    {
+      "task_id": "task_005",
+      "title": "バックエンドテスト（逆算関数＋エンドポイント）",
+      "goal": "逆算関数とanalyze-promptエンドポイントの正常・異常・フォールバックを自動テストで担保する。",
+      "scope": [
+        "tests/external/test_reverse_prompt.py: Geminiモックでパース成功/コードブロック除去/非JSONフォールバック",
+        "tests/videos/test_analyze_prompt.py: 正常(逆算モック)/422/400/401/一時ファイル削除確認"
+      ],
+      "non_scope": [
+        "実Gemini呼び出し（モックのみ）"
+      ],
+      "files_to_read": [
+        "movie-maker-api/tests/conftest.py",
+        "movie-maker-api/tests/services/test_video_analyzer.py"
+      ],
+      "files_to_create": [
+        "movie-maker-api/tests/external/test_reverse_prompt.py",
+        "movie-maker-api/tests/videos/test_analyze_prompt.py"
+      ],
+      "files_to_modify": [],
+      "dependencies": ["task_004"],
+      "implementation_steps": [
+        "既存のauth_client fixtureとGeminiモックパターンを確認",
+        "逆算関数テスト作成（genai呼び出しをモックし戻り値を差し替え）",
+        "エンドポイントテスト作成（逆算関数・download_file・extract_keyframesをモック）"
+      ],
+      "done_definition": [
+        "新規テストが全通過",
+        "make test 全体で新規failureが出ない（既知の既存failure除く）"
+      ],
+      "verify_commands": [
+        "cd movie-maker-api && ./venv/bin/python -m pytest tests/external/test_reverse_prompt.py tests/videos/test_analyze_prompt.py -v",
+        "cd movie-maker-api && make test"
+      ],
+      "risk_level": "low"
+    },
+    {
+      "task_id": "task_006",
+      "title": "フロント: API client拡張と逆算ページ（Phase A）",
+      "goal": "動画アップロード→分析→6次元の中間表現を表示・編集・コピーできる /generate/reverse ページを作る。",
+      "scope": [
+        "lib/api/client.ts に videosApi.analyzePrompt({video_url}) と型 ReversePromptResult 等を追加",
+        "app/generate/reverse/page.tsx 作成（既存user-video-uploader流用、状態 idle/uploading/analyzing/done/error、6次元表示・編集・コピー、長尺注記）"
+      ],
+      "non_scope": [
+        "「このプロンプトで生成」導線（task_008）",
+        "globals.css変更"
+      ],
+      "files_to_read": [
+        "movie-maker/lib/api/client.ts",
+        "movie-maker/components/video/user-video-uploader.tsx",
+        "movie-maker/app/concat/page.tsx",
+        "movie-maker/app/generate/story/page.tsx"
+      ],
+      "files_to_create": [
+        "movie-maker/app/generate/reverse/page.tsx"
+      ],
+      "files_to_modify": [
+        "movie-maker/lib/api/client.ts"
+      ],
+      "dependencies": ["task_004"],
+      "implementation_steps": [
+        "既存のアップロードAPI（uploadVideo系）と fetchWithAuth 規約を確認",
+        "analyzePrompt メソッドと型を追加",
+        "ページ実装（アップロード→video_url取得→analyzePrompt→結果表示・編集・コピー）。flexレイアウトでモバイル1カラム"
+      ],
+      "done_definition": [
+        "動画アップロード後に分析が走り、6次元＋core_promptが表示される",
+        "各フィールドが編集可能、core_promptがコピー可能",
+        "npx tsc --noEmit と npm run lint が新規エラーなし"
+      ],
+      "verify_commands": [
+        "cd movie-maker && npx tsc --noEmit",
+        "cd movie-maker && npm run lint"
+      ],
+      "risk_level": "medium"
+    },
+    {
+      "task_id": "task_007",
+      "title": "フロント Phase A テスト",
+      "goal": "逆算ページの状態遷移・編集・コピーをVitest+RTLで担保する。",
+      "scope": [
+        "app/generate/reverse/page.test.tsx: idle→uploading→analyzing→done遷移、エラー表示、フィールド編集、コピー（api/uploadはvi.mock）"
+      ],
+      "non_scope": [
+        "生成導線のテスト（task_008）"
+      ],
+      "files_to_read": [
+        "movie-maker/app/background-removal/page.test.tsx",
+        "movie-maker/tests/setup.ts"
+      ],
+      "files_to_create": [
+        "movie-maker/app/generate/reverse/page.test.tsx"
+      ],
+      "files_to_modify": [],
+      "dependencies": ["task_006"],
+      "implementation_steps": [
+        "既存page.test.tsxのモック規約を確認",
+        "テスト作成（apiモックで分析結果を返し、表示・編集・コピーを検証）"
+      ],
+      "done_definition": [
+        "新規テスト全通過",
+        "npm run test 全体で新規failureなし"
+      ],
+      "verify_commands": [
+        "cd movie-maker && npm run test"
+      ],
+      "risk_level": "low"
+    },
+    {
+      "task_id": "task_008",
+      "title": "Phase B: 変換アダプタ＋/generate/storyプリフィル＋ナビ",
+      "goal": "逆算結果を日本語プロンプトに変換し、ワンクリックで /generate/story にプリフィルして既存生成フローに繋ぐ。",
+      "scope": [
+        "lib/reverse-prompt/to-japanese-prompt.ts: buildJapanesePrompt(result)->string（純関数）",
+        "逆算ページに「このプロンプトで生成」ボタン→sessionStorage('reversePrefillPrompt')設定→/generate/storyへ遷移",
+        "app/generate/story/page.tsx: マウント時にreversePrefillPromptを読みjapanesePrompt初期化、読み後キー削除",
+        "components/layout/header.tsx: 認証時ナビに「プロンプト逆算」リンク追加",
+        "lib/reverse-prompt/to-japanese-prompt.test.ts: 純関数テスト（欠損耐性含む）"
+      ],
+      "non_scope": [
+        "バックエンド生成系の改修",
+        "種寄り用途の絵コンテ展開"
+      ],
+      "files_to_read": [
+        "movie-maker/app/generate/story/page.tsx",
+        "movie-maker/components/layout/header.tsx"
+      ],
+      "files_to_create": [
+        "movie-maker/lib/reverse-prompt/to-japanese-prompt.ts",
+        "movie-maker/lib/reverse-prompt/to-japanese-prompt.test.ts"
+      ],
+      "files_to_modify": [
+        "movie-maker/app/generate/reverse/page.tsx",
+        "movie-maker/app/generate/story/page.tsx",
+        "movie-maker/components/layout/header.tsx"
+      ],
+      "dependencies": ["task_006"],
+      "implementation_steps": [
+        "story page の japanesePrompt 初期化箇所を確認し、既存フローを壊さずプリフィル読込を差し込む",
+        "変換アダプタ実装（core_prompt＋主要素を結合）＋テスト",
+        "逆算ページに生成ボタン追加（sessionStorage設定→router.push('/generate/story')）",
+        "ヘッダーにナビリンク追加"
+      ],
+      "done_definition": [
+        "「このプロンプトで生成」で /generate/story に遷移し japanesePrompt がプリフィルされる",
+        "プリフィルは1回限り（リロードで消える）",
+        "既存storyフローが回帰なし",
+        "tsc/lint/test 新規エラーなし"
+      ],
+      "verify_commands": [
+        "cd movie-maker && npx tsc --noEmit",
+        "cd movie-maker && npm run lint",
+        "cd movie-maker && npm run test"
+      ],
+      "risk_level": "medium"
+    },
+    {
+      "task_id": "task_009",
+      "title": "統合検証（手動E2E＋ビルド）",
+      "goal": "実動画でアップロード→逆算→プリフィル→生成までを通し、ビルド成功を確認する。",
+      "scope": [
+        "バックエンド・フロント起動",
+        "実動画（〜8秒）で /generate/reverse → 分析 → 結果確認 → 「このプロンプトで生成」→ /generate/story プリフィル確認",
+        "npm run build 成功確認"
+      ],
+      "non_scope": [
+        "本番デプロイ"
+      ],
+      "files_to_read": [],
+      "files_to_create": [],
+      "files_to_modify": [],
+      "dependencies": ["task_005", "task_007", "task_008"],
+      "implementation_steps": [
+        "両サーバー起動",
+        "手動でアップロード→逆算→プリフィル→生成導線を確認（受け入れAC1/AC6/AC7/AC8）",
+        "npm run build と make test を最終実行"
+      ],
+      "done_definition": [
+        "手動E2Eで逆算結果が表示され、生成ページにプリフィルされる",
+        "npm run build 成功、make test 新規failureなし"
+      ],
+      "verify_commands": [
+        "cd movie-maker && npm run build",
+        "cd movie-maker-api && make test"
+      ],
+      "risk_level": "low"
+    }
+  ]
+}

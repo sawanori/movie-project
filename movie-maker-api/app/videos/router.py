@@ -3475,11 +3475,27 @@ async def upload_video_raw_endpoint(
     - サムネイル自動生成（最初のフレーム）
     """
     # MIMEタイプチェック
+    # ※ ブラウザ/OSによっては .mov/.mp4 でも空や非標準のMIMEタイプが送られるため、
+    #   MIMEが不一致でも拡張子が動画形式なら受理する（拡張子フォールバック）
     allowed_types = ["video/mp4", "video/webm", "video/quicktime"]
-    if file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"対応していないファイル形式です。対応形式: {', '.join(allowed_types)}"
+    ext_to_mime = {"mp4": "video/mp4", "m4v": "video/mp4", "mov": "video/quicktime", "webm": "video/webm"}
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    if content_type not in allowed_types:
+        ext = file.filename.rsplit(".", 1)[-1].lower() if file.filename and "." in file.filename else ""
+        if ext not in ext_to_mime:
+            logger.warning(
+                f"upload-video-raw rejected: content_type={file.content_type!r}, filename={file.filename!r}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"対応していないファイル形式です。対応形式: {', '.join(allowed_types)}"
+                    f"（受信したファイル形式: {file.content_type or '不明'}）"
+                ),
+            )
+        logger.info(
+            f"upload-video-raw: content_type={file.content_type!r} を拡張子 .{ext} から "
+            f"{ext_to_mime[ext]} とみなして受理 (filename={file.filename!r})"
         )
 
     # ファイルサイズチェック（500MB上限）
@@ -3933,8 +3949,21 @@ async def create_story_video(
         overlay_font = request.overlay.font
         overlay_color = request.overlay.color
 
-    # video_providerの決定（リクエスト指定 > 環境変数）
-    video_provider = request.video_provider.value if request.video_provider else settings.VIDEO_PROVIDER.lower()
+    # video_providerの決定（3段解決: リクエスト明示 > selection_priority > 環境変数）
+    # 1) video_provider 明示 → それを使用（selection_priority は無視）
+    # 2) 未指定 + selection_priority 指定 → priority を具体名に解決（router 時点解決）
+    # 3) どちらも未指定 → 環境変数 VIDEO_PROVIDER（従来デフォルト）
+    if request.video_provider:
+        video_provider = request.video_provider.value
+    elif request.selection_priority:
+        from app.external.video_provider import resolve_provider_with_priority
+        video_provider = resolve_provider_with_priority(request.selection_priority, "i2v")
+        logger.info(
+            f"selection_priority={request.selection_priority} resolved to "
+            f"video_provider={video_provider}"
+        )
+    else:
+        video_provider = settings.VIDEO_PROVIDER.lower()
 
     # 動画生成レコードを作成
     video_data = {
@@ -4004,8 +4033,15 @@ async def create_story_video(
         "action_type": "video_generated",
     }).execute()
 
-    # バックグラウンドでストーリー動画処理を開始（element_imagesも渡す）
-    background_tasks.add_task(start_story_processing, video_id, video_provider, element_urls)
+    # バックグラウンドでストーリー動画処理を開始（element_images / selection_priority も渡す）
+    # selection_priority は送信時フォールバックの次点ランキングに使用（DB カラムは追加しない）
+    background_tasks.add_task(
+        start_story_processing,
+        video_id,
+        video_provider,
+        element_urls,
+        request.selection_priority,
+    )
 
     return service._format_story_video_response(video_record)
 

@@ -204,11 +204,19 @@ async def upload_audio(file_content: bytes, filename: str) -> str:
     return get_public_url(key)
 
 
-async def download_file(url: str) -> bytes:
-    """外部URLからファイルをダウンロード（リダイレクト対応）"""
+async def download_file(url: str, *, follow_redirects: bool = True) -> bytes:
+    """外部URLからファイルをダウンロード（既定はリダイレクト対応）
+
+    Args:
+        url: ダウンロード対象URL
+        follow_redirects: リダイレクト追従の可否（既定 True = 従来挙動）。
+            ホスト許可リストで検証した URL を SSRF から守る呼び出し元は
+            ``follow_redirects=False`` を指定してリダイレクトによる許可リスト
+            回避を防止する。既存の全呼び出し元は既定値のまま挙動不変。
+    """
     import httpx
 
-    async with httpx.AsyncClient(follow_redirects=True) as client:
+    async with httpx.AsyncClient(follow_redirects=follow_redirects) as client:
         response = await client.get(url, timeout=120.0)
         response.raise_for_status()
         return response.content

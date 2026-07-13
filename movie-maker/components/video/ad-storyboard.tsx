@@ -1,14 +1,13 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Plus, Play, RefreshCw, AlertCircle, Clock } from "lucide-react";
+import { ArrowLeft, Plus, Play, RefreshCw, AlertCircle, Clock, Edit2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AdScriptResponse } from "@/lib/api/client";
 import { AdCutCard, EditableCut, SelectedVideo } from "./ad-cut-card";
 import { AspectRatio } from "@/lib/types/video";
 import {
-  distributeDurations,
   adjustDurationsOnChange,
   calculateStartTimes,
   validateDurationChange,
@@ -26,15 +25,16 @@ interface AdStoryboardProps {
   onSelectVideo: (cutId: string) => void;
   onGenerateVideo: (cutId: string, descriptionEn: string) => void;
   onRegenerate: () => void;
-  onCutsChange: (cuts: EditableCut[]) => void;
+  onCutsChange: (cuts: EditableCut[] | ((prev: EditableCut[]) => EditableCut[])) => void;
   /** 生成済み画像から動画を生成 */
   onGenerateVideoFromImage?: (cutId: string, imageUrl: string) => void;
+  /** CM全体の目標尺を変更 */
+  onTargetDurationChange?: (duration: number) => void;
 }
 
 export function AdStoryboard({
   script,
   cuts,
-  aspectRatio,
   targetDuration,
   onBack,
   onNext,
@@ -43,7 +43,10 @@ export function AdStoryboard({
   onRegenerate,
   onCutsChange,
   onGenerateVideoFromImage,
+  onTargetDurationChange,
 }: AdStoryboardProps) {
+  const [isEditingTargetDuration, setIsEditingTargetDuration] = useState(false);
+
   // 合計秒数を計算
   const totalDuration = useMemo(
     () => cuts.reduce((sum, cut) => sum + cut.duration, 0),
@@ -86,37 +89,61 @@ export function AdStoryboard({
     onCutsChange(newCuts.map((cut, i) => ({ ...cut, cut_number: i + 1 })));
   }, [cuts, onCutsChange]);
 
-  // カットの削除
+  // カットの削除（削除分の秒数を最後のカットに加算）
   const handleDeleteCut = useCallback((index: number) => {
     if (cuts.length <= 1) return; // 最低1カットは必要
+    const deletedDuration = cuts[index].duration;
     let newCuts = cuts.filter((_, i) => i !== index);
-    // cut_numberを更新
     newCuts = newCuts.map((cut, i) => ({ ...cut, cut_number: i + 1 }));
-    // CM尺が設定されている場合は秒数を再分配
-    if (targetDuration) {
-      newCuts = distributeDurations(newCuts, targetDuration);
+    // CM尺が設定されている場合は削除分を最後のカットに加算
+    if (targetDuration && newCuts.length > 0) {
+      const lastIdx = newCuts.length - 1;
+      newCuts[lastIdx] = {
+        ...newCuts[lastIdx],
+        duration: newCuts[lastIdx].duration + deletedDuration,
+      };
     }
     onCutsChange(newCuts);
   }, [cuts, targetDuration, onCutsChange]);
 
-  // カットの追加
+  // カットの追加（最後のカットから秒数を分けて新カットに割り当て）
   const handleAddCut = useCallback(() => {
-    const newCut: EditableCut = {
-      id: `cut_new_${Date.now()}`,
-      cut_number: cuts.length + 1,
-      scene_type: "custom",
-      scene_type_label: "カスタム",
-      description_ja: "",
-      description_en: "",
-      duration: targetDuration ? Math.floor(targetDuration / (cuts.length + 1)) : 5,
-      dialogue: "",
-      sound_effect: "",
-      video: null,
-    };
-    let newCuts = [...cuts, newCut];
-    // CM尺が設定されている場合は秒数を再分配
-    if (targetDuration) {
-      newCuts = distributeDurations(newCuts, targetDuration);
+    let newCuts = [...cuts];
+    const lastCut = newCuts[newCuts.length - 1];
+
+    if (targetDuration && lastCut) {
+      // 最後のカットの秒数を分割（半分を新カットに）
+      const splitDuration = Math.max(1, Math.floor(lastCut.duration / 2));
+      const remainDuration = Math.max(1, lastCut.duration - splitDuration);
+      newCuts[newCuts.length - 1] = { ...lastCut, duration: remainDuration };
+
+      const newCut: EditableCut = {
+        id: `cut_new_${Date.now()}`,
+        cut_number: cuts.length + 1,
+        scene_type: "custom",
+        scene_type_label: "カスタム",
+        description_ja: "",
+        description_en: "",
+        duration: splitDuration,
+        dialogue: "",
+        sound_effect: "",
+        video: null,
+      };
+      newCuts = [...newCuts, newCut];
+    } else {
+      const newCut: EditableCut = {
+        id: `cut_new_${Date.now()}`,
+        cut_number: cuts.length + 1,
+        scene_type: "custom",
+        scene_type_label: "カスタム",
+        description_ja: "",
+        description_en: "",
+        duration: 5,
+        dialogue: "",
+        sound_effect: "",
+        video: null,
+      };
+      newCuts = [...newCuts, newCut];
     }
     onCutsChange(newCuts);
   }, [cuts, targetDuration, onCutsChange]);
@@ -160,22 +187,17 @@ export function AdStoryboard({
   // カットの秒数を更新（CM尺設定時は他のカットも自動調整）
   const handleUpdateDuration = useCallback(
     (cutId: string, newDuration: number) => {
-      if (targetDuration) {
-        // 入力を検証
-        const validation = validateDurationChange(cuts, cutId, newDuration, targetDuration);
-        const adjustedDuration = validation.adjustedDuration ?? newDuration;
-
-        // 他のカットの秒数を自動調整
-        const adjustedCuts = adjustDurationsOnChange(cuts, cutId, adjustedDuration, targetDuration);
-        onCutsChange(adjustedCuts);
-      } else {
-        // CM尺が設定されていない場合は単純に更新
-        onCutsChange(
-          cuts.map((cut) => (cut.id === cutId ? { ...cut, duration: newDuration } : cut))
-        );
-      }
+      onCutsChange((prev: EditableCut[]) => {
+        if (targetDuration) {
+          const validation = validateDurationChange(prev, cutId, newDuration, targetDuration);
+          const adjustedDuration = validation.adjustedDuration ?? newDuration;
+          return adjustDurationsOnChange(prev, cutId, adjustedDuration, targetDuration);
+        } else {
+          return prev.map((cut) => (cut.id === cutId ? { ...cut, duration: newDuration } : cut));
+        }
+      });
     },
-    [cuts, targetDuration, onCutsChange]
+    [targetDuration, onCutsChange]
   );
 
   // 動画を削除
@@ -269,13 +291,46 @@ export function AdStoryboard({
             {script.theory_label}
           </span>
 
-          {/* CM尺表示（読み取り専用） */}
+          {/* CM尺表示（クリックで変更可能） */}
           {targetDuration && (
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium px-2 py-0.5 rounded bg-primary/10 text-primary">
-                {targetDuration}秒CM
-              </span>
+              {isEditingTargetDuration ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    autoFocus
+                    min={1}
+                    max={600}
+                    defaultValue={targetDuration}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const val = Math.min(600, Math.max(1, Number((e.target as HTMLInputElement).value) || targetDuration));
+                        onTargetDurationChange?.(val);
+                        setIsEditingTargetDuration(false);
+                      } else if (e.key === "Escape") {
+                        setIsEditingTargetDuration(false);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const val = Math.min(600, Math.max(1, Number(e.target.value) || targetDuration));
+                      onTargetDurationChange?.(val);
+                      setIsEditingTargetDuration(false);
+                    }}
+                    className="w-16 text-sm font-medium px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <span className="text-sm text-muted-foreground">秒</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingTargetDuration(true)}
+                  className="group flex items-center gap-1 text-sm font-medium px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                >
+                  {targetDuration}秒CM
+                  <Edit2 className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
+              )}
               {totalDuration !== targetDuration && (
                 <span className="text-xs text-amber-500">
                   （現在: {totalDuration}秒）

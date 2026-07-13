@@ -55,6 +55,8 @@ export function StoryboardPDFExportInternal({
       cuts.forEach((cut, i) => {
         console.log(`Cut ${i + 1}:`, {
           id: cut.id,
+          dialogue: cut.dialogue || "(empty)",
+          sound_effect: cut.sound_effect || "(empty)",
           hasVideo: !!cut.video,
           thumbnailUrl: cut.video?.thumbnailUrl || "なし",
           generatedImageUrl: cut.generatedImageUrl || "なし",

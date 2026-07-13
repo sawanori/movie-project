@@ -49,10 +49,10 @@ dialogue: DialogueNode,
 
 ## 完了条件 (AC)
 
-- [ ] `nodes/index.ts` に `export { DialogueNode }` が追加されている
-- [ ] `utils/node-types.ts` の `nodeTypes` に `dialogue: DialogueNode` が追加されている
-- [ ] `npm run build` (または `tsc --noEmit`) がエラーなし
-- [ ] 既存の `nodeTypes` エントリ (generate, bgm, overlay 等) が変更されていない
+- [x] `nodes/index.ts` に `export { DialogueNode }` が追加されている
+- [x] `utils/node-types.ts` の `nodeTypes` に `dialogue: DialogueNode` が追加されている
+- [x] `npm run build` (または `tsc --noEmit`) がエラーなし
+- [x] 既存の `nodeTypes` エントリ (generate, bgm, overlay 等) が変更されていない
 
 ## テスト
 

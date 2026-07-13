@@ -22,6 +22,8 @@ interface UseWorkflowManagerReturn {
   workflowList: WorkflowListItem[];
   cloudWorkflowList: CloudWorkflowListItem[];
   currentWorkflowId: string | null;
+  /** クラウド保存済みワークフローのサーバー側 ID (サーバー実行に使用)。未保存なら null。 */
+  cloudWorkflowId: string | null;
   currentWorkflowName: string;
   isUnsaved: boolean;
   isCloudSynced: boolean;
@@ -410,6 +412,7 @@ export function useWorkflowManager(
     workflowList,
     cloudWorkflowList,
     currentWorkflowId,
+    cloudWorkflowId,
     currentWorkflowName,
     isUnsaved,
     isCloudSynced,

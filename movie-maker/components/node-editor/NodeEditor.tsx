@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   useNodesState,
@@ -31,6 +31,8 @@ import { emitNodeDataUpdate } from './utils/emit-node-data';
 import { useWorkflowValidation } from './hooks/useWorkflowValidation';
 import { useWorkflowManager } from './hooks/useWorkflowManager';
 import { WorkflowToolbar, SaveWorkflowModal, WorkflowList } from './WorkflowManager';
+import { ExecuteOnServerModal } from './ExecuteOnServerModal';
+import { WorkflowRunsPanel } from './WorkflowRunsPanel';
 import { useAuth } from '@/components/providers/auth-provider';
 import type {
   WorkflowNode,
@@ -45,7 +47,7 @@ import type {
   StitchVideosNodeData,
 } from '@/lib/types/node-editor';
 import { createDefaultNodeData as createData, getNodeVideoOutput, HANDLE_IDS } from '@/lib/types/node-editor';
-import { videosApi, dialogueApi, utilityApi } from '@/lib/api/client';
+import { videosApi, dialogueApi, utilityApi, type ExecuteWorkflowResponse } from '@/lib/api/client';
 
 interface NodeEditorProps {
   onVideoGenerated?: (videoUrl: string) => void;
@@ -76,6 +78,15 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
   // モーダル状態
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isOpenModalOpen, setIsOpenModalOpen] = useState(false);
+
+  // サーバー実行 UI 状態
+  const [isExecuteModalOpen, setIsExecuteModalOpen] = useState(false);
+  const [isRunsPanelOpen, setIsRunsPanelOpen] = useState(false);
+  const [activeBatchRunId, setActiveBatchRunId] = useState<string | null>(null);
+  // クラウド未保存のままサーバー実行を押した時の保存促しダイアログ
+  const [showSavePrompt, setShowSavePrompt] = useState(false);
+  // 保存完了後にサーバー実行モーダルを開く意図フラグ
+  const pendingExecuteAfterSave = useRef(false);
 
   // コピー＆ペースト機能
   const handleCopy = useCallback(() => {
@@ -218,6 +229,7 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
     workflowList,
     cloudWorkflowList,
     currentWorkflowId,
+    cloudWorkflowId,
     currentWorkflowName,
     isUnsaved,
     isCloudSynced,
@@ -947,7 +959,13 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
   // クラウド保存
   const handleSaveCloud = useCallback(
     async (name: string, isPublic: boolean): Promise<boolean> => {
-      return await saveToCloud(name, isPublic);
+      const success = await saveToCloud(name, isPublic);
+      // サーバー実行フローからの保存だった場合、保存成功でそのまま実行モーダルへ
+      if (success && pendingExecuteAfterSave.current) {
+        pendingExecuteAfterSave.current = false;
+        setIsExecuteModalOpen(true);
+      }
+      return success;
     },
     [saveToCloud]
   );
@@ -989,6 +1007,41 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
     [loadCloudWorkflow, nodes]
   );
 
+  // ===== サーバー実行 =====
+
+  // ImageInput ノード数からバッチ可否を判定。
+  // バッチ実行は入力画像 1 個 (ImageInput 1 個) の I2V グラフのみ。
+  // ImageInput が 1 個でない場合はバッチ画像選択を無効化する
+  // (グラフ由来のエラーはバックエンドが 400 で返す)。
+  const batchDisabledReason = useMemo<string | undefined>(() => {
+    const imageInputCount = nodes.filter(
+      (n) => (n.data as WorkflowNodeData).type === 'imageInput'
+    ).length;
+    if (imageInputCount === 1) return undefined;
+    return imageInputCount === 0
+      ? '入力画像ノードが無いため、バッチ画像選択は利用できません'
+      : '入力画像ノードが複数あるため、バッチ画像選択は利用できません';
+  }, [nodes]);
+
+  // 「サーバーで実行」押下: クラウド未保存ならまず保存を促す
+  const handleExecuteOnServer = useCallback(() => {
+    if (cloudWorkflowId) {
+      setIsExecuteModalOpen(true);
+    } else {
+      setShowSavePrompt(true);
+    }
+  }, [cloudWorkflowId]);
+
+  // 実行成功: パネルを開き当該 batch の先頭 run を選択
+  const handleExecuted = useCallback(
+    (result: ExecuteWorkflowResponse) => {
+      setIsExecuteModalOpen(false);
+      setActiveBatchRunId(result.run_ids[0] ?? null);
+      setIsRunsPanelOpen(true);
+    },
+    []
+  );
+
   return (
     <div className="flex flex-col h-[calc(100vh-80px)] bg-[#1a1a1a] rounded-xl overflow-hidden border border-[#404040]">
       {/* ツールバー */}
@@ -1004,6 +1057,8 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
         onNew={handleReset}
         onClearError={clearSaveError}
         onDuplicate={handleDuplicate}
+        onExecuteOnServer={handleExecuteOnServer}
+        onOpenRuns={cloudWorkflowId ? () => setIsRunsPanelOpen(true) : undefined}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -1097,7 +1152,10 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
       {/* 保存モーダル */}
       <SaveWorkflowModal
         isOpen={isSaveModalOpen}
-        onClose={() => setIsSaveModalOpen(false)}
+        onClose={() => {
+          setIsSaveModalOpen(false);
+          pendingExecuteAfterSave.current = false;
+        }}
         currentName={currentWorkflowName}
         onSaveLocal={handleSaveLocal}
         onSaveCloud={handleSaveCloud}
@@ -1118,6 +1176,58 @@ function NodeEditorInner({ onVideoGenerated }: NodeEditorProps) {
         onDuplicateCloud={duplicateCloudWorkflow}
         onClose={() => setIsOpenModalOpen(false)}
       />
+
+      {/* クラウド未保存時の保存促しダイアログ */}
+      {showSavePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-[#2a2a2a] rounded-xl border border-[#404040] p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-white mb-2">
+              サーバー実行には保存が必要です
+            </h3>
+            <p className="text-sm text-gray-400 mb-5">
+              サーバーで実行するには、ワークフローをクラウドに保存してください。
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowSavePrompt(false)}
+                className="flex-1 px-4 py-2 border border-[#404040] rounded-lg text-gray-300 hover:bg-[#333333] transition-colors"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={() => {
+                  pendingExecuteAfterSave.current = true;
+                  setShowSavePrompt(false);
+                  setIsSaveModalOpen(true);
+                }}
+                className="flex-1 px-4 py-2 bg-[#fce300] text-[#212121] font-medium rounded-lg hover:bg-[#e5cf00] transition-colors"
+              >
+                クラウドに保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* サーバー実行モーダル */}
+      {isExecuteModalOpen && cloudWorkflowId && (
+        <ExecuteOnServerModal
+          isOpen={isExecuteModalOpen}
+          workflowId={cloudWorkflowId}
+          onClose={() => setIsExecuteModalOpen(false)}
+          onExecuted={handleExecuted}
+          batchDisabledReason={batchDisabledReason}
+        />
+      )}
+
+      {/* サーバー実行履歴パネル */}
+      {isRunsPanelOpen && (
+        <WorkflowRunsPanel
+          workflowId={cloudWorkflowId}
+          initialRunId={activeBatchRunId}
+          onClose={() => setIsRunsPanelOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -320,7 +320,15 @@ class FFmpegService:
             stderr=asyncio.subprocess.PIPE,
         )
 
-        stdout, stderr = await process.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=600  # 10分タイムアウト
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            logger.error("FFmpeg ProRes変換がタイムアウト（600秒）")
+            raise FFmpegError("ProRes変換がタイムアウトしました（10分超過）。動画が大きすぎる可能性があります。")
 
         if process.returncode != 0:
             error_msg = stderr.decode() if stderr else "不明なエラー"
@@ -681,12 +689,12 @@ class FFmpegService:
         target_fps: int = 24,
     ) -> str:
         """
-        動画のフレームレートを変換（シネマティック24fps等）
+        動画のフレームレートを変換
 
         Args:
             video_path: 入力動画パス
             output_path: 出力動画パス
-            target_fps: 目標フレームレート（デフォルト24fps）
+            target_fps: 目標フレームレート（デフォルト30fps）
 
         Returns:
             str: 出力動画パス
@@ -824,7 +832,7 @@ class FFmpegService:
         lut_intensity: float = 0.0,
         promist_enabled: bool = True,
         promist_intensity: float = 0.125,
-        target_fps: Optional[int] = 24,
+        target_fps: Optional[int] = None,
     ) -> str:
         """
         動画に複数の処理を一括で適用
@@ -846,7 +854,7 @@ class FFmpegService:
             lut_intensity: LUT強度（0.0-1.0、デフォルト0.0=無効）
             promist_enabled: Pro-Mist効果を有効にするか（デフォルトTrue）
             promist_intensity: Pro-Mist強度（デフォルト0.125 = 1/8）
-            target_fps: 目標フレームレート（デフォルト24fps、Noneで変換なし）
+            target_fps: 目標フレームレート（デフォルト30fps、Noneで変換なし）
 
         Returns:
             str: 出力動画パス
@@ -1035,6 +1043,39 @@ class FFmpegService:
 
         return {}
 
+    async def probe_video_info(self, video_path: str) -> dict:
+        """
+        動画の主要情報（codec_name / pix_fmt / width / height）を取得する
+
+        既存の get_video_info（ffprobe -print_format json）を再利用し、
+        最初の映像ストリームから必要なフィールドのみを抽出する。
+        背景削除のプロキシ要否判定（コーデック / ピクセルフォーマット）等に使用する。
+
+        Args:
+            video_path: 動画ファイルパス
+
+        Returns:
+            dict: {"codec_name": str, "pix_fmt": str, "width": int, "height": int}
+
+        Raises:
+            FFmpegError: ffprobe 失敗時 / 映像ストリームが見つからない場合
+        """
+        info = await self.get_video_info(video_path)
+        streams = info.get("streams") or []
+        video_stream = next(
+            (s for s in streams if s.get("codec_type") == "video"), None
+        )
+        if not video_stream:
+            raise FFmpegError(
+                f"動画情報の取得に失敗しました（映像ストリームが見つかりません）: {video_path}"
+            )
+        return {
+            "codec_name": video_stream.get("codec_name"),
+            "pix_fmt": video_stream.get("pix_fmt"),
+            "width": video_stream.get("width"),
+            "height": video_stream.get("height"),
+        }
+
     async def trim_video(
         self,
         input_path: str,
@@ -1161,6 +1202,7 @@ class FFmpegService:
         output_path: str,
         transition: str = "none",
         transition_duration: float = 0.5,
+        target_fps: Optional[int] = None,
     ) -> str:
         """
         複数の動画を結合して1本の動画を作成
@@ -1175,6 +1217,7 @@ class FFmpegService:
                 - "wipeleft", "wiperight": ワイプ
                 - "slideup", "slidedown": スライド
             transition_duration: トランジション時間（秒）
+            target_fps: 目標フレームレート（Noneで入力動画のFPSを自動検出）
 
         Returns:
             str: 出力動画パス
@@ -1204,38 +1247,25 @@ class FFmpegService:
 
         if transition == "none":
             # シンプル結合（トランジションなし）
-            return await self._concat_simple(video_paths, output_path)
+            return await self._concat_simple(video_paths, output_path, target_fps=target_fps)
         else:
             # トランジション付き結合
             return await self._concat_with_transition(
-                video_paths, output_path, transition, transition_duration
+                video_paths, output_path, transition, transition_duration, target_fps=target_fps
             )
 
-    async def _concat_simple(self, video_paths: list[str], output_path: str) -> str:
-        """
-        シンプル結合（トランジションなし）
-        concat demuxerを使用して高速に結合
-        """
-        # 一時的なファイルリストを作成
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            filelist_path = f.name
-            for path in video_paths:
-                # パスをエスケープ
-                escaped_path = path.replace("'", "'\\''")
-                f.write(f"file '{escaped_path}'\n")
+    async def _get_video_fps(self, video_path: str) -> Optional[float]:
+        """動画のフレームレートを取得"""
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=r_frame_rate",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            video_path,
+        ]
 
         try:
-            cmd = [
-                "ffmpeg", "-y",
-                "-f", "concat",
-                "-safe", "0",
-                "-i", filelist_path,
-                "-c", "copy",  # 再エンコードなしで高速
-                output_path,
-            ]
-
-            logger.debug(f"FFmpeg concat command: {' '.join(cmd)}")
-
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -1243,18 +1273,133 @@ class FFmpegService:
             )
             stdout, stderr = await process.communicate()
 
-            if process.returncode != 0:
-                error_msg = stderr.decode() if stderr else "Unknown error"
-                logger.error(f"FFmpeg concat failed: {error_msg}")
-                raise FFmpegError(f"動画結合に失敗しました: {error_msg}")
+            if process.returncode == 0 and stdout:
+                fps_str = stdout.decode().strip()
+                # r_frame_rate is returned as a fraction like "30/1" or "30000/1001"
+                if "/" in fps_str:
+                    num, den = fps_str.split("/")
+                    return float(num) / float(den)
+                return float(fps_str)
+        except Exception as e:
+            logger.warning(f"FPS取得に失敗: {e}")
 
-            logger.info(f"シンプル結合完了: {output_path}")
-            return output_path
+        return None
+
+    async def _concat_simple(
+        self,
+        video_paths: list[str],
+        output_path: str,
+        target_fps: Optional[int] = None,
+    ) -> str:
+        """
+        シンプル結合（トランジションなし）
+        concat demuxerを使用して高速に結合
+
+        Args:
+            video_paths: 結合する動画ファイルのパスリスト
+            output_path: 出力先パス
+            target_fps: 目標フレームレート（Noneで入力動画のFPSを自動検出）
+        """
+        actual_paths = video_paths
+        temp_fps_files = []
+
+        try:
+            # 各入力動画のFPSを取得
+            fps_values = []
+            for path in video_paths:
+                fps = await self._get_video_fps(path)
+                fps_values.append(fps)
+                logger.debug(f"Input FPS for {path}: {fps}")
+
+            # target_fpsが未指定の場合、最頻値（または最初の有効なFPS）を使用
+            if target_fps is None:
+                valid_fps = [f for f in fps_values if f is not None]
+                if valid_fps:
+                    # 最頻値を使用（全て同じであればそのFPS）
+                    from collections import Counter
+                    rounded = [round(f) for f in valid_fps]
+                    target_fps = Counter(rounded).most_common(1)[0][0]
+                    logger.info(f"入力動画のFPSを自動検出: {target_fps}fps (入力: {fps_values})")
+                else:
+                    target_fps = 24  # フォールバック
+                    logger.warning(f"FPS取得に全て失敗、フォールバック: {target_fps}fps")
+
+            # 全て同一FPSか判定
+            needs_normalize = False
+            for fps in fps_values:
+                if fps is None or abs(fps - target_fps) > 0.5:
+                    needs_normalize = True
+                    break
+
+            if needs_normalize:
+                logger.info(f"FPS正規化が必要: {fps_values} -> {target_fps}fps")
+                normalized_paths = []
+                for i, path in enumerate(video_paths):
+                    fps = fps_values[i]
+                    if fps is not None and abs(fps - target_fps) <= 0.5:
+                        normalized_paths.append(path)
+                    else:
+                        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+                            temp_path = f.name
+                            temp_fps_files.append(temp_path)
+                        await self.convert_fps(
+                            video_path=path,
+                            output_path=temp_path,
+                            target_fps=target_fps,
+                        )
+                        normalized_paths.append(temp_path)
+                actual_paths = normalized_paths
+            else:
+                logger.info(f"全入力動画が{target_fps}fpsのため正規化不要")
+
+            # 一時的なファイルリストを作成
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+                filelist_path = f.name
+                for path in actual_paths:
+                    # パスをエスケープ
+                    escaped_path = path.replace("'", "'\\''")
+                    f.write(f"file '{escaped_path}'\n")
+
+            try:
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-f", "concat",
+                    "-safe", "0",
+                    "-i", filelist_path,
+                    "-c", "copy",  # 再エンコードなしで高速
+                    output_path,
+                ]
+
+                logger.debug(f"FFmpeg concat command: {' '.join(cmd)}")
+
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await process.communicate()
+
+                if process.returncode != 0:
+                    error_msg = stderr.decode() if stderr else "Unknown error"
+                    logger.error(f"FFmpeg concat failed: {error_msg}")
+                    raise FFmpegError(f"動画結合に失敗しました: {error_msg}")
+
+                logger.info(f"シンプル結合完了: {output_path}")
+                return output_path
+
+            finally:
+                # ファイルリストを削除
+                if os.path.exists(filelist_path):
+                    os.unlink(filelist_path)
 
         finally:
-            # ファイルリストを削除
-            if os.path.exists(filelist_path):
-                os.unlink(filelist_path)
+            # FPS正規化用一時ファイルをクリーンアップ
+            for temp_file in temp_fps_files:
+                try:
+                    if os.path.exists(temp_file):
+                        os.unlink(temp_file)
+                except Exception as e:
+                    logger.warning(f"一時ファイルの削除に失敗: {temp_file}, {e}")
 
     async def _has_audio_stream(self, video_path: str) -> bool:
         """動画に音声トラックがあるかチェック"""
@@ -1287,6 +1432,7 @@ class FFmpegService:
         output_path: str,
         transition: str,
         transition_duration: float,
+        target_fps: Optional[int] = None,
     ) -> str:
         """
         トランジション付き結合
@@ -1299,6 +1445,12 @@ class FFmpegService:
             if duration is None:
                 raise FFmpegError(f"動画の長さを取得できません: {path}")
             durations.append(duration)
+
+        # target_fpsが未指定の場合、入力動画のFPSを自動検出
+        if target_fps is None:
+            fps = await self._get_video_fps(video_paths[0])
+            target_fps = round(fps) if fps else 24
+            logger.info(f"トランジション結合: 入力FPS自動検出 -> {target_fps}fps")
 
         # 音声トラックの有無を確認（最初の動画で判定）
         has_audio = await self._has_audio_stream(video_paths[0])
@@ -1317,7 +1469,7 @@ class FFmpegService:
 
         # 映像フィルター
         video_filter = self._build_video_xfade_filter(
-            n, durations, transition, transition_duration
+            n, durations, transition, transition_duration, target_fps=target_fps
         )
         filter_parts.append(video_filter)
 
@@ -1384,6 +1536,7 @@ class FFmpegService:
         durations: list[float],
         transition: str,
         transition_duration: float,
+        target_fps: int = 24,
     ) -> str:
         """
         映像用xfadeフィルターを構築
@@ -1393,13 +1546,20 @@ class FFmpegService:
         [0:v]fps=24,settb=AVTB[v0];[1:v]fps=24,settb=AVTB[v1];[2:v]fps=24,settb=AVTB[v2];
         [v0][v1]xfade=transition=fade:duration=0.5:offset=4.5[v01];
         [v01][v2]xfade=transition=fade:duration=0.5:offset=9.0[vout]
+
+        Args:
+            n: 入力動画の数
+            durations: 各動画の長さ（秒）
+            transition: トランジション種類
+            transition_duration: トランジション時間（秒）
+            target_fps: 正規化するフレームレート（呼び出し元から入力FPSが渡される）
         """
         parts = []
-        
-        # Step 1: 各入力を正規化（fps=24, settb=AVTB）
+
+        # Step 1: 各入力を正規化（fps=target_fps, settb=AVTB）
         normalize_parts = []
         for i in range(n):
-            normalize_parts.append(f"[{i}:v]fps=24,settb=AVTB[v{i}]")
+            normalize_parts.append(f"[{i}:v]fps={target_fps},settb=AVTB[v{i}]")
         parts.append(";".join(normalize_parts))
         
         # Step 2: xfadeフィルターを構築
@@ -1461,6 +1621,186 @@ class FFmpegService:
             parts.append(f"{input1}{input2}acrossfade=d={transition_duration}{output}")
 
         return ";".join(parts)
+
+    # トランジション種類からFFmpegのxfadeトランジション名へのマッピング
+    TIMELINE_TRANSITION_MAP = {
+        "crossfade": "fade",
+        "fade_black": "fadeblack",
+        "fade_white": "fadewhite",
+        "wipe_left": "wipeleft",
+        "none": None,
+    }
+
+    def _build_xfade_filter_for_transition_type(
+        self,
+        n: int,
+        durations: list[float],
+        transition_type: str,
+        transition_duration: float,
+        target_fps: int = 24,
+    ) -> str:
+        """
+        タイムライン用トランジション種類からxfadeフィルター文字列を構築
+
+        Args:
+            n: 入力動画の数
+            durations: 各動画の長さ（秒）
+            transition_type: トランジション種類（crossfade, fade_black, fade_white, wipe_left, none）
+            transition_duration: トランジション時間（秒）
+            target_fps: 正規化するフレームレート
+
+        Returns:
+            str: filter_complex 文字列
+        """
+        xfade_name = self.TIMELINE_TRANSITION_MAP.get(transition_type, "fade")
+        if xfade_name is None:
+            xfade_name = "fade"
+        return self._build_video_xfade_filter(n, durations, xfade_name, transition_duration, target_fps=target_fps)
+
+    async def concatenate_with_transitions(
+        self,
+        video_paths: list[str],
+        transitions: list[dict],
+        output_path: str,
+    ) -> str:
+        """
+        トランジション付きで複数の動画を結合
+
+        transitions リストには len(video_paths) - 1 個の要素が必要。
+        各トランジション: {"type": "crossfade|fade_black|fade_white|wipe_left|none", "duration": 0.5}
+
+        無効なトランジション種類は "none" (cut) にフォールバックする。
+
+        Args:
+            video_paths: 結合する動画ファイルのパスリスト（2本以上）
+            transitions: 各クリップ間のトランジション設定リスト
+            output_path: 出力先パス
+
+        Returns:
+            str: 出力動画パス
+
+        Raises:
+            FFmpegError: FFmpeg処理失敗時
+            ValueError: 引数が不正な場合
+        """
+        if len(video_paths) < 2:
+            raise ValueError("結合には最低2本の動画が必要です")
+
+        expected_transitions = len(video_paths) - 1
+        if len(transitions) != expected_transitions:
+            raise ValueError(
+                f"transitions のリスト長が不正です。期待: {expected_transitions}, 実際: {len(transitions)}"
+            )
+
+        # 全て無効またはnone種類かチェック
+        all_none = all(
+            t.get("type", "none") not in self.TIMELINE_TRANSITION_MAP
+            or t.get("type", "none") == "none"
+            for t in transitions
+        )
+
+        if all_none:
+            return await self._concat_simple(video_paths, output_path)
+
+        # 最初のトランジション設定を代表として使用（シンプル実装）
+        # 全クリップ同一トランジションの場合に対応
+        # 複数種類が混在する場合は最初のトランジション種類を使用
+        first_transition = transitions[0]
+        transition_type = first_transition.get("type", "none")
+        transition_duration = float(first_transition.get("duration", 0.5))
+
+        # 無効な種類はnoneにフォールバック
+        if transition_type not in self.TIMELINE_TRANSITION_MAP:
+            return await self._concat_simple(video_paths, output_path)
+
+        if transition_type == "none":
+            return await self._concat_simple(video_paths, output_path)
+
+        xfade_name = self.TIMELINE_TRANSITION_MAP[transition_type]
+
+        # 各動画の長さを取得
+        durations = []
+        for path in video_paths:
+            duration = await self._get_video_duration(path)
+            if duration is None:
+                raise FFmpegError(f"動画の長さを取得できません: {path}")
+            durations.append(duration)
+
+        # FPSを取得
+        fps = await self._get_video_fps(video_paths[0])
+        target_fps = round(fps) if fps else 24
+
+        # 音声トラックの有無を確認
+        has_audio = await self._has_audio_stream(video_paths[0])
+
+        n = len(video_paths)
+
+        # 入力指定
+        inputs = []
+        for path in video_paths:
+            inputs.extend(["-i", path])
+
+        # フィルターグラフ構築
+        filter_parts = []
+
+        # 映像フィルター（xfade使用）
+        video_filter = self._build_video_xfade_filter(
+            n, durations, xfade_name, transition_duration, target_fps=target_fps
+        )
+        filter_parts.append(video_filter)
+
+        # 音声フィルター
+        if has_audio:
+            audio_filter = self._build_audio_crossfade_filter(n, durations, transition_duration)
+            filter_parts.append(audio_filter)
+
+        filter_complex = ";".join(filter_parts)
+
+        if has_audio:
+            cmd = [
+                "ffmpeg", "-y",
+                *inputs,
+                "-filter_complex", filter_complex,
+                "-map", "[vout]",
+                "-map", "[aout]",
+                "-c:v", "libx264",
+                "-preset", "medium",
+                "-crf", "23",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-movflags", "+faststart",
+                output_path,
+            ]
+        else:
+            cmd = [
+                "ffmpeg", "-y",
+                *inputs,
+                "-filter_complex", filter_complex,
+                "-map", "[vout]",
+                "-c:v", "libx264",
+                "-preset", "medium",
+                "-crf", "23",
+                "-an",
+                "-movflags", "+faststart",
+                output_path,
+            ]
+
+        logger.debug(f"FFmpeg concatenate_with_transitions command: {' '.join(cmd)}")
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            error_msg = stderr.decode() if stderr else "Unknown error"
+            logger.error(f"FFmpeg concatenate_with_transitions failed: {error_msg}")
+            raise FFmpegError(f"トランジション付き結合に失敗しました: {error_msg}")
+
+        logger.info(f"concatenate_with_transitions 完了: {output_path}")
+        return output_path
 
     async def extract_last_frame(
         self,
@@ -1599,6 +1939,136 @@ class FFmpegService:
             raise FFmpegError(f"HDダウンスケールに失敗: {error_msg}")
 
         logger.info(f"HDダウンスケール完了: {output_path}")
+        return output_path
+
+    async def compress_for_size_limit(
+        self,
+        video_path: str,
+        output_path: str,
+        size_limit_mb: float = 30.0,
+    ) -> str:
+        """
+        サイズ制限に合わせてABRベースで動画を圧縮する。
+
+        Runway Upscale API などのファイルサイズ制限（例: 32MB）に対応するため、
+        2MBのマージンを考慮した 30MB をデフォルトの上限として設定。
+        目標ビットレートを計算し、libx264 で再エンコード。
+        1回リトライ（ビットレート80%）してもサイズ超過の場合はエラーを送出する。
+
+        Args:
+            video_path: 入力動画パス
+            output_path: 出力動画パス
+            size_limit_mb: ファイルサイズ上限（MB）、デフォルト 30.0
+
+        Returns:
+            出力動画のパス
+        """
+        logger.info(f"サイズ制限圧縮開始: {video_path} -> {output_path} (制限: {size_limit_mb}MB)")
+
+        size_limit_bytes = size_limit_mb * 1024 * 1024
+        duration = await self._get_video_duration(video_path)
+        if not duration or duration <= 0:
+            raise FFmpegError(f"動画の長さを取得できません: {video_path}")
+
+        total_bitrate_kbps = int((size_limit_bytes * 8) / (duration * 1000))
+
+        has_audio = await self._has_audio_stream(video_path)
+        if has_audio:
+            audio_bitrate_kbps = 128
+            video_bitrate_kbps = total_bitrate_kbps - audio_bitrate_kbps
+        else:
+            audio_bitrate_kbps = 0
+            video_bitrate_kbps = total_bitrate_kbps
+
+        if video_bitrate_kbps < 100:
+            raise FFmpegError(
+                f"計算されたビットレートが低すぎます ({video_bitrate_kbps}kbps)。"
+                f"動画が長すぎるか、サイズ制限が厳しすぎます。"
+            )
+
+        cmd = [
+            "ffmpeg", "-y", "-i", video_path,
+            "-c:v", "libx264", "-preset", "fast",
+            "-b:v", f"{video_bitrate_kbps}k",
+            "-maxrate", f"{int(video_bitrate_kbps * 1.2)}k",
+            "-bufsize", f"{int(video_bitrate_kbps * 2)}k",
+            "-movflags", "+faststart",
+        ]
+        if has_audio:
+            cmd += ["-c:a", "aac", "-b:a", "128k"]
+        else:
+            cmd += ["-an"]
+        cmd.append(output_path)
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=300
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            raise FFmpegError("サイズ制限圧縮がタイムアウトしました（300秒）")
+
+        if process.returncode != 0:
+            error_msg = stderr.decode() if stderr else "不明なエラー"
+            raise FFmpegError(f"サイズ制限圧縮に失敗: {error_msg}")
+
+        output_size = os.path.getsize(output_path)
+        if output_size <= size_limit_bytes:
+            logger.info(f"圧縮完了: {output_size / 1024 / 1024:.1f}MB (制限: {size_limit_mb}MB)")
+            return output_path
+
+        # 1回だけ80%ビットレートでリトライ
+        retry_bitrate = int(video_bitrate_kbps * 0.8)
+        logger.warning(
+            f"圧縮後サイズ超過({output_size / 1024 / 1024:.1f}MB), "
+            f"リトライ: {retry_bitrate}kbps"
+        )
+
+        cmd = [
+            "ffmpeg", "-y", "-i", video_path,
+            "-c:v", "libx264", "-preset", "fast",
+            "-b:v", f"{retry_bitrate}k",
+            "-maxrate", f"{int(retry_bitrate * 1.2)}k",
+            "-bufsize", f"{int(retry_bitrate * 2)}k",
+            "-movflags", "+faststart",
+        ]
+        if has_audio:
+            cmd += ["-c:a", "aac", "-b:a", "128k"]
+        else:
+            cmd += ["-an"]
+        cmd.append(output_path)
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=300
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            raise FFmpegError("サイズ制限圧縮リトライがタイムアウトしました（300秒）")
+
+        if process.returncode != 0:
+            error_msg = stderr.decode() if stderr else "不明なエラー"
+            raise FFmpegError(f"サイズ制限圧縮リトライに失敗: {error_msg}")
+
+        output_size = os.path.getsize(output_path)
+        if output_size > size_limit_bytes:
+            raise FFmpegError(
+                f"リトライ後もサイズ制限超過: {output_size / 1024 / 1024:.1f}MB > {size_limit_mb}MB"
+            )
+
+        logger.info(f"圧縮完了(リトライ): {output_size / 1024 / 1024:.1f}MB (制限: {size_limit_mb}MB)")
         return output_path
 
     async def extract_first_frame(
@@ -1804,7 +2274,15 @@ class FFmpegService:
             stderr=asyncio.subprocess.PIPE,
         )
 
-        stdout, stderr = await process.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=600  # 10分タイムアウト
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            logger.error("FFmpeg ProRes HD変換がタイムアウト（600秒）")
+            raise FFmpegError("ProRes HD変換がタイムアウトしました（10分超過）。動画が大きすぎる可能性があります。")
 
         if process.returncode != 0:
             error_msg = stderr.decode() if stderr else "不明なエラー"
@@ -1814,9 +2292,177 @@ class FFmpegService:
         logger.info(f"ProRes HD変換完了: {output_path}")
         return output_path
 
+    async def create_h264_proxy(
+        self,
+        input_path: str,
+        output_path: str,
+    ) -> str:
+        """
+        10bit / ProRes 等のマスター動画から fal.ai 投入用の 8bit H.264 プロキシを作成する
+
+        fal/Bria は H.264/H.265/VP9/AV1 の 8bit (yuv420p) 入力しか受け付けないため、
+        ProRes・10bit HEVC・DNxHR 等のマスターは本プロキシ経由で投入する。
+        マスター本来の色情報は最終出力（master + matte 合成）で保持されるため、
+        プロキシは visually lossless（CRF 18）で十分。
+
+        Args:
+            input_path: 入力マスター動画パス
+            output_path: 出力プロキシ動画パス（.mp4）
+
+        Returns:
+            str: 出力動画パス
+
+        Raises:
+            FFmpegError: FFmpeg処理エラー
+        """
+        if not self._check_ffmpeg():
+            raise FFmpegError("FFmpegがインストールされていません")
+
+        if not os.path.exists(input_path):
+            raise FFmpegError(f"入力動画が見つかりません: {input_path}")
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", input_path,
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "18",                  # visually lossless 近傍（マット精度確保）
+            "-pix_fmt", "yuv420p",         # fal/Bria 互換の 8bit
+            "-c:a", "aac",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+
+        logger.info(f"H.264プロキシ作成コマンド: {' '.join(cmd)}")
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=600  # 10分タイムアウト
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            logger.error("FFmpeg H.264プロキシ作成がタイムアウト（600秒）")
+            raise FFmpegError(
+                "H.264プロキシの作成がタイムアウトしました（10分超過）。動画が大きすぎる可能性があります。"
+            )
+
+        if process.returncode != 0:
+            error_msg = stderr.decode() if stderr else "不明なエラー"
+            logger.error(f"FFmpegエラー: {error_msg}")
+            raise FFmpegError(f"H.264プロキシの作成に失敗: {error_msg}")
+
+        logger.info(f"H.264プロキシ作成完了: {output_path}")
+        return output_path
+
+    async def composite_master_with_alpha_matte(
+        self,
+        master_path: str,
+        matte_webm_path: str,
+        output_path: str,
+        width: int,
+        height: int,
+    ) -> str:
+        """
+        マスター動画と fal のアルファマット（WebM）を合成し ProRes 4444 (.mov) を出力する
+
+        Bria の 8bit 再エンコード結果ではなく「オリジナルマスターの色 + マットの
+        アルファ」を合成することで、10bit+ マスターの色情報を完全に保持する。
+
+        重要な ffmpeg オプション:
+        - `-c:v libvpx-vp9` をマット入力の -i より前に指定: ネイティブ VP9 デコーダーは
+          アルファチャンネルを破棄するため、libvpx-vp9 でのデコードが必須
+        - `alphaextract,scale={W}:{H}`: fal 側で解像度が変わった場合に備えて
+          マットをマスター解像度へ防御的にスケールする
+        - `-map 0:a:0?`: マスターの音声は存在する場合のみマップ
+        - `-shortest`: マスターとマットの長さ差異で出力が伸びないようにする
+
+        Args:
+            master_path: オリジナルマスター動画パス
+            matte_webm_path: fal のマット WebM パス（VP9 + アルファ）
+            output_path: 出力動画パス（.mov）
+            width: マスターの幅（プローブ値）
+            height: マスターの高さ（プローブ値）
+
+        Returns:
+            str: 出力動画パス
+
+        Raises:
+            FFmpegError: FFmpeg処理エラー
+        """
+        if not self._check_ffmpeg():
+            raise FFmpegError("FFmpegがインストールされていません")
+
+        if not os.path.exists(master_path):
+            raise FFmpegError(f"マスター動画が見つかりません: {master_path}")
+
+        if not os.path.exists(matte_webm_path):
+            raise FFmpegError(f"アルファマット動画が見つかりません: {matte_webm_path}")
+
+        filter_complex = (
+            f"[1:v]alphaextract,scale={width}:{height}[a];"
+            f"[0:v][a]alphamerge[out]"
+        )
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", master_path,
+            "-c:v", "libvpx-vp9",        # アルファ保持のためマット入力の -i より前にデコーダー指定（必須）
+            "-i", matte_webm_path,
+            "-filter_complex", filter_complex,
+            "-map", "[out]",
+            "-map", "0:a:0?",            # マスター音声は存在する場合のみ（? = optional）
+            "-c:v", "prores_ks",
+            "-profile:v", "4444",        # ProRes 4444（アルファ対応プロファイル）
+            "-pix_fmt", "yuva444p10le",
+            "-c:a", "pcm_s16le",         # ProRes標準の非圧縮音声
+            "-shortest",
+            output_path,
+        ]
+
+        logger.info(f"マスター+マット合成コマンド: {' '.join(cmd)}")
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=900  # 15分タイムアウト
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            logger.error("FFmpeg マスター+マット合成がタイムアウト（900秒）")
+            raise FFmpegError(
+                "ProRes合成がタイムアウトしました（15分超過）。動画が大きすぎる可能性があります。"
+            )
+
+        if process.returncode != 0:
+            error_msg = stderr.decode() if stderr else "不明なエラー"
+            logger.error(f"FFmpegエラー: {error_msg}")
+            raise FFmpegError(f"マスターとアルファマットの合成に失敗: {error_msg}")
+
+        logger.info(f"マスター+マット合成完了: {output_path}")
+        return output_path
+
     def _has_audio_track(self, video_path: str) -> bool:
         """
         動画ファイルに音声トラックが含まれるか確認 (ffprobe 使用)
+
+        ffprobe コマンド:
+            ffprobe -v quiet -select_streams a:0
+                    -show_entries stream=codec_type
+                    -of default=noprint_wrappers=1:nokey=1
+                    <video_path>
 
         Args:
             video_path: 動画ファイルパス

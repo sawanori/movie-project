@@ -67,14 +67,14 @@ interface AdCutCardProps {
   onClearGeneratedImage?: () => void;
 }
 
-const DURATION_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 10, 15, 20, 30];
+const MIN_DURATION = 1;
+const MAX_DURATION = 60;
 
 export function AdCutCard({
   cut,
   index,
   totalCuts,
   startTime,
-  targetDuration,
   onMoveUp,
   onMoveDown,
   onDelete,
@@ -91,12 +91,33 @@ export function AdCutCard({
   canDelete,
 }: AdCutCardProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [isEditingTime, setIsEditingTime] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editedDescription, setEditedDescription] = useState(cut.description_ja);
   const [isEditingDialogue, setIsEditingDialogue] = useState(false);
   const [editedDialogue, setEditedDialogue] = useState(cut.dialogue || "");
   const [isEditingSoundEffect, setIsEditingSoundEffect] = useState(false);
   const [editedSoundEffect, setEditedSoundEffect] = useState(cut.sound_effect || "");
+  // 秒数入力: 編集中のみローカル値を保持し、確定時に props へ反映
+  const [durationInput, setDurationInput] = useState<string>("");
+  const [isDurationEditing, setIsDurationEditing] = useState(false);
+  // 表示値: 編集中はローカル値、非編集中は props の値
+  const durationDisplayValue = isDurationEditing ? durationInput : String(cut.duration);
+
+  const handleDurationFocus = () => {
+    setDurationInput(String(cut.duration));
+    setIsDurationEditing(true);
+  };
+
+  const commitDuration = useCallback((raw: string) => {
+    setIsDurationEditing(false);
+    const parsed = parseInt(raw, 10);
+    if (!isNaN(parsed)) {
+      const clamped = Math.min(MAX_DURATION, Math.max(MIN_DURATION, parsed));
+      onUpdateDuration(clamped);
+    }
+  }, [onUpdateDuration]);
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const animationRef = useRef<number | null>(null);
@@ -258,23 +279,30 @@ export function AdCutCard({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* 秒数選択 */}
+          {/* 秒数入力 */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">秒数:</span>
-            <select
-              value={cut.duration}
-              onChange={(e) => onUpdateDuration(Number(e.target.value))}
+            <input
+              type="number"
+              min={MIN_DURATION}
+              max={MAX_DURATION}
+              step={1}
+              value={durationDisplayValue}
+              onChange={(e) => setDurationInput(e.target.value)}
+              onFocus={handleDurationFocus}
+              onBlur={(e) => commitDuration(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  commitDuration((e.target as HTMLInputElement).value);
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
               className={cn(
-                "px-2 py-1 rounded border bg-background text-xs",
+                "w-16 px-2 py-1 rounded border bg-background text-xs text-center",
                 "focus:outline-none focus:ring-2 focus:ring-primary"
               )}
-            >
-              {DURATION_OPTIONS.map((d) => (
-                <option key={d} value={d}>
-                  {d}秒
-                </option>
-              ))}
-            </select>
+            />
+            <span className="text-xs text-muted-foreground">秒</span>
           </div>
 
           {/* 削除ボタン */}
@@ -295,7 +323,15 @@ export function AdCutCard({
       <div className="flex">
         {/* TIME列（常に表示）- 起点〜終点 */}
         {startTime !== undefined && (
-          <div className="w-24 flex-shrink-0 border-r bg-muted/10 p-2 flex flex-col items-center justify-center">
+          <div
+            className={cn(
+              "w-24 flex-shrink-0 border-r bg-muted/10 p-2 flex flex-col items-center justify-center",
+              !isEditingTime && "cursor-pointer hover:bg-muted/20 transition-colors group"
+            )}
+            onClick={() => {
+              if (!isEditingTime) setIsEditingTime(true);
+            }}
+          >
             <div className="text-xs text-muted-foreground mb-1">TIME</div>
             <div className="text-sm font-mono font-semibold text-primary">
               {formatTime(startTime)}
@@ -304,9 +340,40 @@ export function AdCutCard({
             <div className="text-sm font-mono font-semibold text-primary">
               {formatTime(startTime + cut.duration)}
             </div>
-            <div className="text-[10px] text-muted-foreground mt-1">
-              ({cut.duration}秒)
-            </div>
+            {isEditingTime ? (
+              <input
+                type="number"
+                min={MIN_DURATION}
+                max={MAX_DURATION}
+                step={1}
+                value={durationDisplayValue}
+                onChange={(e) => setDurationInput(e.target.value)}
+                onFocus={handleDurationFocus}
+                onBlur={(e) => {
+                  commitDuration(e.target.value);
+                  setIsEditingTime(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    commitDuration((e.target as HTMLInputElement).value);
+                    setIsEditingTime(false);
+                  }
+                }}
+                className={cn(
+                  "mt-1 w-full px-1 py-0.5 rounded border bg-background text-[10px] text-center",
+                  "focus:outline-none focus:ring-2 focus:ring-primary"
+                )}
+                autoFocus
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <div className="flex items-center gap-0.5 mt-1">
+                <span className="text-[10px] text-muted-foreground">
+                  ({cut.duration}秒)
+                </span>
+                <Edit2 className="w-2.5 h-2.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+              </div>
+            )}
           </div>
         )}
 

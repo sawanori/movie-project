@@ -61,10 +61,17 @@ test-results/
 
 # Development artifacts
 check/
-app/
+/app/
 
 # Accidental nested duplicates
 movie-maker-api/movie-maker-api/
 movie-maker-api/movie-maker/
 movie-maker/movie-maker-api/
 movie-maker/movie-maker/
+
+# Large local assets & PoC outputs — not for the repo (GitHub rejects >100MB; use Git LFS if versioning is needed)
+voice/
+poc_output/
+
+# Generated/customer storyboard PDFs (may contain customer material; keep out of repo)
+docs/storyboard_script_*.pdf

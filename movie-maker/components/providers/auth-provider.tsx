@@ -28,6 +28,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  // 初期 state は SSR/CSR で必ず同一値にする (hydration mismatch 回避)
+  // IS_TEST_MODE は常に true/false 固定値なので SSR/CSR で一致する
   const [user, setUser] = useState<User | null>(IS_TEST_MODE ? MOCK_USER : null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(!IS_TEST_MODE);

@@ -3,11 +3,35 @@
  * Design Doc §7-1: Handle 数確認 / プロバイダー非互換 Handle の grayout
  * Design Doc 2026-05-18: DURATION_CONFIG UI 切替 + provider 切替時 duration リセット
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ProviderNode } from './ProviderNode';
 import type { ProviderNodeData } from '@/lib/types/node-editor';
 import { HANDLE_IDS } from '@/lib/types/node-editor';
+import { useProviderModels } from '../hooks/useProviderModels';
+import type { ProviderMetadata } from '@/lib/types/provider-metadata';
+
+// おまかせ表示のモデルメタデータ取得 hook をモック (デフォルトは取得成功なし = 静的フォールバック)
+vi.mock('../hooks/useProviderModels', () => ({
+  useProviderModels: vi.fn(() => ({ data: undefined, error: undefined })),
+}));
+
+const mockUseProviderModels = vi.mocked(useProviderModels);
+
+function setProviderModels(models: ProviderMetadata[] | undefined, error?: unknown) {
+  mockUseProviderModels.mockReturnValue({
+    data: models,
+    error,
+    isLoading: false,
+    isValidating: false,
+    mutate: vi.fn(),
+  } as ReturnType<typeof useProviderModels>);
+}
+
+beforeEach(() => {
+  // 各テスト前にデフォルト (取得なし = 静的フォールバック) に戻す
+  setProviderModels(undefined, undefined);
+});
 
 // ========== @xyflow/react モック ==========
 vi.mock('@xyflow/react', () => ({
@@ -632,5 +656,159 @@ describe('ProviderNode - Seedance 詳細設定', () => {
     expect(cameraCall).toBeDefined();
 
     window.removeEventListener('nodeDataUpdate', eventSpy);
+  });
+});
+
+// ========== おまかせ (providerMode='auto') UI テスト (task_009) ==========
+
+describe('ProviderNode - おまかせ (auto) モード', () => {
+  const explicitData: ProviderNodeData = {
+    type: 'provider',
+    isValid: true,
+    provider: 'runway',
+    aspectRatio: '9:16',
+    duration: null,
+  };
+
+  const autoData: ProviderNodeData = {
+    type: 'provider',
+    isValid: true,
+    providerMode: 'auto',
+    selectionPriority: 'quality',
+    provider: 'runway',
+    aspectRatio: '9:16',
+    duration: null,
+  };
+
+  const SAMPLE_MODELS: ProviderMetadata[] = [
+    {
+      name: 'gen4_turbo',
+      provider: 'runway',
+      capabilities: ['image_to_video'],
+      quality_score: 9,
+      speed_score: 7,
+      cost_per_second: 0.05,
+      max_duration: 5,
+      supported_aspect_ratios: ['9:16', '16:9'],
+    },
+    {
+      name: 'seedance-pro',
+      provider: 'seedance',
+      capabilities: ['image_to_video'],
+      quality_score: 8,
+      speed_score: 6,
+      cost_per_second: 0.13,
+      max_duration: 15,
+      supported_aspect_ratios: ['9:16', '16:9'],
+    },
+  ];
+
+  it('モード切替トグル (具体的に選ぶ / おまかせ) が表示される', () => {
+    render(<ProviderNode {...defaultProps} data={explicitData} />);
+    expect(screen.getByText('具体的に選ぶ')).not.toBeNull();
+    expect(screen.getByText('おまかせ')).not.toBeNull();
+  });
+
+  it('「おまかせ」トグルをクリックすると providerMode=auto の nodeDataUpdate が発火される', () => {
+    const eventSpy = vi.fn();
+    window.addEventListener('nodeDataUpdate', eventSpy);
+
+    render(<ProviderNode {...defaultProps} data={explicitData} />);
+    fireEvent.click(screen.getByText('おまかせ'));
+
+    const calls = eventSpy.mock.calls.map((c) => (c[0] as CustomEvent).detail);
+    const autoCall = calls.find((d) => d.updates?.providerMode === 'auto');
+    expect(autoCall).toBeDefined();
+
+    window.removeEventListener('nodeDataUpdate', eventSpy);
+  });
+
+  it('「具体的に選ぶ」トグルをクリックすると providerMode=explicit の nodeDataUpdate が発火される', () => {
+    const eventSpy = vi.fn();
+    window.addEventListener('nodeDataUpdate', eventSpy);
+
+    render(<ProviderNode {...defaultProps} data={autoData} />);
+    fireEvent.click(screen.getByText('具体的に選ぶ'));
+
+    const calls = eventSpy.mock.calls.map((c) => (c[0] as CustomEvent).detail);
+    const explicitCall = calls.find((d) => d.updates?.providerMode === 'explicit');
+    expect(explicitCall).toBeDefined();
+
+    window.removeEventListener('nodeDataUpdate', eventSpy);
+  });
+
+  it('auto モードで 品質/速度/コスト の 3 優先度ボタンが表示される', () => {
+    render(<ProviderNode {...defaultProps} data={autoData} />);
+    expect(screen.getByText('品質優先')).not.toBeNull();
+    expect(screen.getByText('速度優先')).not.toBeNull();
+    expect(screen.getByText('コスト優先')).not.toBeNull();
+  });
+
+  it('auto モードで具体プロバイダーのボタングリッドが表示されない (Runway ボタン非表示)', () => {
+    render(<ProviderNode {...defaultProps} data={autoData} />);
+    // explicit の Runway プロバイダーボタン (説明「高品質・Act-Two対応」) は auto では出ない
+    expect(screen.queryByText('高品質・Act-Two対応')).toBeNull();
+  });
+
+  it('速度優先ボタンをクリックすると selectionPriority=speed の nodeDataUpdate が発火される', () => {
+    const eventSpy = vi.fn();
+    window.addEventListener('nodeDataUpdate', eventSpy);
+
+    render(<ProviderNode {...defaultProps} data={autoData} />);
+    fireEvent.click(screen.getByText('速度優先'));
+
+    const calls = eventSpy.mock.calls.map((c) => (c[0] as CustomEvent).detail);
+    const speedCall = calls.find((d) => d.updates?.selectionPriority === 'speed');
+    expect(speedCall).toBeDefined();
+
+    window.removeEventListener('nodeDataUpdate', eventSpy);
+  });
+
+  it('コスト優先ボタンをクリックすると selectionPriority=cost の nodeDataUpdate が発火される', () => {
+    const eventSpy = vi.fn();
+    window.addEventListener('nodeDataUpdate', eventSpy);
+
+    render(<ProviderNode {...defaultProps} data={autoData} />);
+    fireEvent.click(screen.getByText('コスト優先'));
+
+    const calls = eventSpy.mock.calls.map((c) => (c[0] as CustomEvent).detail);
+    const costCall = calls.find((d) => d.updates?.selectionPriority === 'cost');
+    expect(costCall).toBeDefined();
+
+    window.removeEventListener('nodeDataUpdate', eventSpy);
+  });
+
+  it('auto モードで domoai が明示指定のみである旨の注記が表示される', () => {
+    render(<ProviderNode {...defaultProps} data={autoData} />);
+    expect(screen.getByText(/domoai/i)).not.toBeNull();
+  });
+
+  it('モデルメタデータ取得成功時、各モデルの品質スコアとコストが表示される', () => {
+    setProviderModels(SAMPLE_MODELS);
+    render(<ProviderNode {...defaultProps} data={autoData} />);
+
+    // モデル名と品質スコア/コスト/最大秒数が補助表示される
+    expect(screen.getByText('gen4_turbo')).not.toBeNull();
+    expect(screen.getByText('seedance-pro')).not.toBeNull();
+    // gen4_turbo の実力値行: 品質9 / $0.05/秒 / 5秒
+    expect(screen.getByText('品質9 / $0.05/秒 / 5秒')).not.toBeNull();
+    // seedance-pro の実力値行: 品質8 / $0.13/秒 / 15秒
+    expect(screen.getByText('品質8 / $0.13/秒 / 15秒')).not.toBeNull();
+  });
+
+  it('モデルメタデータ取得失敗時でも auto の優先度 UI は継続表示される (フォールバック)', () => {
+    setProviderModels(undefined, new Error('fetch failed'));
+    render(<ProviderNode {...defaultProps} data={autoData} />);
+
+    // 取得失敗しても優先度ボタンは操作可能 (機能退行なし)
+    expect(screen.getByText('品質優先')).not.toBeNull();
+    expect(screen.getByText('速度優先')).not.toBeNull();
+    expect(screen.getByText('コスト優先')).not.toBeNull();
+  });
+
+  it('providerMode 未指定 (旧グラフ) では explicit として具体プロバイダーグリッドが表示される', () => {
+    render(<ProviderNode {...defaultProps} data={explicitData} />);
+    // explicit の Runway プロバイダーボタン (説明) が表示される
+    expect(screen.getByText('高品質・Act-Two対応')).not.toBeNull();
   });
 });

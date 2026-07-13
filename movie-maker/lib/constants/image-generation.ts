@@ -65,6 +65,69 @@ export function getProviderMaxReferenceImages(provider: ImageProvider): number {
   return "maxReferenceImages" in info ? (info as { maxReferenceImages: number }).maxReferenceImages : 0;
 }
 
+// ===== 画像ルック/テイスト =====
+
+export type ImageLook =
+  | "realistic"
+  | "cinematic"
+  | "anime"
+  | "illustration"
+  | "watercolor"
+  | "3d_render"
+  | "flat_design"
+  | "oil_painting";
+
+export const IMAGE_LOOKS = [
+  {
+    value: "cinematic" as const,
+    label: "シネマティック",
+    description: "映画的な質感・ARRI風の色調",
+    icon: "🎬",
+  },
+  {
+    value: "realistic" as const,
+    label: "実写・フォトリアル",
+    description: "自然な写真のような仕上がり",
+    icon: "📷",
+  },
+  {
+    value: "anime" as const,
+    label: "アニメ",
+    description: "日本のアニメスタイル・セル画調",
+    icon: "🎨",
+  },
+  {
+    value: "illustration" as const,
+    label: "イラスト",
+    description: "クリーンなデジタルイラスト",
+    icon: "✏️",
+  },
+  {
+    value: "watercolor" as const,
+    label: "水彩画",
+    description: "透明感のある水彩タッチ",
+    icon: "💧",
+  },
+  {
+    value: "3d_render" as const,
+    label: "3DCG",
+    description: "Pixar風の3Dレンダリング",
+    icon: "🧊",
+  },
+  {
+    value: "flat_design" as const,
+    label: "フラットデザイン",
+    description: "ミニマルなベクターアート",
+    icon: "🔲",
+  },
+  {
+    value: "oil_painting" as const,
+    label: "油絵",
+    description: "古典的な油彩画の質感",
+    icon: "🖼️",
+  },
+] as const;
+
 // ===== 構造化入力オプション =====
 
 // 被写体の位置オプション
@@ -153,6 +216,7 @@ export interface GenerateSceneImageRequest {
   description_ja?: string | null;
   aspect_ratio?: "9:16" | "16:9";
   image_provider?: ImageProvider;
+  image_look?: ImageLook;
   reference_images?: ReferenceImage[] | null;  // BFL FLUX.2用（複数参照画像）
   negative_prompt?: string | null;  // ネガティブプロンプト（BFL FLUX.2のみ対応）
 }

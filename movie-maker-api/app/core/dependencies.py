@@ -81,10 +81,10 @@ async def get_current_user(
 def get_plan_limits(plan_type: str) -> dict:
     """プランごとの制限を取得"""
     limits = {
-        "free": {"max_videos_per_month": 3, "max_video_duration": 5},
-        "starter": {"max_videos_per_month": 5, "max_video_duration": 5},
-        "pro": {"max_videos_per_month": 15, "max_video_duration": 5},
-        "business": {"max_videos_per_month": 50, "max_video_duration": 5},
+        "free": {"max_videos_per_month": 3, "max_video_duration": 5, "max_batch_size": 1},
+        "starter": {"max_videos_per_month": 5, "max_video_duration": 5, "max_batch_size": 1},
+        "pro": {"max_videos_per_month": 15, "max_video_duration": 5, "max_batch_size": 3},
+        "business": {"max_videos_per_month": 50, "max_video_duration": 5, "max_batch_size": 10},
     }
     return limits.get(plan_type, limits["free"])
 

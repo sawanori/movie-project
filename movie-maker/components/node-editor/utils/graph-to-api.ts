@@ -304,6 +304,11 @@ export function graphToStoryVideoCreate(
     throw new Error('プロンプトが入力されていません');
   }
 
+  // プロバイダー選択モード解決:
+  // - 'auto' (おまかせ): video_provider を送らず selection_priority でサーバー自動選択させる。
+  // - 'explicit' / 未指定 (旧グラフ): 従来通り具体プロバイダーを video_provider で送る。
+  const isAutoProvider = provider?.providerMode === 'auto';
+
   // リクエストオブジェクトを構築
   const request: StoryVideoCreateRequest = {
     // 必須
@@ -311,7 +316,6 @@ export function graphToStoryVideoCreate(
     story_text: prompt.englishPrompt,
     // 基本設定
     aspect_ratio: provider?.aspectRatio ?? '9:16',
-    video_provider: provider?.provider ?? 'runway',
     subject_type: prompt?.subjectType ?? 'person',
     // カメラワーク
     camera_work: cameraWork?.promptText || undefined,
@@ -322,6 +326,13 @@ export function graphToStoryVideoCreate(
     film_grain: filmGrain?.grain ?? 'medium',
     use_lut: lut?.useLut ?? true,
   };
+
+  // プロバイダー透過: auto は selection_priority、explicit は video_provider を送る。
+  if (isAutoProvider) {
+    request.selection_priority = provider?.selectionPriority ?? 'quality';
+  } else {
+    request.video_provider = provider?.provider ?? 'runway';
+  }
 
   // オーバーレイ（テキストがある場合のみ）
   if (overlay?.text) {
@@ -334,7 +345,8 @@ export function graphToStoryVideoCreate(
   }
 
   // 動画時間 (ProviderNode の duration を該当プロバイダーのフィールドにマップ)
-  if (provider?.duration != null) {
+  // auto (おまかせ) 時は具体プロバイダー未確定のため、プロバイダー固有パラメータは一切送らない。
+  if (!isAutoProvider && provider?.duration != null) {
     if (provider.provider === 'piapi_kling' && (provider.duration === 5 || provider.duration === 10)) {
       request.kling_duration = provider.duration;
     } else if (provider.provider === 'seedance') {
@@ -348,12 +360,12 @@ export function graphToStoryVideoCreate(
   }
 
   // Seedance モード (seedanceMode が指定されている場合のみ)
-  if (provider?.provider === 'seedance' && provider.seedanceMode) {
+  if (!isAutoProvider && provider?.provider === 'seedance' && provider.seedanceMode) {
     request.seedance_mode = provider.seedanceMode;
   }
 
   // Seedance 詳細パラメータ (provider=seedance の場合のみ)
-  if (provider?.provider === 'seedance') {
+  if (!isAutoProvider && provider?.provider === 'seedance') {
     request.seedance_generate_audio = provider.seedanceGenerateAudio ?? false;
     if (provider.seedanceSeed != null) {
       request.seedance_seed = provider.seedanceSeed;
@@ -396,7 +408,7 @@ export function graphToStoryVideoCreate(
   }
 
   // Kling専用パラメータ（プロバイダーがKlingの場合のみ）
-  if (provider?.provider === 'piapi_kling') {
+  if (!isAutoProvider && provider?.provider === 'piapi_kling') {
     if (klingMode) {
       request.kling_mode = klingMode.mode;
     }
@@ -422,7 +434,7 @@ export function graphToStoryVideoCreate(
   }
 
   // Act-Two（Runway + person/animation の場合のみ）
-  if (provider?.provider === 'runway' && actTwo?.useActTwo) {
+  if (!isAutoProvider && provider?.provider === 'runway' && actTwo?.useActTwo) {
     const subjectType = prompt?.subjectType;
     if (subjectType === 'person' || subjectType === 'animation') {
       request.use_act_two = true;
@@ -434,7 +446,7 @@ export function graphToStoryVideoCreate(
 
   // Hailuo専用パラメータ
   // Note: Hailuoのlast_frame_imageはAPIスキーマ上はend_frame_image_urlとして送信
-  if (provider?.provider === 'hailuo' && hailuoEndFrame?.lastFrameImageUrl) {
+  if (!isAutoProvider && provider?.provider === 'hailuo' && hailuoEndFrame?.lastFrameImageUrl) {
     request.end_frame_image_url = hailuoEndFrame.lastFrameImageUrl;
   }
 

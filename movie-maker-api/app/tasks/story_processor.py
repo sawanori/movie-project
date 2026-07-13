@@ -14,7 +14,11 @@ import os
 import tempfile
 
 from app.core.supabase import get_supabase
-from app.external.video_provider import get_video_provider, VideoGenerationStatus
+from app.external.video_provider import (
+    get_video_provider,
+    submit_with_fallback,
+    VideoGenerationStatus,
+)
 from app.external.r2 import r2_client
 from app.services.ffmpeg_service import get_ffmpeg_service, FFmpegError
 from app.videos.service import update_video_status
@@ -69,7 +73,12 @@ def _build_video_prompt(story_text: str, camera_work: str | None = None) -> str:
     return full_prompt
 
 
-async def process_story_video(video_id: str, video_provider_name: str = None, element_images: list[str] = None) -> None:
+async def process_story_video(
+    video_id: str,
+    video_provider_name: str = None,
+    element_images: list[str] = None,
+    selection_priority: str = None,
+) -> None:
     """
     ストーリー動画生成のバックグラウンド処理
 
@@ -82,6 +91,8 @@ async def process_story_video(video_id: str, video_provider_name: str = None, el
         video_id: 動画生成ID
         video_provider_name: プロバイダー名（"runway", "veo", "domoai", "piapi_kling", "hailuo"、Noneの場合はDBから取得）
         element_images: Kling Elements用追加画像URLリスト（最大3枚）
+        selection_priority: おまかせ選択の優先基準（"quality"|"speed"|"cost"）。
+            送信時フォールバックの次点ランキングに使用（None なら "quality"）。
     """
     supabase = get_supabase()
     ffmpeg = get_ffmpeg_service()
@@ -241,7 +252,10 @@ async def process_story_video(video_id: str, video_provider_name: str = None, el
                     audio_urls=audio_reference_urls,
                     resolution=seedance_resolution,
                 )
-            else:
+            elif extra_params:
+                # プロバイダー固有パラメータ (kling camera_control / seedance mode 等) が
+                # 指定されている場合は、そのプロバイダー専用機能なので従来通り直接送信。
+                # 別プロバイダーへのフォールバックは固有機能を失うため行わない。
                 task_id = await provider.generate_video(
                     image_url=image_url,
                     prompt=video_prompt,
@@ -250,6 +264,39 @@ async def process_story_video(video_id: str, video_provider_name: str = None, el
                     camera_work=camera_work,
                     **extra_params,
                 )
+            else:
+                # 汎用 i2v 経路: 送信時失敗なら priority ランキング次点へ 1 回フォールバック。
+                # おまかせ選択 (selection_priority) 経路もここを通る。
+                fallback_priority = selection_priority or "quality"
+                task_id, provider_used, fallback_occurred = await submit_with_fallback(
+                    provider_name=provider_name,
+                    priority=fallback_priority,
+                    capability="i2v",
+                    generate_kwargs={
+                        "image_url": image_url,
+                        "prompt": video_prompt,
+                        "duration": effective_duration,
+                        "aspect_ratio": aspect_ratio,
+                        "camera_work": camera_work,
+                    },
+                )
+                if fallback_occurred:
+                    logger.info(
+                        "story_processor fallback occurred",
+                        extra={
+                            "video_id": video_id,
+                            "requested_provider": provider_name,
+                            "used_provider": provider_used,
+                            "selection_priority": selection_priority,
+                        },
+                    )
+                    # 実使用プロバイダーに合わせて以降のポーリング/DL 用 provider を差し替え、
+                    # DB の video_provider を実使用値に更新する（DB カラム追加はしない）。
+                    provider_name = provider_used
+                    provider = get_video_provider(provider_used)
+                    supabase.table("video_generations").update(
+                        {"video_provider": provider_used}
+                    ).eq("id", video_id).execute()
 
         if not task_id:
             raise Exception(f"{provider.provider_name} task creation failed")
@@ -391,9 +438,16 @@ async def process_story_video(video_id: str, video_provider_name: str = None, el
         )
 
 
-async def start_story_processing(video_id: str, video_provider: str = None, element_images: list[str] = None) -> None:
+async def start_story_processing(
+    video_id: str,
+    video_provider: str = None,
+    element_images: list[str] = None,
+    selection_priority: str = None,
+) -> None:
     """ストーリー動画処理をバックグラウンドで開始"""
-    asyncio.create_task(process_story_video(video_id, video_provider, element_images))
+    asyncio.create_task(
+        process_story_video(video_id, video_provider, element_images, selection_priority)
+    )
 
 
 # 後方互換性のためのエイリアス

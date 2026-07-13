@@ -154,6 +154,11 @@ class TestGenerateImageFromTextEndpoint:
         with patch("app.videos.service.generate_image_from_text") as mock_generate:
             mock_generate.return_value = {
                 "image_url": "https://r2.example.com/generated/test.png",
+                "r2_key": "generated/test.png",
+                "width": 1080,
+                "height": 1920,
+                "aspect_ratio": "9:16",
+                "image_provider": "nanobanana",
                 "generated_prompt_ja": "テスト用日本語プロンプト",
                 "generated_prompt_en": "Test English prompt",
             }
@@ -244,6 +249,11 @@ class TestGenerateImageFromTextEndpoint:
         with patch("app.videos.service.generate_image_from_text") as mock_generate:
             mock_generate.return_value = {
                 "image_url": "https://r2.example.com/generated/test.png",
+                "r2_key": "generated/test.png",
+                "width": 1080,
+                "height": 1920,
+                "aspect_ratio": "9:16",
+                "image_provider": "nanobanana",
                 "generated_prompt_ja": "参照画像を考慮したプロンプト",
                 "generated_prompt_en": "Prompt considering reference image",
             }

@@ -60,26 +60,34 @@ const styles = StyleSheet.create({
   table: {
     display: "flex",
     flexDirection: "column",
-    border: "1pt solid #333",
   },
   tableHeader: {
     flexDirection: "row",
     backgroundColor: "#e8e8e8",
+    borderTop: "1pt solid #333",
+    borderLeft: "1pt solid #333",
+    borderRight: "1pt solid #333",
     borderBottom: "1pt solid #333",
   },
   tableRow: {
     flexDirection: "row",
+    borderLeft: "1pt solid #333",
+    borderRight: "1pt solid #333",
     borderBottom: "0.5pt solid #ccc",
     minHeight: 100,
   },
   tableRowLast: {
     flexDirection: "row",
+    borderLeft: "1pt solid #333",
+    borderRight: "1pt solid #333",
+    borderBottom: "1pt solid #333",
     minHeight: 100,
   },
   cell: {
-    padding: 4,
+    padding: 6,
     borderRight: "0.5pt solid #ccc",
     justifyContent: "center",
+    overflow: "hidden",
   },
   cellHeader: {
     padding: 4,
@@ -92,9 +100,13 @@ const styles = StyleSheet.create({
   cellNumber: { width: "4%" },
   cellImage: { width: "16%", padding: 2 },
   cellType: { width: "9%" },
-  cellDescription: { width: "24%" },
-  cellDialogue: { width: "18%" },
-  cellSE: { width: "19%", borderRight: "none" },
+  cellDescription: { width: "24%", fontSize: 8 },
+  cellDialogue: { width: "18%", fontSize: 8 },
+  cellSE: { width: "19%", borderRight: "none", fontSize: 8 },
+  cellText: {
+    fontSize: 8,
+    lineHeight: 1.4,
+  },
   // TIME表示用スタイル
   timeText: {
     fontSize: 8,
@@ -206,7 +218,7 @@ export function StoryboardPDFDocument({
         {/* テーブル */}
         <View style={styles.table}>
           {/* ヘッダー行 */}
-          <View style={styles.tableHeader}>
+          <View style={styles.tableHeader} fixed>
             <Text style={[styles.cellHeader, styles.cellTime]}>TIME</Text>
             <Text style={[styles.cellHeader, styles.cellNumber]}>#</Text>
             <Text style={[styles.cellHeader, styles.cellImage]}>絵</Text>
@@ -231,6 +243,7 @@ export function StoryboardPDFDocument({
               return (
                 <View
                   key={cut.id}
+                  wrap={false}
                   style={
                     index === cuts.length - 1
                       ? styles.tableRowLast
@@ -244,9 +257,9 @@ export function StoryboardPDFDocument({
                     <Text style={styles.timeText}>{formatTime(endTime)}</Text>
                     <Text style={styles.timeDuration}>({cut.duration}秒)</Text>
                   </View>
-                  <Text style={[styles.cell, styles.cellNumber]}>
-                    {cut.cut_number}
-                  </Text>
+                  <View style={[styles.cell, styles.cellNumber]}>
+                    <Text>{cut.cut_number}</Text>
+                  </View>
                   <View style={[styles.cell, styles.cellImage]}>
                     {imageData ? (
                       <Image src={imageData} style={styles.thumbnail} />
@@ -256,18 +269,24 @@ export function StoryboardPDFDocument({
                       </View>
                     )}
                   </View>
-                  <Text style={[styles.cell, styles.cellType]}>
-                    {cut.scene_type_label}
-                  </Text>
-                  <Text style={[styles.cell, styles.cellDescription]}>
-                    {cut.description_ja || "-"}
-                  </Text>
-                  <Text style={[styles.cell, styles.cellDialogue]}>
-                    {cut.dialogue || "-"}
-                  </Text>
-                  <Text style={[styles.cell, styles.cellSE]}>
-                    {cut.sound_effect || "-"}
-                  </Text>
+                  <View style={[styles.cell, styles.cellType]}>
+                    <Text>{cut.scene_type_label}</Text>
+                  </View>
+                  <View style={[styles.cell, styles.cellDescription]}>
+                    <Text style={styles.cellText}>
+                      {cut.description_ja || "-"}
+                    </Text>
+                  </View>
+                  <View style={[styles.cell, styles.cellDialogue]}>
+                    <Text style={styles.cellText}>
+                      {cut.dialogue || "-"}
+                    </Text>
+                  </View>
+                  <View style={[styles.cell, styles.cellSE]}>
+                    <Text style={styles.cellText}>
+                      {cut.sound_effect || "-"}
+                    </Text>
+                  </View>
                 </View>
               );
             })

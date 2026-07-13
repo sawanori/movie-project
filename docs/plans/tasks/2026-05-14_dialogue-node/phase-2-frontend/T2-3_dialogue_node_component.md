@@ -134,13 +134,13 @@ Design Doc §11 のフロントエンドテストケースを実装:
 
 ## 完了条件 (AC)
 
-- [ ] `DialogueNode.tsx` が存在し、`export function DialogueNode` が正しくエクスポートされている
-- [ ] 入力 Handle (`dialogue_video_input`, `type="target"`, `Position.Left`) が存在する
-- [ ] 出力 Handle (`dialogue_video_output`, `type="source"`, `Position.Right`) が存在する
-- [ ] 注意書き「口の動きは合成しません」が JSX に含まれる
-- [ ] 実行ボタン押下で `startDialogue` CustomEvent が dispatch される
-- [ ] `DialogueNode.test.tsx` が 8 件以上のテストを含む
-- [ ] `npm test -- --testPathPattern=DialogueNode` が全件 pass
+- [x] `DialogueNode.tsx` が存在し、`export function DialogueNode` が正しくエクスポートされている
+- [x] 入力 Handle (`dialogue_video_input`, `type="target"`, `Position.Left`) が存在する
+- [x] 出力 Handle (`dialogue_video_output`, `type="source"`, `Position.Right`) が存在する
+- [x] 注意書き「口の動きは合成しません」が JSX に含まれる
+- [x] 実行ボタン押下で `startDialogue` CustomEvent が dispatch される
+- [x] `DialogueNode.test.tsx` が 8 件以上のテストを含む (11 件)
+- [x] `npm test -- --testPathPattern=DialogueNode` が全件 pass
 
 ## テスト
 

@@ -286,6 +286,12 @@ class StoryVideoCreate(BaseModel):
     story_text: str = Field(..., min_length=1, max_length=10000, description="ストーリー文/プロンプト（テンプレート適用後は長くなる）")
     aspect_ratio: AspectRatio = Field(AspectRatio.PORTRAIT, description="アスペクト比（9:16=縦長, 16:9=横長）")
     video_provider: VideoProvider | None = Field(None, description="動画生成プロバイダー（未指定時は環境変数で決定）")
+    selection_priority: Optional[Literal["quality", "speed", "cost"]] = Field(
+        default=None,
+        description="おまかせモデル選択の優先基準。video_provider 未指定時のみ有効"
+        "（video_provider が指定された場合は無視される）。"
+        "'quality'=品質優先 / 'speed'=速度優先 / 'cost'=コスト優先。",
+    )
     bgm_track_id: str | None = Field(None, description="プリセットBGMのID（オプション）")
     custom_bgm_url: str | None = Field(None, description="カスタムアップロードBGMのURL（オプション、bgm_track_idより優先）")
     overlay: OverlaySettings | None = Field(None, description="オーバーレイ設定")

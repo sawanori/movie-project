@@ -95,7 +95,7 @@ export function AdScriptInput({
           onChange={(e) => setDescription(e.target.value)}
           placeholder="例: 新発売のプロテインバーの広告。20代の働く女性向け。忙しい朝でも手軽に栄養補給できることをアピールしたい。おしゃれなカフェで食べるイメージ。"
           className={cn(
-            "w-full h-40 px-4 py-3 rounded-lg border resize-none",
+            "w-full h-52 px-4 py-3 rounded-lg border resize-none",
             "bg-background text-foreground",
             "placeholder:text-muted-foreground/60",
             "focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent",
@@ -104,7 +104,7 @@ export function AdScriptInput({
           disabled={isGenerating}
         />
         <p className="text-xs text-muted-foreground mt-2">
-          {description.length}/1000文字（10文字以上必要）
+          {description.length}/2000文字（10文字以上必要）
         </p>
       </div>
 
