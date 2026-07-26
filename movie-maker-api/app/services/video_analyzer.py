@@ -181,7 +181,7 @@ class VideoAnalyzer:
                 parts.append(types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"))
 
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.6-flash",
                 contents=parts,
                 config=types.GenerateContentConfig(temperature=0.3)
             )
